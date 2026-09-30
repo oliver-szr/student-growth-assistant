@@ -1,11 +1,11 @@
-"""Request and response shapes for Task and TimeRule."""
+"""Request and response shapes for Task, TimeRule, and Plan APIs."""
 
 from datetime import date as DateValue, time
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .models import Recurrence, TaskPriority, TaskStatus, TimeRuleKind
+from .models import PlanItemKind, PlanStatus, Recurrence, TaskPriority, TaskStatus, TimeRuleKind
 
 
 Duration = Annotated[int, Field(strict=True, gt=0)]
@@ -155,3 +155,65 @@ class TimeRuleResponse(BaseModel):
     active: bool
     created_at: AwareDatetime
     updated_at: AwareDatetime
+
+
+def monday_date(value: DateValue) -> DateValue:
+    if value.isoweekday() != 1:
+        raise ValueError("week_start must be a Monday")
+    return value
+
+
+class CandidateCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    week_start: DateValue
+    task_ids: Annotated[list[Annotated[int, Field(strict=True, gt=0)]], Field(min_length=1)]
+
+    @field_validator("week_start")
+    @classmethod
+    def validate_week_start(cls, value: DateValue) -> DateValue:
+        return monday_date(value)
+
+    @field_validator("task_ids")
+    @classmethod
+    def validate_unique_ids(cls, value: list[int]) -> list[int]:
+        if len(value) != len(set(value)):
+            raise ValueError("task_ids must be unique")
+        return value
+
+
+class PlanItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    plan_id: int
+    kind: PlanItemKind
+    task_id: int | None
+    time_rule_id: int | None
+    title_snapshot: str
+    start_at: AwareDatetime
+    end_at: AwareDatetime
+
+
+class PlanResponse(BaseModel):
+    id: int
+    week_start: DateValue
+    status: PlanStatus
+    based_on_plan_id: int | None
+    source_revision: int
+    task_ids: list[int]
+    created_at: AwareDatetime
+    confirmed_at: AwareDatetime | None
+    items: list[PlanItemResponse]
+
+
+class UnscheduledTaskResponse(BaseModel):
+    task_id: int
+    reason_code: str
+    message: str
+
+
+class CandidateResponse(BaseModel):
+    status: Literal["feasible"] = "feasible"
+    candidate: PlanResponse
+    unscheduled_tasks: list[UnscheduledTaskResponse] = Field(default_factory=list)

@@ -5,21 +5,17 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.database import get_db
+from app.database import create_sqlite_engine, get_db
 from app.main import app
 
 
 @pytest.fixture
 def test_engine(tmp_path: Path) -> Generator[Engine, None, None]:
     database_path = tmp_path / "test.db"
-    engine = create_engine(
-        f"sqlite:///{database_path.as_posix()}",
-        connect_args={"check_same_thread": False},
-    )
+    engine = create_sqlite_engine(f"sqlite:///{database_path.as_posix()}")
     yield engine
     engine.dispose()
     database_path.unlink(missing_ok=True)

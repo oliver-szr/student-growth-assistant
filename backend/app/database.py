@@ -3,8 +3,10 @@
 from collections.abc import Generator
 from datetime import datetime, timezone
 from pathlib import Path
+from sqlite3 import Connection as SQLiteConnection
 
-from sqlalchemy import DateTime, create_engine
+from sqlalchemy import DateTime, create_engine, event
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 from sqlalchemy.types import TypeDecorator
 
@@ -14,10 +16,25 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "app.db"
 DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False},
-)
+def create_sqlite_engine(database_url: str) -> Engine:
+    """Configure every new SQLite connection before it is used by the app."""
+    sqlite_engine = create_engine(
+        database_url,
+        connect_args={"check_same_thread": False},
+    )
+
+    @event.listens_for(sqlite_engine, "connect")
+    def enable_foreign_keys(connection: SQLiteConnection, connection_record: object) -> None:
+        cursor = connection.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
+
+    return sqlite_engine
+
+
+engine = create_sqlite_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
