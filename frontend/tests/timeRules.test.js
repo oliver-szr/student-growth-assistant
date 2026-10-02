@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { ApiError, createTimeRule, parseConstraint } from '../src/api.js'
 import { parsingNotice, proposalDay, proposalToFormRule, timeRuleFormPayload } from '../src/timeRules.js'
 
-const weekly = { kind: 'protected', title: 'Lab', recurrence: 'weekly', weekday: 3, date: null, start_time: '14:00', end_time: '16:00' }
+const weekly = { kind: 'protected', title: 'Lab', recurrence: 'weekly', weekday: 3, date: null, start_time: '14:07', end_time: '15:23' }
 const once = { ...weekly, recurrence: 'once', weekday: null, date: '2026-10-09' }
 
 for (const result of [
@@ -66,8 +66,8 @@ test('Once proposal retains the Shanghai calendar date without timezone conversi
 
 test('Review edits are applied using the existing createTimeRule payload and endpoint', async (context) => {
   const draft = proposalToFormRule(weekly)
-  const payload = timeRuleFormPayload({ ...draft, title: 'Reviewed lab', weekday: '3', startTime: '14:30', endTime: '16:00' }, draft)
-  assert.deepEqual(payload, { ...weekly, title: 'Reviewed lab', start_time: '14:30' })
+  const payload = timeRuleFormPayload({ ...draft, title: 'Reviewed lab', weekday: '3', startTime: '14:11', endTime: '15:23' }, draft)
+  assert.deepEqual(payload, { ...weekly, title: 'Reviewed lab', start_time: '14:11' })
   let path
   context.mock.method(globalThis, 'fetch', async (url, options) => {
     path = new URL(url).pathname

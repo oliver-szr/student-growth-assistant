@@ -31,10 +31,10 @@ def rule(rule_id: int = 1, **changes) -> TimeRuleInput:
 
 
 def test_single_task_gets_monday_0800_and_passes_validator() -> None:
-    tasks = [task()]
+    tasks = [task(duration_minutes=17)]
     result = schedule_week(WEEK, tasks, [])
     assert result.status == "feasible"
-    assert result.assignments == (Assignment(1, "Task 1", at(), at(hour=8, minute=30)),)
+    assert result.assignments == (Assignment(1, "Task 1", at(), at(hour=8, minute=17)),)
     assert result.unscheduled_tasks == ()
     assert validate_schedule(WEEK, tasks, [], result.assignments).valid
 
@@ -132,9 +132,33 @@ def test_protected_overlap_with_courses_and_other_protected_rules_is_allowed() -
     assert schedule_week(WEEK, [task()], rules).assignments[0].start_at == at(hour=11)
 
 
-def test_non_grid_rule_end_is_not_rounded_into_available_time() -> None:
+def test_second_precision_rule_end_is_not_rounded_into_available_time() -> None:
     result = schedule_week(WEEK, [task()], [rule(end_time=time(9, 15, 1))])
-    assert result.assignments[0].start_at == at(hour=9, minute=30)
+    assert result.assignments[0].start_at == at(hour=9, minute=16)
+
+
+@pytest.mark.parametrize("blocked_until,duration,status", [
+    (time(8, 1), 1, "feasible"),
+    (time(8, 7), 17, "feasible"),
+    (time(21, 43), 17, "feasible"),
+    (time(21, 44), 17, "unschedulable"),
+])
+def test_minute_grid_earliest_start_and_exact_working_day_end(blocked_until, duration, status) -> None:
+    tasks = [task(duration_minutes=duration, deadline=at(hour=22))]
+    rules = [rule(kind="protected", end_time=blocked_until)]
+    result = schedule_week(WEEK, tasks, rules)
+    assert result.status == status
+    if status == "feasible":
+        item = result.assignments[0]
+        assert item.start_at == at(hour=blocked_until.hour, minute=blocked_until.minute)
+        assert item.end_at == item.start_at + timedelta(minutes=duration)
+        assert item.end_at <= at(hour=22)
+        assert item.start_at.second == item.start_at.microsecond == 0
+        assert item.end_at.second == item.end_at.microsecond == 0
+        assert validate_schedule(WEEK, tasks, rules, result.assignments).valid
+    else:
+        assert result.assignments == ()
+        assert result.unscheduled_tasks[0].task_id == tasks[0].id
 
 
 def test_task_may_end_exactly_at_aware_utc_deadline() -> None:
@@ -206,7 +230,7 @@ def test_non_todo_task_is_rejected(status) -> None:
 
 
 @pytest.mark.parametrize("changes", [
-    {"duration_minutes": 45}, {"duration_minutes": 0}, {"duration_minutes": -30},
+    {"duration_minutes": 45.5}, {"duration_minutes": 0}, {"duration_minutes": -30},
     {"duration_minutes": 30.0}, {"duration_minutes": True}, {"deadline": datetime(2026, 10, 5, 9)},
     {"deadline": "2026-10-05T09:00:00Z"}, {"priority": "urgent"}, {"id": True}, {"id": 0}, {"title": " "},
 ])

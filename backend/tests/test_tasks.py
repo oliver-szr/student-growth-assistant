@@ -17,24 +17,28 @@ TASK = {
 }
 
 
-def test_create_get_and_database_persistence(client: TestClient, test_engine: Engine) -> None:
-    response = client.post("/api/tasks", json=TASK)
+@pytest.mark.parametrize("duration", [1, 17, 31])
+def test_create_get_and_database_persistence(client: TestClient, test_engine: Engine, duration: int) -> None:
+    response = client.post("/api/tasks", json={**TASK, "duration_minutes": duration})
     assert response.status_code == 201
     created = response.json()
     assert created["title"] == "Finish report"
     assert created["status"] == "todo"
     assert created["priority"] == "high"
+    assert created["duration_minutes"] == duration
     assert created["deadline"] == "2026-10-05T10:00:00Z"
     assert created["created_at"] and created["updated_at"]
 
     listing = client.get("/api/tasks")
     assert listing.status_code == 200
     assert [task["id"] for task in listing.json()] == [created["id"]]
+    assert listing.json()[0]["duration_minutes"] == duration
 
     with Session(test_engine) as session:
         saved = session.get(Task, created["id"])
         assert saved is not None
         assert saved.title == "Finish report"
+        assert saved.duration_minutes == duration
         assert saved.deadline == datetime(2026, 10, 5, 10, 0, tzinfo=timezone.utc)
 
 
@@ -73,8 +77,8 @@ def test_rejects_blank_title(client: TestClient, title: str) -> None:
     assert client.post("/api/tasks", json={**TASK, "title": title}).status_code == 422
 
 
-@pytest.mark.parametrize("duration", [0, -30, 45, 75])
-def test_rejects_invalid_duration(client: TestClient, duration: int) -> None:
+@pytest.mark.parametrize("duration", [0, -1, 17.5, True])
+def test_rejects_invalid_duration(client: TestClient, duration: object) -> None:
     assert client.post("/api/tasks", json={**TASK, "duration_minutes": duration}).status_code == 422
 
 
@@ -94,9 +98,10 @@ def test_patch_title_duration_done_and_cancelled(client: TestClient) -> None:
     assert title_change.json()["title"] == "Updated"
     assert title_change.json()["duration_minutes"] == 90
 
-    duration_change = client.patch(f"/api/tasks/{task_id}", json={"duration_minutes": 120})
+    duration_change = client.patch(f"/api/tasks/{task_id}", json={"duration_minutes": 17})
     assert duration_change.status_code == 200
-    assert duration_change.json()["duration_minutes"] == 120
+    assert duration_change.json()["duration_minutes"] == 17
+    assert client.get("/api/tasks").json()[0]["duration_minutes"] == 17
     assert duration_change.json()["updated_at"] != title_change.json()["updated_at"]
 
     done = client.patch(f"/api/tasks/{task_id}", json={"status": "done"})
@@ -112,8 +117,9 @@ def test_patch_title_duration_done_and_cancelled(client: TestClient) -> None:
 
 
 @pytest.mark.parametrize("changes", [
-    {"duration_minutes": 45},
+    {"duration_minutes": 17.5},
     {"duration_minutes": 0},
+    {"duration_minutes": None},
     {"title": "   "},
     {"priority": "urgent"},
     {"status": "unknown"},

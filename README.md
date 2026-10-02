@@ -23,7 +23,7 @@ Backend: Python 3.11+, FastAPI, SQLAlchemy, SQLite, Pydantic and pytest. Fronten
 
 ## Current status
 
-Phase 7A adds optional natural-language TimeRule parsing to the stable non-AI MVP. Phase 7B adds local deterministic plan differences and optional AI explanation on explicit request. React manages Tasks, Courses & Protected Time, and Weekly Plan. Scheduler, Validator, database models, Candidate/Confirm transactions, and stale semantics retain their Phase 4/5 behavior. The combined Phase 7A + 7B independent code review is PASS WITH FIXES. The previous 7A gate recheck passed the delete input but still timed out on confirm and the control input; those availability records are preserved. See [Phase 7A verification](docs/phase7a-verification.md) and [Phase 7B verification](docs/phase7b-verification.md). Phase 8 final stabilization covers regression, startup documentation and an isolated demo; final v1.0 Gate Review and Git delivery remain separate steps.
+`main` has released `v1.0.0`. This branch adds 1-minute scheduling and positive integer-minute Task durations while preserving the greedy strategy, database models, Candidate/Confirm transactions, revision and stale protection. Latest minute-level verification: backend **405 passed**, frontend **47 passed**, production build and whitespace checks **PASS**. AI parsing and explanation remain optional. Earlier phase results and provider observations are historical evidence; see [Phase 7A verification](docs/phase7a-verification.md) and [Phase 7B verification](docs/phase7b-verification.md).
 
 ## Backend setup
 
@@ -75,22 +75,22 @@ conda run -n app_env --no-capture-output python -m pytest --basetemp=../.pytest_
 
 AI parsing and explanation are optional. They share the **Anthropic Messages-compatible API via configurable New API gateway**, with `POST /v1/messages` on the configured gateway and top-level `system`. The model name comes from your gateway console and is never hardcoded.
 
-Anthropic Messages-compatible gateway; actual model is configurable and may not be Claude. The current smoke configuration uses **MiniMax-M3**. Existing `claude_client.py` / `CLAUDE_*` names are retained for compatibility, not as a model claim. `CLAUDE_BASE_URL` accepts a gateway origin or its `/v1` API base, with an optional trailing slash; do not append `/messages`. The client normalizes the version suffix to avoid `/v1/v1/messages`.
+The actual model is configurable and may not be Claude. Existing `claude_client.py` / `CLAUDE_*` names are retained for compatibility, not as a model claim. `CLAUDE_BASE_URL` accepts a gateway origin or its `/v1` API base, with an optional trailing slash; do not append `/messages`. The client normalizes the version suffix to avoid `/v1/v1/messages`.
 
 Copy `backend/.env.example` to `backend/.env` and configure locally:
 
 ```dotenv
 CLAUDE_API_KEY=
-CLAUDE_BASE_URL=https://newapi.iomgaa.online
+CLAUDE_BASE_URL=https://your-gateway.example
 CLAUDE_MODEL=
 CLAUDE_API_VERSION=2023-06-01
 ```
 
-The backend loads only its own `.env`; process environment takes precedence. Restart after changing configuration. `.env` is ignored by Git. Keep the key backend-only; never use a `VITE_` key or send it to the browser. `python-dotenv` is the only new dependency; HTTP uses the existing `httpx`.
+The shown gateway URL is a placeholder; supply the key, URL and model from your provider. The backend loads only its own `.env`; process environment takes precedence. Restart after changing configuration. `.env` is ignored by Git. Keep the key backend-only; never use a `VITE_` key or send it to the browser. Phase 7A added `python-dotenv`; HTTP uses the existing `httpx`, and the minute-level change adds no dependencies.
 
 Missing key or model does not prevent startup or manual Task/TimeRule/planning use. Only parsing returns `503 AI_NOT_CONFIGURED`. Provider requests have a total 20-second deadline, and the frontend parse request has a 25-second timeout. Network/HTTP failures return `503 AI_UNAVAILABLE`; invalid content, JSON, schemas, or TimeRule combinations return `502 AI_RESPONSE_INVALID`, with fixed safe messages.
 
-AI configuration is optional. AI provider availability is external and optional; core planning remains available when AI is unavailable. There is no automatic retry or fallback model.
+Provider availability is external; core planning remains available when AI is unavailable. There is no automatic retry or fallback model.
 
 The configured model produces an untrusted structured proposal. The proposal is validated by deterministic backend rules. The user must review and explicitly apply it through the existing TimeRule workflow. AI does not directly modify Tasks, Plans, or the database.
 
@@ -102,7 +102,7 @@ AI summarizes the observable differences between the confirmed snapshot and cand
 
 `POST /api/plans/{candidate_id}/explanation` returns HTTP 200 with the diff even if AI is unconfigured, unavailable, or rejected. **AI explanation unavailable** keeps planning and Confirm usable. The endpoint reads snapshots, releases its read transaction before waiting on the shared 20-second provider request, and does not persist explanations or change revision. The frontend deadline is 25 seconds; there is no automatic retry. New Candidates, week changes, and successful Confirm clear explanation state; late responses from old Candidates are ignored. Outdated Candidates may still be explained but retain their deterministic warning and blocked Confirm.
 
-Verification: backend **395 passed**, frontend **46 passed**, production build and whitespace checks passed. The combined independent review added URL normalization, explicit prohibited-claim guards, and a UTC label for AI explanation times (Changes remains Shanghai). Four bounded real requests returned available explanations without invented causes or confirmation pressure; the final moved-case check included the timezone clarification. No automatic retries or timeout increase. Browser evidence from the earlier implementation is historical; this review used code/session tests and isolated API smoke. See [AI Layer independent review](docs/ai-layer-review.md) for results and limitations.
+Historical Phase 7A + 7B verification: backend **395 passed**, frontend **46 passed**, production build and whitespace checks passed. The combined independent review added URL normalization, explicit prohibited-claim guards, and a UTC label for AI explanation times (Changes remains Shanghai). Four bounded real requests returned available explanations without invented causes or confirmation pressure; the final moved-case check included the timezone clarification. No automatic retries or timeout increase. Browser evidence from the earlier implementation is historical; this review used code/session tests and isolated API smoke. See [AI Layer independent review](docs/ai-layer-review.md) for results and limitations.
 
 To explicitly run three real smoke cases using synthetic plans and isolated SQLite, from `backend`:
 
@@ -112,17 +112,17 @@ conda run -n app_env --no-capture-output python scripts/smoke_explanations.py --
 
 This consumes provider calls, loads local backend configuration, and makes one call per case without retries. Normal pytest mocks AI and does not consume provider usage.
 
-In **Courses & Protected Time**, describe one interval and select **Parse with AI**. Supported results are weekly courses, weekly protected time, and one-time protected time. Missing or ambiguous details produce **More information needed**; task/plan commands produce **Unsupported request**. Dates and clock times use Shanghai semantics, and the backend supplies the current Shanghai date explicitly.
-
-Review **AI Proposal**, edit the prefilled `TimeRuleForm`, then click **Apply time rule**. Only that click uses the existing `POST /api/time-rules`, saves the rule with normal defaults, and increments revision once. Older Candidates then become stale through the existing checks. **Discard**, Parse, clarification, and unsupported never write data. Manual create/edit/deactivate remains available when AI fails.
+For supported natural-language inputs and proposal review/Apply steps, see the [Chinese user guide](docs/USER_GUIDE_ZH.md#6-ai-natural-language). Parse and Discard never write data; explicit Apply uses the existing TimeRule endpoint and increments revision once. Manual management remains available when AI fails.
 
 Automated pytest and Node tests use mocked AI/HTTP and never call a paid provider. The separate real smoke checklist includes the original seven examples plus three scope/injection inputs in [Phase 7A verification](docs/phase7a-verification.md); perform Apply demos only on an isolated database.
 
 ## In-memory scheduling (Phase 4)
 
+This branch accepts Task durations of any positive integer number of minutes, with a minimum of 1 minute. The Scheduler uses a **1-minute grid**, trying starts from 08:00 through 21:59. Assignments have zero seconds and microseconds and must finish by 22:00 and the deadline. The released `v1.0.0` tag remains unchanged. See the [Chinese user guide](docs/USER_GUIDE_ZH.md) for the minute-level workflow.
+
 `backend/app/services/scheduler.py` exposes `schedule_week(week_start, selected_tasks, time_rules)`. Inputs use the small frozen dataclasses in `scheduling_types.py`; `week_start` is a Monday date, deadlines are timezone-aware, and TimeRule clock times describe local Shanghai time. The scheduler returns either complete task assignments or `unschedulable` with reasons and no partial assignments. It validates a successful result using `validator.py` before returning it.
 
-The heuristic sorts by deadline, priority, and task ID, then chooses each task's earliest continuous slot. It does not backtrack or split tasks, and `unschedulable` does not prove that no legal schedule exists. See [Phase 4 implementation](docs/architecture.md#phase-4-当前实现) for the Python interface, checks, and limitations.
+The greedy heuristic sorts by deadline, priority, and task ID, then chooses each task's earliest continuous slot. It does not backtrack or split tasks and does not guarantee optimality. `unschedulable` does not prove that no legal schedule exists. See [Phase 4 implementation](docs/architecture.md#phase-4-当前实现) for the Python interface, checks, and limitations.
 
 ## Persisted plans (Phase 5)
 
@@ -132,7 +132,7 @@ Use Swagger at `/docs` to exercise the new backend flow:
 2. On success, HTTP `200` returns `status: "feasible"`, a saved `candidate`, and an empty `unscheduled_tasks`. Inspect the saved plan with `GET /api/plans/{id}`.
 3. Send `POST /api/plans/{id}/confirm` with no body to confirm that stored Candidate. Query the official plan with `GET /api/plans/confirmed?week_start=2026-10-05`.
 
-Candidate generation calls the frozen Scheduler and independently validates its assignments before saving task and active course snapshots. Protected intervals constrain placement and are never PlanItems. Existing official plans remain unchanged until Confirm; `based_on_plan_id` records the current same-week official plan when generating a Candidate.
+Candidate generation calls the Scheduler and independently validates its assignments before saving task and active course snapshots. Protected intervals constrain placement and are never PlanItems. Existing official plans remain unchanged until Confirm; `based_on_plan_id` records the current same-week official plan when generating a Candidate.
 
 Startup creates the missing tables and safely initializes `PlanningState(id=1, revision=0)`. Task/TimeRule creation, every successful PATCH (including empty or unchanged PATCH), and successful confirmation increment the global revision once. GET, Candidate generation, and rejected operations do not increment it. Every write route reserves SQLite's writer with `BEGIN IMMEDIATE` before reading, then commits business writes and any revision increment together. Candidate computation holds that reservation until it is saved, keeping its input snapshot consistent.
 
@@ -209,22 +209,15 @@ Use an isolated temporary database for acceptance demos and keep development dat
 
 The app generates a complete selected week; it does not freeze past or started blocks. For a presentation, select a future week and use matching deadlines. Replanning requires selecting all Tasks you want in the replacement plan. A smaller selection excludes omitted Tasks from the Candidate without deleting them.
 
-## Complete browser MVP workflow (Phase 6)
+## Browser behavior and historical verification
 
-1. In **Tasks**, add at least two todo tasks with a duration, deadline, and priority. Choose deadlines that allow scheduling in the week you intend to demonstrate.
-2. In **Courses & Protected Time**, add weekly courses and any protected intervals. Courses appear in plans; protected time constrains placement without becoming a PlanItem.
-3. Open **Weekly Plan**. It defaults to the current Shanghai week's Monday. Selecting any date converts it to that week's Monday, displayed as **Week of YYYY-MM-DD**. Changing weeks clears the selection and Candidate, then loads that week's Confirmed Plan.
-4. Select the todo tasks to schedule. Each checkbox shows title, duration, Shanghai deadline, and priority. Done and cancelled tasks are excluded. Select at least one task before generating.
-5. Click **Generate Candidate** and review its Task and Course timeline in Shanghai time. **Plan details** shows source revision and the previous official plan ID. A Candidate remains separate from **Current Confirmed Plan**.
-6. Click **Confirm Candidate**. Only a successful server response replaces the displayed Confirmed Plan and clears the Candidate. The page then reloads the official plan from the backend.
-7. To demonstrate emergency replanning, create a normal Task with **high** priority and a deadline, return to Weekly Plan, and select the original tasks plus the new task. Generate and review the new Candidate alongside the unchanged current plan, then Confirm to supersede the old plan.
-8. If a Task, TimeRule, or official plan changes after generation, Confirm may return **STALE_CANDIDATE**. The outdated preview stays visible and Confirm is disabled; explicitly generate a new Candidate. **UNSCHEDULABLE** lists task IDs, titles where available, and backend reasons; it means the current heuristic did not find a complete plan.
+For step-by-step Task, TimeRule, Weekly Plan, replanning and error handling instructions, use the [Chinese user guide](docs/USER_GUIDE_ZH.md). The Demo Flow above remains a short acceptance checklist.
 
 Leaving Weekly Plan for another tab preserves its Candidate and selections; returning reloads Tasks and the official plan. A full browser refresh resets the selected week to the current Shanghai week and discards the in-memory Candidate and selections. Open Weekly Plan to reload the persisted Confirmed Plan. Candidates remain stored in SQLite but are not automatically restored; there is no localStorage or latest-Candidate endpoint.
 
 Loading and request errors appear on the page. **Reload tasks & confirmed plan** and **Retry** allow recovery after the backend returns. Failed Generate/Reload requests retain previously displayed plans for the selected week. A missing official plan (`404 PLAN_NOT_FOUND`) displays **No confirmed plan for this week.** as a normal empty state. Generate and Confirm cannot overlap or be submitted repeatedly while pending.
 
-Phase 6 verification: backend **231 passed** with one existing Starlette/httpx dependency deprecation warning; frontend **19 passed**; production build successful without warnings. Real FastAPI + Vite browser checks covered initial planning and refresh, emergency replacement, stale rejection and regeneration, unschedulable tasks, and backend shutdown/recovery using an isolated demo SQLite database. Development `backend/data/app.db` was preserved. See [Phase 6 evidence](docs/architecture.md#phase-6-浏览器联调与回归) for details and limitations.
+Historical Phase 6 verification: backend **231 passed** with one existing Starlette/httpx dependency deprecation warning; frontend **19 passed**; production build successful without warnings. Real FastAPI + Vite browser checks covered initial planning and refresh, emergency replacement, stale rejection and regeneration, unschedulable tasks, and backend shutdown/recovery using an isolated demo SQLite database. Development `backend/data/app.db` was preserved. See [Phase 6 evidence](docs/architecture.md#phase-6-浏览器联调与回归) for details and limitations.
 
 ## Verify
 
@@ -264,4 +257,4 @@ The app uses a local SQLite database and creates missing tables on startup with 
 
 The backend allows browser requests from `http://localhost:5173` and `http://127.0.0.1:5173` for local development. Other frontend origins need an explicit CORS configuration change.
 
-See [Phase 3 verification](docs/phase3-verification.md) for the file list, browser checks, test results, and current limitations.
+See [Phase 3 verification](docs/phase3-verification.md) for historical CRUD/UI browser checks and test results.

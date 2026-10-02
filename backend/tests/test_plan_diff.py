@@ -47,6 +47,18 @@ def test_mixed_categories_identity_and_display_snapshots():
     assert "reason" not in str(result)
 
 
+def test_minute_precision_move_preserves_exact_timestamps():
+    old = snapshot([item(start_at="2026-10-05T09:07:00+08:00", end_at="2026-10-05T09:24:00+08:00")])
+    new = snapshot([item(start_at="2026-10-05T09:13:00+08:00", end_at="2026-10-05T09:30:00+08:00")], 2)
+    result = plan_diff(old, new)
+    assert result["summary"] == {"added_count": 0, "removed_count": 0, "moved_count": 1, "unchanged_count": 0}
+    assert result["moved"][0] == {
+        "task_id": 1, "title": "Read paper", "from_start": "2026-10-05T01:07:00Z",
+        "from_end": "2026-10-05T01:24:00Z", "to_start": "2026-10-05T01:13:00Z",
+        "to_end": "2026-10-05T01:30:00Z",
+    }
+
+
 @pytest.mark.parametrize("old", [None, snapshot([])])
 def test_absent_or_empty_baseline(old):
     result = plan_diff(old, snapshot([item()], 2))

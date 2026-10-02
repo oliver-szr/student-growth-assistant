@@ -33,13 +33,6 @@ class TaskCreate(BaseModel):
     def validate_title(cls, value: str) -> str:
         return required_title(value)
 
-    @field_validator("duration_minutes")
-    @classmethod
-    def validate_duration(cls, value: int) -> int:
-        if value % 30 != 0:
-            raise ValueError("duration_minutes must be a multiple of 30")
-        return value
-
 
 class TaskUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -61,8 +54,8 @@ class TaskUpdate(BaseModel):
     @field_validator("duration_minutes")
     @classmethod
     def validate_duration(cls, value: int | None) -> int:
-        if value is None or value % 30 != 0:
-            raise ValueError("duration_minutes must be a positive multiple of 30")
+        if value is None:
+            raise ValueError("duration_minutes cannot be null")
         return value
 
     @field_validator("deadline", "priority", "status")
