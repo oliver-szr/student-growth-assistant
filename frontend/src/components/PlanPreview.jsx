@@ -1,4 +1,5 @@
 import PlanTimeline from './PlanTimeline.jsx'
+import PlanExplanation from './PlanExplanation.jsx'
 
 export default function PlanPreview({ plan, candidate = false, outdated, blocked, selectionChanged = false, busy, onConfirm, emptyText = 'No confirmed plan for this week.' }) {
   const heading = candidate ? 'Candidate Plan' : 'Current Confirmed Plan'
@@ -20,6 +21,7 @@ export default function PlanPreview({ plan, candidate = false, outdated, blocked
         {candidate && <div className="button-row">
           <button className="button primary" type="button" disabled={busy || outdated || blocked || selectionChanged} onClick={onConfirm}>{busy ? 'Please wait...' : 'Confirm Candidate'}</button>
         </div>}
+        {candidate && <PlanExplanation key={plan.id} plan={plan} outdated={outdated} blocked={blocked} busy={busy} />}
       </>}
     </section>
   )

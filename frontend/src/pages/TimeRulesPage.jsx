@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createTimeRule, getTimeRules, updateTimeRule } from '../api.js'
 import TimeRuleForm from '../components/TimeRuleForm.jsx'
+import NaturalLanguageTimeRule from '../components/NaturalLanguageTimeRule.jsx'
 import { WEEKDAYS } from '../constants.js'
 
 function describeRule(rule) {
@@ -70,6 +71,11 @@ export default function TimeRulesPage() {
     }
   }
 
+  async function applyProposal(data) {
+    const created = await createTimeRule(data)
+    setRules((current) => [...current, created].sort((a, b) => a.id - b.id))
+  }
+
   function section(kind, heading, emptyText) {
     const items = rules.filter((rule) => rule.kind === kind)
     const selectedRule = form?.id === null ? null : items.find((rule) => rule.id === form?.id)
@@ -112,6 +118,7 @@ export default function TimeRulesPage() {
       {loading ? <p className="state-box" role="status">Loading time rules...</p> : loadError ? (
         <div className="error-box" role="alert">Could not load time rules. {loadError} <button className="button subtle" onClick={load} type="button">Retry</button></div>
       ) : <>
+        <NaturalLanguageTimeRule onApply={applyProposal} manualPending={pending} />
         {section('course', 'Courses', 'No courses yet.')}
         {section('protected', 'Protected Time', 'No protected time yet.')}
       </>}

@@ -12,6 +12,22 @@ from app.database import create_sqlite_engine, get_db
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def no_live_ai(monkeypatch):
+    """All pytest parsing is mocked; never load local secrets or pay a provider."""
+    from app.services import claude_client, constraint_parser, plan_explanation
+
+    monkeypatch.setattr(claude_client, "load_dotenv", lambda *args, **kwargs: None)
+    for name in ("CLAUDE_API_KEY", "CLAUDE_MODEL", "CLAUDE_BASE_URL", "CLAUDE_API_VERSION"):
+        monkeypatch.delenv(name, raising=False)
+
+    async def reject_live_request(*args, **kwargs):
+        raise AssertionError("pytest must mock Claude parsing")
+
+    monkeypatch.setattr(constraint_parser, "request_claude", reject_live_request)
+    monkeypatch.setattr(plan_explanation, "request_claude", reject_live_request)
+
+
 @pytest.fixture
 def test_engine(tmp_path: Path) -> Generator[Engine, None, None]:
     database_path = tmp_path / "test.db"
