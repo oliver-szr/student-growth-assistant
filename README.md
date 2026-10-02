@@ -1,12 +1,33 @@
 # Student Growth Assistant
 
+## Project Overview
+
+Student Growth Assistant is a deterministic weekly planning and replanning web application with optional AI-assisted input parsing and plan-change explanation.
+
+## Features
+
+- Task management
+- Course and protected time management
+- Weekly deterministic scheduling
+- Candidate preview
+- User confirmation
+- Emergency replanning
+- Stale candidate protection
+- Natural-language TimeRule proposal
+- Deterministic Plan diff
+- Optional AI explanation
+
+## Tech Stack
+
+Backend: Python 3.11+, FastAPI, SQLAlchemy, SQLite, Pydantic and pytest. Frontend: React, Vite, JavaScript and native CSS. AI: Anthropic Messages-compatible API via a configurable gateway; the actual model is configurable and may not be Claude.
+
 ## Current status
 
-Phase 6: the non-AI deterministic planning and replanning MVP is available in the browser. React manages Tasks, Courses & Protected Time, and Weekly Plan. The existing Plan APIs persist Candidates and atomically confirm them with revision stale protection; Scheduler, Validator, models, and transactions retain their Phase 4/5 behavior. AI is not implemented.
+Phase 7A adds optional natural-language TimeRule parsing to the stable non-AI MVP. Phase 7B adds local deterministic plan differences and optional AI explanation on explicit request. React manages Tasks, Courses & Protected Time, and Weekly Plan. Scheduler, Validator, database models, Candidate/Confirm transactions, and stale semantics retain their Phase 4/5 behavior. The combined Phase 7A + 7B independent code review is PASS WITH FIXES. The previous 7A gate recheck passed the delete input but still timed out on confirm and the control input; those availability records are preserved. See [Phase 7A verification](docs/phase7a-verification.md) and [Phase 7B verification](docs/phase7b-verification.md). Phase 8 final stabilization covers regression, startup documentation and an isolated demo; final v1.0 Gate Review and Git delivery remain separate steps.
 
 ## Backend setup
 
-From the project root in Windows PowerShell, create the dedicated Conda environment and install dependencies into it:
+Use a terminal where `conda` is available (Anaconda Prompt or an initialized PowerShell). From the project root, create the dedicated Conda environment and install dependencies into it:
 
 ```powershell
 conda create -n app_env python=3.11 -y
@@ -32,6 +53,7 @@ conda run -n app_env --no-capture-output python -m uvicorn app.main:app --app-di
 ```
 
 The SQLite database path is based on `backend/app/database.py`, so either command uses `backend/data/app.db`.
+The backend runs at http://127.0.0.1:8000. Start the frontend in a second terminal using the commands below.
 
 ## Test
 
@@ -42,6 +64,59 @@ conda run -n app_env --no-capture-output python -m pytest
 ```
 
 API and persistence tests use temporary SQLite files under `backend/.pytest_tmp/` and remove those files afterward. Scheduler and Validator tests use plain Python data in memory. Tests do not connect to or modify `backend/data/app.db`.
+
+If an old pytest temporary directory has local ACL errors, use a fresh isolated path instead of changing application code:
+
+```powershell
+conda run -n app_env --no-capture-output python -m pytest --basetemp=../.pytest_tmp/final-regression-fresh
+```
+
+## Optional AI Configuration
+
+AI parsing and explanation are optional. They share the **Anthropic Messages-compatible API via configurable New API gateway**, with `POST /v1/messages` on the configured gateway and top-level `system`. The model name comes from your gateway console and is never hardcoded.
+
+Anthropic Messages-compatible gateway; actual model is configurable and may not be Claude. The current smoke configuration uses **MiniMax-M3**. Existing `claude_client.py` / `CLAUDE_*` names are retained for compatibility, not as a model claim. `CLAUDE_BASE_URL` accepts a gateway origin or its `/v1` API base, with an optional trailing slash; do not append `/messages`. The client normalizes the version suffix to avoid `/v1/v1/messages`.
+
+Copy `backend/.env.example` to `backend/.env` and configure locally:
+
+```dotenv
+CLAUDE_API_KEY=
+CLAUDE_BASE_URL=https://newapi.iomgaa.online
+CLAUDE_MODEL=
+CLAUDE_API_VERSION=2023-06-01
+```
+
+The backend loads only its own `.env`; process environment takes precedence. Restart after changing configuration. `.env` is ignored by Git. Keep the key backend-only; never use a `VITE_` key or send it to the browser. `python-dotenv` is the only new dependency; HTTP uses the existing `httpx`.
+
+Missing key or model does not prevent startup or manual Task/TimeRule/planning use. Only parsing returns `503 AI_NOT_CONFIGURED`. Provider requests have a total 20-second deadline, and the frontend parse request has a 25-second timeout. Network/HTTP failures return `503 AI_UNAVAILABLE`; invalid content, JSON, schemas, or TimeRule combinations return `502 AI_RESPONSE_INVALID`, with fixed safe messages.
+
+AI configuration is optional. AI provider availability is external and optional; core planning remains available when AI is unavailable. There is no automatic retry or fallback model.
+
+The configured model produces an untrusted structured proposal. The proposal is validated by deterministic backend rules. The user must review and explicitly apply it through the existing TimeRule workflow. AI does not directly modify Tasks, Plans, or the database.
+
+## Phase 7B: Explain candidate changes
+
+In Weekly Plan, **Explain Changes** is available for a Candidate with a saved confirmed baseline. It runs only when clicked. **Changes** lists Added, Moved, Not included in candidate, and Unchanged using saved Task IDs/times and Shanghai display time. The comparison uses `candidate.based_on_plan_id`, including a now-superseded historical snapshot, rather than whichever plan is currently confirmed. A first Candidate displays **First plan for this week.** without calling AI.
+
+AI summarizes the observable differences between the confirmed snapshot and candidate plan. It receives only the locally computed structured diff and an independent explanation prompt. No scheduler decision trace exists, so the explanation does not infer hidden causal reasoning. General scheduling policy is documented as background; first-version prose is restricted to observed changes. Removed means not included in the candidate, never deletion of a Task.
+
+`POST /api/plans/{candidate_id}/explanation` returns HTTP 200 with the diff even if AI is unconfigured, unavailable, or rejected. **AI explanation unavailable** keeps planning and Confirm usable. The endpoint reads snapshots, releases its read transaction before waiting on the shared 20-second provider request, and does not persist explanations or change revision. The frontend deadline is 25 seconds; there is no automatic retry. New Candidates, week changes, and successful Confirm clear explanation state; late responses from old Candidates are ignored. Outdated Candidates may still be explained but retain their deterministic warning and blocked Confirm.
+
+Verification: backend **395 passed**, frontend **46 passed**, production build and whitespace checks passed. The combined independent review added URL normalization, explicit prohibited-claim guards, and a UTC label for AI explanation times (Changes remains Shanghai). Four bounded real requests returned available explanations without invented causes or confirmation pressure; the final moved-case check included the timezone clarification. No automatic retries or timeout increase. Browser evidence from the earlier implementation is historical; this review used code/session tests and isolated API smoke. See [AI Layer independent review](docs/ai-layer-review.md) for results and limitations.
+
+To explicitly run three real smoke cases using synthetic plans and isolated SQLite, from `backend`:
+
+```powershell
+conda run -n app_env --no-capture-output python scripts/smoke_explanations.py --output ../.pytest_tmp/phase7b-evidence/new-smoke.json
+```
+
+This consumes provider calls, loads local backend configuration, and makes one call per case without retries. Normal pytest mocks AI and does not consume provider usage.
+
+In **Courses & Protected Time**, describe one interval and select **Parse with AI**. Supported results are weekly courses, weekly protected time, and one-time protected time. Missing or ambiguous details produce **More information needed**; task/plan commands produce **Unsupported request**. Dates and clock times use Shanghai semantics, and the backend supplies the current Shanghai date explicitly.
+
+Review **AI Proposal**, edit the prefilled `TimeRuleForm`, then click **Apply time rule**. Only that click uses the existing `POST /api/time-rules`, saves the rule with normal defaults, and increments revision once. Older Candidates then become stale through the existing checks. **Discard**, Parse, clarification, and unsupported never write data. Manual create/edit/deactivate remains available when AI fails.
+
+Automated pytest and Node tests use mocked AI/HTTP and never call a paid provider. The separate real smoke checklist includes the original seven examples plus three scope/injection inputs in [Phase 7A verification](docs/phase7a-verification.md); perform Apply demos only on an isolated database.
 
 ## In-memory scheduling (Phase 4)
 
@@ -87,6 +162,52 @@ npm run build
 ```
 
 Task deadlines are entered and displayed in fixed Shanghai time (UTC+08:00). The frontend sends an offset-aware value such as `2026-10-05T22:00:00+08:00`; the API may return the same instant as `2026-10-05T14:00:00Z`. Weekly and one-time protected time use Shanghai local dates and clock times.
+
+## Isolated Demo Database
+
+Normal startup uses `backend/data/app.db`; there is no environment variable for changing this path. For a clean classroom demo, stop the normal backend and run the following from the project root in PowerShell. It uses the same `app.state.db_engine` and `get_db` overrides as the existing test harness, without changing project files or touching the development database:
+
+```powershell
+@'
+import sys
+import tempfile
+from pathlib import Path
+sys.path.insert(0, str(Path("backend").resolve()))
+import uvicorn
+from sqlalchemy.orm import Session
+from app.main import app
+from app.database import create_sqlite_engine, get_db
+
+with tempfile.TemporaryDirectory(prefix="sga-demo-") as directory:
+    engine = create_sqlite_engine(f"sqlite:///{Path(directory).as_posix()}/demo.db")
+    def demo_db():
+        with Session(engine, autoflush=False) as session:
+            yield session
+    app.state.db_engine = engine
+    app.dependency_overrides[get_db] = demo_db
+    try:
+        uvicorn.run(app, host="127.0.0.1", port=8000)
+    finally:
+        engine.dispose()
+'@ | conda run -n app_env --no-capture-output python -
+```
+
+Start Vite normally in a second terminal. The demo starts empty; enter the data below through the UI. Stop this backend with Ctrl+C when finished; normal shutdown removes its temporary database. Do not use `--reload` with this in-process harness. Restarting the normal backend returns to the unchanged development database; no backup/restore or new database configuration is needed.
+
+## Demo Flow
+
+Use an isolated temporary database for acceptance demos and keep development data unchanged. All planning dates/times use Shanghai time.
+
+1. Add two Tasks with 60-minute durations and deadlines within the selected week.
+2. Add a weekly Course and a Protected Time interval through the manual form.
+3. Open Weekly Plan and choose the intended week's Monday.
+4. Select both Tasks and click Generate Candidate.
+5. Review the timeline and click Confirm Candidate.
+6. Add an emergency Task with high priority and an earlier deadline.
+7. Select the original Tasks plus the emergency Task and generate a new Candidate. Review it alongside the unchanged Confirmed Plan.
+8. Optionally use Explain Changes, then confirm the replacement Candidate when satisfied. AI parsing can also be used during rule entry in step 2: review/Apply one protected interval proposal. If AI is unavailable, use the manual form and deterministic Changes.
+
+The app generates a complete selected week; it does not freeze past or started blocks. For a presentation, select a future week and use matching deadlines. Replanning requires selecting all Tasks you want in the replacement plan. A smaller selection excludes omitted Tasks from the Candidate without deleting them.
 
 ## Complete browser MVP workflow (Phase 6)
 

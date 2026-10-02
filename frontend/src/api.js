@@ -25,9 +25,9 @@ export class ApiError extends Error {
   }
 }
 
-async function request(path, options = {}) {
+async function request(path, options = {}, timeoutMs = 15000) {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 15000)
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
@@ -64,7 +64,12 @@ export const getTimeRules = () => request('/api/time-rules')
 export const createTimeRule = (data) => request('/api/time-rules', { method: 'POST', body: JSON.stringify(data) })
 export const updateTimeRule = (id, data) => request(`/api/time-rules/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 
+// Allow the backend's bounded 20-second provider request to finish first.
+export const parseConstraint = (text) => request('/api/constraints/parse', { method: 'POST', body: JSON.stringify({ text }) }, 25000)
+
 export const createCandidatePlan = (data) => request('/api/plans/candidates', { method: 'POST', body: JSON.stringify(data) })
 export const getPlan = (id) => request(`/api/plans/${id}`)
 export const getConfirmedPlan = (weekStart) => request(`/api/plans/confirmed?week_start=${encodeURIComponent(weekStart)}`)
 export const confirmPlan = (id) => request(`/api/plans/${id}/confirm`, { method: 'POST' })
+
+export const explainCandidate = (id, language = 'en') => request(`/api/plans/${id}/explanation`, { method: 'POST', body: JSON.stringify({ language }) }, 25000)

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from . import models  # Register all tables with the existing Base.
 from .database import Base, engine
-from .routers import plans, tasks, time_rules
+from .routers import constraints, plan_explanations, plans, tasks, time_rules
 from .services.planning_state import get_or_create_planning_state
 
 
@@ -39,6 +39,8 @@ app.add_middleware(
 app.include_router(tasks.router)
 app.include_router(time_rules.router)
 app.include_router(plans.router)
+app.include_router(constraints.router)
+app.include_router(plan_explanations.router)
 
 
 @app.get("/api/health", response_model=HealthResponse, tags=["Health"])

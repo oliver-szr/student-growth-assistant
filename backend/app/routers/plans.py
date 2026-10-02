@@ -47,7 +47,10 @@ def require_plan(db: Session, plan_id: int) -> Plan:
     return plan
 
 
-@router.post("/candidates", response_model=CandidateResponse)
+@router.post("/candidates", response_model=CandidateResponse, responses={
+    409: {"description": "UNSCHEDULABLE: the current heuristic did not produce a complete plan."},
+    500: {"description": "GENERATED_SCHEDULE_INVALID: the generated schedule failed independent validation."},
+})
 def create_candidate(payload: CandidateCreate, db: Session = Depends(get_db)) -> CandidateResponse:
     try:
         begin_planning_transaction(db)
@@ -121,7 +124,9 @@ def create_candidate(payload: CandidateCreate, db: Session = Depends(get_db)) ->
 
 
 # Static path must be registered before /{plan_id}.
-@router.get("/confirmed", response_model=PlanResponse)
+@router.get("/confirmed", response_model=PlanResponse, responses={
+    404: {"description": "PLAN_NOT_FOUND: no confirmed plan exists for this week."},
+})
 def get_confirmed_plan(
     week_start: date = Query(...), db: Session = Depends(get_db),
 ) -> PlanResponse:
@@ -135,12 +140,17 @@ def get_confirmed_plan(
     return plan_response(db, plan)
 
 
-@router.get("/{plan_id}", response_model=PlanResponse)
+@router.get("/{plan_id}", response_model=PlanResponse, responses={
+    404: {"description": "PLAN_NOT_FOUND: the requested plan does not exist."},
+})
 def get_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanResponse:
     return plan_response(db, require_plan(db, plan_id))
 
 
-@router.post("/{plan_id}/confirm", response_model=PlanResponse)
+@router.post("/{plan_id}/confirm", response_model=PlanResponse, responses={
+    404: {"description": "PLAN_NOT_FOUND: the requested plan does not exist."},
+    409: {"description": "PLAN_NOT_CANDIDATE or STALE_CANDIDATE: the stored plan cannot be confirmed."},
+})
 def confirm_candidate(plan_id: int, db: Session = Depends(get_db)) -> PlanResponse:
     try:
         begin_planning_transaction(db)

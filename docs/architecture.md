@@ -1,6 +1,6 @@
-# Student Growth Assistant 架构（Phase 0 冻结版）
+# Student Growth Assistant 架构（Phase 1–7 实现，核心规则冻结）
 
-本文依据已审核的 Phase 0 降复杂度修订，并记录 Phase 1–6 的实际实现。已完成 Task / TimeRule 管理、冻结的 Scheduler / Validator、Plan 持久化与 Candidate / Confirm API，以及非 AI Weekly Plan 浏览器流程。AI 尚未实现。
+本文依据已审核的 Phase 0 降复杂度修订，并记录 Phase 1–6、Phase 7A 与 Phase 7B 的实际实现。已完成 Task / TimeRule 管理、冻结的 Scheduler / Validator、Plan 持久化与 Candidate / Confirm API，以及 Weekly Plan 浏览器流程。Phase 7A 增加可选的自然语言 TimeRule proposal，其独立 review 修复和 gateway availability 限制仍见验收文档。Phase 7B 增加 deterministic Plan diff 与用户主动请求的可选解释，AI 失败保留 diff；真实模型措辞限制见 Phase 7B 验收文档。
 
 ## 技术与边界
 
@@ -8,7 +8,7 @@
 - 后端：Python、FastAPI、Pydantic、同步 SQLAlchemy、SQLite。使用 pytest 测试。
 - 单用户，无登录、微服务、Docker、异步数据库或 Alembic。
 - 核心流程：录入任务与课程/保护时间 → 生成 Candidate Plan → 预览 → 用户 Confirm → 替换该周 Confirmed Plan。
-- 新候选在 Confirm 前不能修改正式计划。AI 不能直接修改正式计划；它仅用于后续的自然语言限制解析和计划变化解释，输出必须经过 Pydantic 与程序校验。
+- 新候选在 Confirm 前不能修改正式计划。AI 不能直接修改正式计划；它仅用于可选的自然语言限制解析和计划变化解释，输出必须经过 Pydantic 与程序校验。
 - 排程与约束检查由程序完成；Scheduler 和 Validator 分开。无法排入全部任务时返回 `unschedulable`，不声称数学上无解。
 
 ## 冻结的数据模型（Phase 2 和 Phase 5 实现）
@@ -169,7 +169,60 @@ Task selection 只过滤 todo，不在前端重复 Scheduler 的 deadline/week �
 | Phase 4 | 确定性 Scheduler 与独立 Validator；用内存数据验证排序、冲突、deadline、`unschedulable`。 |
 | Phase 5 | Plan、PlanItem、PlanningState、Candidate/Confirm；候选不改正式计划，旧候选返回 409，事务安全。 |
 | Phase 6 | 周计划界面；无 AI 时完成录入、生成、预览、确认、加入突发任务、重新确认的完整流程。 |
-| Phase 7 | 自然语言限制解析与 AI 解释；校验和用户应用后才能保存限制，AI 失败不阻断 Phase 6。 |
+| Phase 7A | 自然语言 TimeRule proposal；严格校验、预览、用户编辑/Apply 后保存，AI 失败不阻断 Phase 6。 |
+| Phase 7B | 确定性 snapshot diff，用户主动请求可选解释；历史 baseline、stale 可解释、失败保留 diff、只读无 revision 变化。 |
 | Phase 8 | 错误处理、pytest 回归、README、演示与 GitHub 准备。 |
 
 Phase 2 使用已有的 SQLAlchemy `Base`、engine、Session 和 `get_db`，启动时用 `Base.metadata.create_all` 创建缺失的 `tasks`、`time_rules` 表。课程 MVP 不使用 Alembic；`create_all` 不会迁移已存在的表结构。HTTP 输入输出由 Pydantic schema 处理，路由直接使用 Session；API pytest 每例使用独立临时 SQLite 文件，不连接开发数据库。Phase 3 前端直接调用已冻结的 CRUD API，不新增业务表或计划接口。Phase 4 的服务与测试仅使用内存数据。
+
+## Phase 7A 当前实现
+
+```text
+Natural Language
+  → Anthropic Messages-compatible Gateway (/v1/messages, top-level system)
+  → text blocks / Raw JSON
+  → minimal outer fence normalization / json.loads
+  → strict AI Response Schema
+  → existing TimeRuleCreate deterministic validation
+  → Frontend Preview / editable TimeRuleForm
+  → User Apply
+  → existing TimeRule API
+  → database + PlanningState revision (same existing transaction)
+```
+
+`claude_client.py` 仅负责懒加载 backend `.env`/环境变量、Messages HTTP 请求、20 秒总 timeout 和 per-operation timeout、安全错误分类、提取 text blocks。它不导入 ORM、不获取 Session、不调 Scheduler，也没有写入能力。`temperature` 为兼容 gateway/model 未发送；没有重试或 tool calling。provider key 使用 `repr=False`，provider 异常内容、headers、prompt 和 raw response 均不记录或回传。
+
+`constraint_parser.py` 集中提供固定 UTC+08 的 `current_shanghai_date()`，路由 dependency 可注入日期。顶层 system 明确 parser 范围、English/Chinese、Monday=1、Shanghai 墙上时间、missing/ambiguous → clarification、out-of-scope → unsupported，以及 JSON only。省略年份的月日使用当前日期起的下一次出现；相对日期需要明确的日期上下文。LLM 对自然语言的语义理解仍需真实模型验证，自动测试仅检查上下文传递。
+
+`ai_schemas.py` 提供 strict / extra-forbid 的请求、八字段 `ParsedTimeRuleProposal` 和由 status 区分的三种结果。proposal 不含 `id/active/created_at/updated_at`，所有 nullable 字段也必须明确出现。日期/时间先要求 YYYY-MM-DD / HH:MM，再交给现有 `TimeRuleCreate` 验证真实日期/时钟、weekday、recurrence、course weekly、无跨午夜等组合。JSON 仅允许明确的最外层 fence；不猜测任意文本中的 JSON，拒绝重复 key 和非 JSON 常量，不执行模型内容。
+
+`constraints.py` 没有 `get_db` dependency 或任何 SQL。HTTP 200 的 `parsed/needs_clarification/unsupported` 都只是结果。配置缺失是 503 `AI_NOT_CONFIGURED`，HTTP/provider/network/timeout 是 503 `AI_UNAVAILABLE`，异常响应或验证失败是 502 `AI_RESPONSE_INVALID`。启动不读取必需 AI 配置；手动功能保持可用。
+
+`NaturalLanguageTimeRule.jsx` 独立管理 idle/parsing/parsed/needs_clarification/unsupported/error。同步 ref 和 disabled 防止重复 Parse/Apply；promise 完成后不更新已卸载组件。AI 区域错误局部显示；手动表单不受影响。编辑原文本清除旧 proposal；Discard 不发送写请求。成功 Apply 通过 `TimeRulesPage` 的 `createTimeRule()` 更新列表。`TimeRuleForm` 复用已有控件与字段清理，`timeRules.js` 提供 proposal 映射和共用 payload builder，默认创建行为决定 active=true。没有 AI Apply API 或特殊 stale 逻辑。
+
+本阶段不修改 Scheduler、Validator、Task/TimeRule DB schema、Plan/PlanItem、PlanningState semantics、Candidate/Confirm、Weekly Plan。没有聊天、任务创建、AI 排程、解释、RAG、Agent 或工具执行。验收结果和实际限制见 [Phase 7A verification](phase7a-verification.md)。
+
+## Phase 7B 当前实现
+
+```text
+Candidate saved snapshot + candidate.based_on_plan_id confirmed/superseded snapshot
+  → pure Python plan_diff (task IDs, saved start/end, stable ordering)
+  → structured diff
+  → explicit user Explain request
+  → shared Messages-compatible provider + independent explanation system prompt
+  → Changes + optional AI Explanation
+```
+
+`plan_diff.py` 不依赖 ORM、provider 或 Scheduler。仅比较 kind=task，以 task_id 建索引，忽略课程；时间先标准化为 UTC instant，同时比较 start/end，标题只用于显示。分类为 added、removed、moved、unchanged；removed 表示未纳入新 Candidate。各列表按相关 start instant 再按 task_id 排序，moved 使用 to_start。首次 Candidate 的 old snapshot 为 None，任务全部 added。重复/非法 task ID、naive 时间、非正区间、跨周比较被拒绝。diff 不包含原因、deadline、priority 或完整 Plan。
+
+`plan_explanations.py` 复用既有 Plan 读取和快照序列化，仅允许 candidate；baseline 允许 confirmed/superseded，完全按 based_on_plan_id 读取。stale 不妨碍解释，原有 Confirm 仍检查 revision。所有 DB 读取结束后 rollback 释放读事务，再 await provider。没有写事务、commit、revision bump、表迁移、排程调用或 explanation 保存。首次计划直接返回双语 deterministic 文案，避免付费调用。
+
+`plan_explanation.py` 使用独立 prompt，输入仅 structured diff，重用 claude_client/CLAUDE_*、600 max_tokens、20 秒总 timeout，不重试。prompt 区分历史 confirmed snapshot 与尚未正式确认的 Candidate；禁止 optimality、确认压力、任务删除措辞、隐藏原因、模型 metadata 与标题内指令。策略背景只用于约束模型，不用于推断每个变化。第一版输出仅描述可观察差异。文本非空、最多 3000 字符、无 fence，并保守拒绝明显最优性、因果连接词和排程策略外推；检测并不保证所有事实正确，含这些词的普通标题也可能造成安全降级。
+
+`PlanExplanation.jsx` 由 PlanPreview 按 Candidate ID key 挂载。`explanations.js` 管理每个候选的请求 session、同步 pending 防重复、卸载后的响应丢弃与四类 diff 显示映射。Explain 独立于 Generate/Confirm；不会阻塞新 Candidate 生成。换 Candidate、换周、成功 Confirm 卸载 session；stale 只更新 warning，保留已有 diff/解释。provider 失败仍返回 HTTP 200 diff，界面保留 Changes，并显示 unavailable；请求传输失败时保留此前 diff，允许用户手动再试。
+
+Phase 7B 当时的完整回归、隔离浏览器、真实 provider 输出和因果措辞拒绝证据见 [Phase 7B verification](phase7b-verification.md)。Phase 8 仅做最终稳定化、文档和 Demo 验收，不扩展业务范围；结果直接汇报，不新增报告文件。
+
+### Phase 7A + 7B 独立审核补充
+
+联合审核见 [ai-layer-review.md](ai-layer-review.md)。Provider origin 与 `/v1` base 规范化后使用同一 Messages endpoint；不改模型配置或 20 秒 deadline。解释文本新增显式确认压力/删除断言 guard。模型输入 timestamp 保持 UTC，prompt 与 AI 区都明确 UTC，Changes 仍独立转换为上海时间。Guard 是保守词法拦截而非事实证明；AI 依然只读、无工具或执行权限。
