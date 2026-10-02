@@ -26,7 +26,7 @@ ONCE_PROPOSAL = {**PROTECTED_PROPOSAL, "recurrence": "once", "weekday": None, "d
 
 @pytest.fixture
 def mock_parser(monkeypatch):
-    app.dependency_overrides[configured_claude] = lambda: ClaudeConfig("test-only-placeholder", "test-model")
+    app.dependency_overrides[configured_claude] = lambda: ClaudeConfig("test-only-placeholder", "test-model", "https://gateway.example")
     app.dependency_overrides[current_shanghai_date] = lambda: date(2026, 10, 1)
 
     def respond(body):
@@ -156,10 +156,11 @@ def test_apply_existing_endpoint_bumps_once_and_old_candidate_is_stale(client, t
     assert revision(test_engine) == before + 1
 
 
-@pytest.mark.parametrize("missing", ["CLAUDE_API_KEY", "CLAUDE_MODEL"])
+@pytest.mark.parametrize("missing", ["CLAUDE_API_KEY", "CLAUDE_MODEL", "CLAUDE_BASE_URL"])
 def test_missing_configuration_does_not_break_manual_mvp(client, test_engine, monkeypatch, missing):
-    other = "CLAUDE_MODEL" if missing == "CLAUDE_API_KEY" else "CLAUDE_API_KEY"
-    monkeypatch.setenv(other, "test-only-placeholder")
+    for name, value in {"CLAUDE_API_KEY": "mock-key", "CLAUDE_MODEL": "mock-model", "CLAUDE_BASE_URL": "https://gateway.example"}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv(missing)
     before = database_snapshot(test_engine)
     response = client.post("/api/constraints/parse", json={"text": "Example"})
     assert response.status_code == 503

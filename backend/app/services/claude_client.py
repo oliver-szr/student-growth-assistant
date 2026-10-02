@@ -33,7 +33,7 @@ class AIServiceError(Exception):
 class ClaudeConfig:
     api_key: str = field(repr=False)
     model: str
-    base_url: str = "https://newapi.iomgaa.online"
+    base_url: str
     api_version: str = "2023-06-01"
 
 
@@ -43,12 +43,13 @@ def get_claude_config() -> ClaudeConfig:
     load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
     key = os.getenv("CLAUDE_API_KEY", "").strip()
     model = os.getenv("CLAUDE_MODEL", "").strip()
-    if not key or not model:
+    base_url = os.getenv("CLAUDE_BASE_URL", "").strip()
+    if not key or not model or not base_url:
         raise AIServiceError("AI_NOT_CONFIGURED")
     return ClaudeConfig(
         api_key=key,
         model=model,
-        base_url=os.getenv("CLAUDE_BASE_URL", "").strip() or "https://newapi.iomgaa.online",
+        base_url=base_url,
         api_version=os.getenv("CLAUDE_API_VERSION", "").strip() or "2023-06-01",
     )
 

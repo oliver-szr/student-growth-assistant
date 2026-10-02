@@ -4,7 +4,7 @@
 
 这是面向大学生的个人任务与周计划助手。你可以管理 Tasks（任务）、Course（课程）和 Protected Time（保护时间），生成候选周计划，检查后确认，也可以在突发任务出现时重新规划。
 
-AI 是可选增强：帮助理解自然语言时间约束，以及把程序计算的计划变化写成简短说明。核心规划功能在未配置 AI 时仍然可用。本指南对应分钟精度改进版本；已发布的 `v1.0.0` 保持不变。
+AI 是可选增强：帮助理解自然语言时间约束，以及把程序计算的计划变化写成简短说明。核心规划功能在未配置 AI 时仍然可用。本指南覆盖 v1.1.x 的分钟级工作流；`v1.0.0` 为历史版本。
 
 ## 2. 系统启动
 
@@ -94,7 +94,7 @@ CLAUDE_API_VERSION=2023-06-01
 4. 查看右侧 **Candidate Plan**，检查任务、时间和课程。
 5. 满意后点击 **Confirm Candidate**。
 
-Generate 不会立即覆盖正式计划。只有 Confirm 成功，候选才成为左侧 **Current Confirmed Plan**。更换勾选的任务后，需要重新 Generate 才能 Confirm。首次计划显示 **First plan for this week**，没有旧计划可比较。
+Generate 不会立即覆盖正式计划。只有 Confirm 成功，候选才成为左侧 **Current Confirmed Plan**。更换勾选的任务后，需要恢复为生成该 Candidate 时的原任务选择，或重新 Generate，才能 Confirm。首次计划显示 **First plan for this week**，没有旧计划可比较。
 
 完整刷新浏览器会清空当前候选预览和勾选项；重新选择对应周即可加载已保存的正式计划。切换应用内页面会保留当前候选预览。
 

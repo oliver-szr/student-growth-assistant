@@ -141,6 +141,21 @@ def test_configuration_env_and_backend_local_dotenv(monkeypatch):
     assert calls[0][1] is False
 
 
+@pytest.mark.parametrize("missing", ["CLAUDE_API_KEY", "CLAUDE_MODEL", "CLAUDE_BASE_URL"])
+@pytest.mark.parametrize("value", [None, "  "])
+def test_configuration_requires_explicit_key_model_and_base_url(monkeypatch, missing, value):
+    for name, setting in {"CLAUDE_API_KEY": "mock-key", "CLAUDE_MODEL": "mock-model", "CLAUDE_BASE_URL": "https://gateway.example"}.items():
+        monkeypatch.setenv(name, setting)
+    if value is None:
+        monkeypatch.delenv(missing)
+    else:
+        monkeypatch.setenv(missing, value)
+    with pytest.raises(AIServiceError) as captured:
+        get_claude_config()
+    assert captured.value.code == "AI_NOT_CONFIGURED"
+    assert captured.value.status_code == 503
+
+
 def test_current_date_context_and_fixed_shanghai_midnight(monkeypatch):
     class FixedDatetime:
         @staticmethod

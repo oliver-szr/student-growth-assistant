@@ -26,7 +26,7 @@ def db_snapshot(engine):
 @pytest.fixture
 def provider(monkeypatch):
     calls = []
-    monkeypatch.setattr(service, "get_claude_config", lambda: ClaudeConfig("mock-key", "mock-model"))
+    monkeypatch.setattr(service, "get_claude_config", lambda: ClaudeConfig("mock-key", "mock-model", "https://gateway.example"))
 
     async def request(text, system, config):
         calls.append((json.loads(text), system))
@@ -122,10 +122,18 @@ def test_provider_failures_retain_diff_and_database(client, test_engine, monkeyp
     assert db_snapshot(test_engine) == before
 
 
-def test_missing_configuration_is_optional(client):
+@pytest.mark.parametrize("missing", ["CLAUDE_API_KEY", "CLAUDE_MODEL", "CLAUDE_BASE_URL"])
+def test_missing_configuration_is_optional(client, test_engine, monkeypatch, missing):
+    for name, value in {"CLAUDE_API_KEY": "mock-key", "CLAUDE_MODEL": "mock-model", "CLAUDE_BASE_URL": "https://gateway.example"}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv(missing)
     _, _, new = pair(client)
+    before = db_snapshot(test_engine)
     response = client.post(f"/api/plans/{new['id']}/explanation")
     assert response.status_code == 200 and response.json()["explanation_status"] == "unavailable"
+    assert response.json()["explanation"] is None
+    assert response.json()["diff"]["summary"]["unchanged_count"] == 1
+    assert db_snapshot(test_engine) == before
 
 
 @pytest.mark.parametrize("failure", ["timeout", "503", "invalid"])
@@ -222,7 +230,7 @@ def test_prompt_and_exact_structured_input_are_separate_from_parser():
 
 
 def test_text_extraction_uses_existing_client_and_no_metadata(monkeypatch):
-    monkeypatch.setattr(service, "get_claude_config", lambda: ClaudeConfig("mock", "mock-model"))
+    monkeypatch.setattr(service, "get_claude_config", lambda: ClaudeConfig("mock", "mock-model", "https://gateway.example"))
     async def request(*args):
         return extract_text({"model": "metadata-model", "usage": {"input_tokens": 10},
                              "content": [{"type": "text", "text": " Task moved. "}]})
