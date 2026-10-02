@@ -94,7 +94,7 @@ CLAUDE_API_VERSION=2023-06-01
 4. 查看右侧 **Candidate Plan**，检查任务、时间和课程。
 5. 满意后点击 **Confirm Candidate**。
 
-Generate 不会立即覆盖正式计划。只有 Confirm 成功，候选才成为左侧 **Current Confirmed Plan**。勾选任务与当前候选不一致时，需恢复原选择或重新 Generate 才能 Confirm。首次计划显示 **First plan for this week**，没有旧计划可比较。
+Generate 不会立即覆盖正式计划。只有 Confirm 成功，候选才成为左侧 **Current Confirmed Plan**。更换勾选的任务后，需要重新 Generate 才能 Confirm。首次计划显示 **First plan for this week**，没有旧计划可比较。
 
 完整刷新浏览器会清空当前候选预览和勾选项；重新选择对应周即可加载已保存的正式计划。切换应用内页面会保留当前候选预览。
 
@@ -140,7 +140,7 @@ Generate 不会立即覆盖正式计划。只有 Confirm 成功，候选才成�
 
 ## 13. 完整 Demo 示例
 
-先按 [README 的隔离 Demo 数据库说明](../README.md#isolated-demo-database)启动空数据演示环境，不要清空日常数据。以下采用 **2026-10-05** 所在周，所有时间均为上海时间；以后演示可换成未来周，并同步替换本节所有 deadline 的日期：
+在独立、没有其他任务或规则的演示环境中操作；不要清空日常数据来演示。以下采用 **2026-10-05** 所在周，所有时间均为上海时间：
 
 1. 创建 **Task A：17 分钟**、**Task B：43 分钟**，两者 priority 为 Normal，deadline 为 **2026-10-05 12:00**。先创建 A，再创建 B。
 2. 创建每周一 **Course：09:07–10:23**，以及每周一 **Protected Time：13:11–13:46**。
@@ -156,7 +156,7 @@ Generate 不会立即覆盖正式计划。只有 Confirm 成功，候选才成�
 ## 14. 当前 MVP 限制
 
 - 仅单用户，无登录或多用户隔离。
-- 使用 greedy，不回溯，不保证最优，也不保证找到所有可能安排。
+- 使用 greedy，不回溯，不保证找到所有可能安排，不搜索最优解。
 - 不拆分任务；任务需在同一天连续完成。
 - 没有 Plan History 页面，刷新后不自动恢复候选预览。
 - 不按当前时间冻结已执行或已开始的任务块。
