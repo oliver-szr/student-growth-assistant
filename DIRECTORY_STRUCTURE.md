@@ -1,6 +1,6 @@
 # 项目目录结构与文件说明
 
-当前进行 Phase 8 最终稳定化与交付准备，功能冻结为 Phase 1–7。SQLite FK、Scheduler / Validator、Candidate / Confirm 与 AI 边界保持不变。旧阶段验收保留历史证据；联合审核见 docs/ai-layer-review.md。Phase 8 不新增业务源码、依赖、API 或报告文件。
+正式 `main` 已发布 `v1.0.0`。本分支在 Phase 1–7 功能上支持正整数分钟时长和 1 分钟起点网格，保留 greedy 策略、独立 Validator、SQLite FK、Candidate / Confirm 与 AI 权限边界。中文操作指南见 `docs/USER_GUIDE_ZH.md`。旧阶段验收保留历史证据；Phase 7A/7B 联合审核见 `docs/ai-layer-review.md`。
 
 ```text
 student-growth-assistant/
@@ -168,6 +168,6 @@ student-growth-assistant/
 | `docs/phase7b-verification.md` | 23 项交付说明、376/45 测试、浏览器、smoke、只读与限制证据。 |
 | `docs/ai-layer-review.md` | 联合独立审核、395/46 回归、最小修复和有界真实 provider smoke；旧阶段记录保留。 |
 
-运行和测试时还会生成 `__pycache__/`、`.pytest_cache/`、`.pytest_tmp/`、`backend/data/app.db`、`frontend/node_modules/` 和 `frontend/dist/`，均不属于源码，继续由 Git 忽略。pytest 和浏览器联调使用隔离 SQLite，不连接开发 app.db。当前 backend 395 个测试、frontend 46 个测试通过，production build 成功；Phase 7B 没有增加依赖。Phase 7A 只增加 python-dotenv，复用已有 httpx，没有 AI framework。此前 Phase 6 的 frontend 19 为历史快照，7A 为 38。
+运行和测试时还会生成 `__pycache__/`、`.pytest_cache/`、`.pytest_tmp/`、`backend/data/app.db`、`frontend/node_modules/` 和 `frontend/dist/`，均不属于源码，继续由 Git 忽略。pytest 和浏览器联调使用隔离 SQLite，不连接开发 app.db。分钟级改进的最近回归为 backend 405 passed、frontend 47 passed，production build 成功，未增加依赖。Phase 7A 只增加 python-dotenv，复用已有 httpx；Phase 7B 没有增加依赖或 AI framework。此前 Phase 6 的 frontend 19 和 Phase 7A 的 38 均为历史快照。
 
-最新独立审核与小修复、真实 provider 和权限边界结论见 `docs/ai-layer-review.md`；旧 verification 文档保留其当时的测试计数和历史证据。
+Phase 7A/7B 联合独立审核、真实 provider 和权限边界的历史结论见 `docs/ai-layer-review.md`；旧 verification 文档保留其当时的测试计数和历史证据。
