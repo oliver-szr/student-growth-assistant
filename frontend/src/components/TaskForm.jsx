@@ -35,8 +35,8 @@ export default function TaskForm({ task, pending, disabled = false, onSubmit, on
         <label className="span-two">Description <span className="optional">optional</span>
           <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows="2" disabled={pending || disabled} />
         </label>
-        <label>Duration (minutes)
-          <input type="number" min="30" step="30" value={duration} onChange={(event) => setDuration(event.target.value)} required disabled={pending || disabled} />
+        <label>Duration (whole minutes, minimum 1)
+          <input type="number" min="1" step="1" value={duration} onChange={(event) => setDuration(event.target.value)} required disabled={pending || disabled} />
         </label>
         <label>Deadline (Shanghai time)
           <input type="datetime-local" value={deadline} onChange={(event) => setDeadline(event.target.value)} required disabled={pending || disabled} />

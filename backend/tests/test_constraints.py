@@ -42,7 +42,8 @@ def mock_parser(monkeypatch):
         app.dependency_overrides.pop(current_shanghai_date, None)
 
 
-@pytest.mark.parametrize("proposal", [COURSE_PROPOSAL, PROTECTED_PROPOSAL, ONCE_PROPOSAL])
+@pytest.mark.parametrize("proposal", [COURSE_PROPOSAL, PROTECTED_PROPOSAL, ONCE_PROPOSAL,
+                                      {**PROTECTED_PROPOSAL, "start_time": "14:07", "end_time": "15:23"}])
 def test_valid_proposal(client, mock_parser, proposal):
     mock_parser({"status": "parsed", "proposal": proposal})
     response = client.post("/api/constraints/parse", json={"text": "A time rule description"})

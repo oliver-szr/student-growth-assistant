@@ -94,7 +94,7 @@ def test_get_and_rejected_crud_do_not_bump(client, test_engine):
     assert revision(test_engine) == 2
     for path in ("/api/health", "/api/tasks", "/api/tasks?status=todo", "/api/time-rules"):
         assert client.get(path).status_code == 200
-    assert client.post("/api/tasks", json={**TASK, "duration_minutes": 45}).status_code == 422
+    assert client.post("/api/tasks", json={**TASK, "duration_minutes": 45.5}).status_code == 422
     assert client.post("/api/time-rules", json={**COURSE, "weekday": 8}).status_code == 422
     assert client.patch(f"/api/tasks/{task_id}", json={"deadline": None}).status_code == 422
     assert client.patch(f"/api/time-rules/{rule_id}", json={"start_time": "13:00"}).status_code == 422

@@ -53,8 +53,8 @@ def _validate_selected_tasks(selected_tasks: Sequence[TaskInput]) -> None:
             raise SchedulingInputError("INVALID_TASKS", f"Task {task.id} must be todo.")
         if task.priority not in ("high", "normal", "low"):
             raise SchedulingInputError("INVALID_TASKS", f"Task {task.id} has an invalid priority.")
-        if type(task.duration_minutes) is not int or task.duration_minutes <= 0 or task.duration_minutes % 30:
-            raise SchedulingInputError("INVALID_TASKS", f"Task {task.id} duration must be a positive multiple of 30.")
+        if type(task.duration_minutes) is not int or task.duration_minutes <= 0:
+            raise SchedulingInputError("INVALID_TASKS", f"Task {task.id} duration must be a positive integer number of minutes.")
         if not _is_aware(task.deadline):
             raise SchedulingInputError("INVALID_TASKS", f"Task {task.id} deadline must be an aware datetime.")
         try:
@@ -179,8 +179,8 @@ def validate_schedule(
             violations.append(Violation("OUTSIDE_WEEK", "Assignment must be inside the selected Shanghai week.", (task_id,)))
         if start.date() != end.date() or start.time() < time(8) or end.time() > time(22):
             violations.append(Violation("OUTSIDE_WORKING_HOURS", "Assignment must fit on one day within 08:00-22:00.", (task_id,)))
-        if start.minute % 30 or start.second or start.microsecond:
-            violations.append(Violation("OFF_GRID", "Task start must be on the local 30-minute grid.", (task_id,)))
+        if start.second or start.microsecond:
+            violations.append(Violation("OFF_GRID", "Task start must be on the local 1-minute grid.", (task_id,)))
         for rule in rules:
             if start < rule.end_at and rule.start_at < end:
                 code = "TASK_COURSE_OVERLAP" if rule.kind == "course" else "TASK_PROTECTED_OVERLAP"

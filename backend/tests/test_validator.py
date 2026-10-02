@@ -36,7 +36,8 @@ def codes(result) -> set[str]:
 
 
 def test_valid_manual_assignment() -> None:
-    result = validate_schedule(WEEK, [task()], [], [assignment()])
+    item = assignment(start_at=at(hour=9, minute=7), end_at=at(hour=9, minute=24))
+    result = validate_schedule(WEEK, [task(duration_minutes=17)], [], [item])
     assert result.valid
     assert result.violations == ()
 
@@ -87,8 +88,7 @@ def test_working_hours_and_cross_day(start, end) -> None:
 
 
 @pytest.mark.parametrize("start,end", [
-    (at(hour=8, minute=10), at(hour=8, minute=40)),
-    (at(hour=8, minute=45), at(hour=9, minute=15)),
+    (at(hour=9, minute=7, second=30), at(hour=9, minute=37, second=30)),
     (at(second=1), at(hour=8, minute=30, second=1)),
     (at(microsecond=1), at(hour=8, minute=30, microsecond=1)),
 ])
@@ -106,7 +106,9 @@ def test_task_task_overlap() -> None:
 
 
 def test_task_course_overlap() -> None:
-    assert "TASK_COURSE_OVERLAP" in codes(validate_schedule(WEEK, [task()], [rule()], [assignment()]))
+    item = assignment(start_at=at(hour=9, minute=6), end_at=at(hour=9, minute=8))
+    course = rule(start_time=time(9, 7), end_time=time(9, 23))
+    assert "TASK_COURSE_OVERLAP" in codes(validate_schedule(WEEK, [task(duration_minutes=2)], [course], [item]))
 
 
 @pytest.mark.parametrize("recurrence", ["weekly", "once"])
@@ -122,9 +124,20 @@ def test_adjacent_tasks_are_valid_half_open_intervals() -> None:
 
 
 def test_task_can_touch_course_and_protected_boundaries() -> None:
-    rules = [rule(1, end_time=time(8, 30)), rule(2, kind="protected", start_time=time(9), end_time=time(10))]
-    item = assignment(start_at=at(hour=8, minute=30), end_at=at(hour=9))
-    assert validate_schedule(WEEK, [task()], rules, [item]).valid
+    rules = [rule(1, start_time=time(9, 7), end_time=time(9, 23)),
+             rule(2, kind="protected", start_time=time(9, 40), end_time=time(10))]
+    item = assignment(start_at=at(hour=9, minute=23), end_at=at(hour=9, minute=40))
+    assert validate_schedule(WEEK, [task(duration_minutes=17)], rules, [item]).valid
+
+
+@pytest.mark.parametrize("minute,valid", [(43, True), (44, False)])
+def test_seventeen_minutes_must_finish_by_2200(minute, valid) -> None:
+    start = at(hour=21, minute=minute)
+    item = assignment(start_at=start, end_at=at(hour=22, minute=minute - 43))
+    result = validate_schedule(WEEK, [task(duration_minutes=17, deadline=at(hour=22))], [], [item])
+    assert result.valid is valid
+    if not valid:
+        assert {"OUTSIDE_WORKING_HOURS", "DEADLINE_VIOLATION"} <= codes(result)
 
 
 @pytest.mark.parametrize("changes", [

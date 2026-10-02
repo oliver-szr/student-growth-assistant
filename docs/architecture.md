@@ -15,7 +15,7 @@
 
 | 表 | 字段与规则 |
 |---|---|
-| Task | `id`、`title`、可选 `description`、`duration_minutes`、`deadline`、`priority`（`low/normal/high`）、`status`（`todo/done/cancelled`）、`created_at`、`updated_at`。时长为 30 分钟的正整数倍；只有 `todo` 可参与新排程；取消而不硬删除。突发任务也是 Task。 |
+| Task | `id`、`title`、可选 `description`、`duration_minutes`、`deadline`、`priority`（`low/normal/high`）、`status`（`todo/done/cancelled`）、`created_at`、`updated_at`。时长为正整数分钟，最小 1 分钟；只有 `todo` 可参与新排程；取消而不硬删除。突发任务也是 Task。 |
 | TimeRule | `id`、`kind`（`course/protected`）、`title`、`recurrence`（`weekly/once`）、`weekday`、`date`、`start_time`、`end_time`、`active`、时间戳。`weekly` 只用 `weekday`，`once` 只用 `date`；`start_time < end_time`，不跨午夜；停用而不硬删除。没有 Course 表。 |
 | Plan | `id`、`week_start`、`status`（`candidate/confirmed/superseded`）、可空 `based_on_plan_id`、`source_revision`、JSON `task_ids`、`created_at`、可空 `confirmed_at`。第一版不存完整 `input_snapshot`。 |
 | PlanItem | `id`、`plan_id`、`kind`（`task/course`）、可空 `task_id`、可空 `time_rule_id`、`title_snapshot`、`start_at`、`end_at`。保护时间参与计算和校验，不存为 PlanItem。 |
@@ -27,7 +27,7 @@
 
 - 时区固定为 `Asia/Shanghai`；用户指定从周一到下周一的完整周。Task deadline 的 API 输入必须带时区偏移，API 输出统一为 UTC。SQLite 以不含偏移的 UTC 钟面值保存日期时间；SQLAlchemy 读回时恢复为带 UTC 时区的 Python `datetime`，供后续代码安全比较。TimeRule 日期与钟面时间按上海本地时间理解。
 - 用户明确选择本周的 `todo` 任务；不自动选择全部待办。
-- 每天可用时间为 08:00–22:00，按 30 分钟网格尝试起点。任务必须连续完成，不拆分。
+- 每天可用时间为 08:00–22:00，按 1 分钟网格尝试起点，second / microsecond 均为 0。任务必须连续完成，不拆分。
 - 时间区间采用 `[start, end)`。课程与保护时间先占用时间；保护时间禁止安排灵活任务，但与课程重叠不代表课程取消。
 - 任务按 deadline 升序、同 deadline 的 priority 从高到低、再按 task ID 升序排序。依次寻找截止时间前最早的连续合法时段；不回溯、不移动已排任务。
 - 全部排入后由独立 Validator 检查任务恰好出现一次、时长、deadline、周范围、时间窗口、网格、相互冲突以及课程和保护时间。校验失败是实现错误，不能保存候选。
@@ -46,7 +46,7 @@ validate_schedule(week_start, selected_tasks, time_rules, assignments) -> Valida
 ```
 
 - `week_start`：Python `date`，必须是 Monday，且完整七天可被 datetime 表示。
-- `selected_tasks`：显式给出的 `TaskInput` 序列，字段为 `id, title, duration_minutes, deadline, priority, status`；只接受 `todo`，ID 唯一，时长为正的 30 分钟倍数，deadline 必须 aware。不会自动选择其他任务。
+- `selected_tasks`：显式给出的 `TaskInput` 序列，字段为 `id, title, duration_minutes, deadline, priority, status`；只接受 `todo`，ID 唯一，时长为正整数分钟，deadline 必须 aware。不会自动选择其他任务。
 - `time_rules`：`TimeRuleInput` 序列，字段为 `id, kind, title, recurrence, start_time, end_time, weekday, date, active`。日期与钟面时间为纯 Python `date` / 无 offset 的 `time`。
 - 成功：`ScheduleResult(status="feasible", assignments=(Assignment(...), ...), unscheduled_tasks=())`。Assignment 含 `task_id, title, start_at, end_at`；顺序为任务尝试顺序，时间均为 aware +08:00。
 - 未完成：`ScheduleResult(status="unschedulable", assignments=(), unscheduled_tasks=(UnscheduledTask(...), ...))`。每项含 `task_id, reason_code="NO_SLOT_FOUND", message`；不返回部分安排。
@@ -57,9 +57,9 @@ validate_schedule(week_start, selected_tasks, time_rules, assignments) -> Valida
 
 排序为 `deadline → priority(high > normal > low) → task id`。deadline 先转换为固定 UTC+08:00 比较，因此不同 offset 表示的同一 instant 会正确进入后续 tie-break。
 
-排程采用 **deterministic earliest-slot heuristic**：对每个任务，从 Monday 开始，依次检查七天中每天 08:00、08:30、…、21:30，共最多 196 个候选起点。只有整个连续区间能在当天 08:00–22:00 内完成、不晚于 deadline、不占用课程 / 保护时间 / 已安排任务时才放置。任务可恰好在 22:00 或 deadline 结束。超过 14 小时的任务直接报告找不到时段，不拆分，也避免构造超范围 timedelta。失败后仍检查剩余任务以收集全部失败项；任何失败使整体结果不完整。
+排程采用 **deterministic earliest-slot heuristic**：对每个任务，从 Monday 开始，依次检查七天中每天 08:00、08:01、…、21:59，共最多 5880 个候选起点。Assignment 起止时间的 second / microsecond 均为 0。只有整个连续区间能在当天 08:00–22:00 内完成、不晚于 deadline、不占用课程 / 保护时间 / 已安排任务时才放置。任务可恰好在 22:00 或 deadline 结束。超过 14 小时的任务直接报告找不到时段，不拆分，也避免构造超范围 timedelta。失败后仍检查剩余任务以收集全部失败项；任何失败使整体结果不完整。
 
-内部统一使用标准库 `timezone(timedelta(hours=8), name="Asia/Shanghai")` 的固定 aware 时区，不依赖电脑本地时区、pytz 或系统 zoneinfo 数据。weekly 规则先用上海日期和 weekday 找到 occurrence，再组合本地 start_time / end_time。once 仅在本周 `[Monday, next Monday)` 内生效。inactive 规则不占位；所有输入规则仍须结构合法。规则时刻不要求位于 30 分钟网格，排程器不会把课程或保护时间边界取整。
+内部统一使用标准库 `timezone(timedelta(hours=8), name="Asia/Shanghai")` 的固定 aware 时区，不依赖电脑本地时区、pytz 或系统 zoneinfo 数据。weekly 规则先用上海日期和 weekday 找到 occurrence，再组合本地 start_time / end_time。once 仅在本周 `[Monday, next Monday)` 内生效。inactive 规则不占位；所有输入规则仍须结构合法。规则边界不会被取整；兼容已有含秒的 TimeRule 时，Scheduler 从边界之后首个合法整分钟开始尝试，不在秒级起点排程。
 
 active course-course 的半开区间重叠属于 `INVALID_TIME_RULES`，即使未选择任务也会拒绝。course-protected、protected-protected 重叠允许存在；它们共同阻止任务占用该时间。课程本身可以位于任务工作窗口外。本阶段结果只包含 task assignments，不输出 course block；课程仍从原始 TimeRule 展开为约束。
 

@@ -11,6 +11,7 @@ student-growth-assistant/
 ├── docs/
 │   ├── architecture.md
 │   ├── api-contract.md
+│   ├── USER_GUIDE_ZH.md
 │   ├── ai-layer-review.md
 │   ├── phase7a-verification.md
 │   ├── phase7b-verification.md
@@ -107,6 +108,7 @@ student-growth-assistant/
 | `.gitattributes` | 固定自身及源码、文档等文本文件的 LF 行尾。 |
 | `docs/architecture.md` | 冻结架构、Phase 1–7 实现与 AI proposal/解释的只读边界。 |
 | `docs/api-contract.md` | health、Task、TimeRule、Plan、parse 和 explanation 的请求、响应和错误契约。 |
+| `docs/USER_GUIDE_ZH.md` | 面向普通用户和课程演示者的中文指南，包含启动、分钟级任务/时间规则、确认、重规划、可选 AI 和完整演示。 |
 | `docs/phase3-verification.md` | Phase 3 文件清单、浏览器联调证据、测试结果与限制。 |
 | `backend/app/main.py` | FastAPI 应用、health、开发环境 CORS、全部路由注册、启动时创建缺失表并初始化 singleton。 |
 | `backend/app/database.py` | production engine、共享 `create_sqlite_engine`、Session 工厂、Base 和 `get_db`；每连接 connect event 开启 SQLite FK。 |

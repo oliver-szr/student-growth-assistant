@@ -120,6 +120,8 @@ Automated pytest and Node tests use mocked AI/HTTP and never call a paid provide
 
 ## In-memory scheduling (Phase 4)
 
+The local minute-granularity improvement accepts any positive integer Task duration and tries starts every minute from 08:00 through 21:59. Assignments have zero seconds and microseconds and must finish by 22:00 and the deadline. The released `v1.0.0` tag remains unchanged. See the [Chinese user guide](docs/USER_GUIDE_ZH.md) for the minute-level workflow.
+
 `backend/app/services/scheduler.py` exposes `schedule_week(week_start, selected_tasks, time_rules)`. Inputs use the small frozen dataclasses in `scheduling_types.py`; `week_start` is a Monday date, deadlines are timezone-aware, and TimeRule clock times describe local Shanghai time. The scheduler returns either complete task assignments or `unschedulable` with reasons and no partial assignments. It validates a successful result using `validator.py` before returning it.
 
 The heuristic sorts by deadline, priority, and task ID, then chooses each task's earliest continuous slot. It does not backtrack or split tasks, and `unschedulable` does not prove that no legal schedule exists. See [Phase 4 implementation](docs/architecture.md#phase-4-当前实现) for the Python interface, checks, and limitations.
