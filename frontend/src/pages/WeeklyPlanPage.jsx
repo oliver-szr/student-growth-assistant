@@ -3,6 +3,7 @@ import { confirmPlan, createCandidatePlan, getConfirmedPlan, getTasks } from '..
 import { currentShanghaiMonday, displayDeadline, mondayOfDate } from '../datetime.js'
 import { sameTaskSelection } from '../planning.js'
 import PlanPreview from '../components/PlanPreview.jsx'
+import { PRIORITY_LABELS } from '../localization.js'
 
 export default function WeeklyPlanPage({ active }) {
   const [weekStart, setWeekStart] = useState(currentShanghaiMonday)
@@ -66,7 +67,7 @@ export default function WeeklyPlanPage({ active }) {
     let next = ''
     try {
       if (value) next = mondayOfDate(value)
-      setWeekError(next ? '' : 'Choose a week date.')
+      setWeekError(next ? '' : '请选择周日期。')
     } catch (error) {
       setWeekError(error.message)
     }
@@ -91,9 +92,9 @@ export default function WeeklyPlanPage({ active }) {
   async function generate(event) {
     event.preventDefault()
     if (operationPending.current) return
-    if (!weekStart) { setWeekError('Choose a week date.'); return }
+    if (!weekStart) { setWeekError('请选择周日期。'); return }
     if (selectedTaskIds.length === 0) {
-      setGenerationError({ message: 'Select at least one task.' })
+      setGenerationError({ message: '请至少选择一个任务。' })
       return
     }
     operationPending.current = true
@@ -127,13 +128,13 @@ export default function WeeklyPlanPage({ active }) {
       setOutdated(false)
       setConfirmBlocked(false)
       setGenerationError(null)
-      setNotice(`Plan #${confirmed.id} confirmed.`)
+      setNotice(`计划 #${confirmed.id} 已确认为正式计划。`)
       // Reload official state; a failed reload retains the successful POST response.
       setRefreshVersion((version) => version + 1)
     } catch (error) {
       if (error.code === 'STALE_CANDIDATE') {
         setOutdated(true)
-        setConfirmError('STALE_CANDIDATE: This candidate is outdated because tasks, time rules, or confirmed plans changed. Generate a new candidate before confirming.')
+        setConfirmError('候选计划已过期：任务、时间规则或正式计划发生了变化。请重新生成后再确认。')
       } else {
         if (error.code === 'PLAN_NOT_CANDIDATE') setConfirmBlocked(true)
         setConfirmError(error.message)
@@ -150,42 +151,42 @@ export default function WeeklyPlanPage({ active }) {
   return (
     <section aria-labelledby="weekly-plan-heading">
       <div className="section-heading">
-        <div><p className="eyebrow">Plan and review</p><h2 id="weekly-plan-heading">Weekly Plan</h2></div>
-        <button className="button subtle" type="button" disabled={!canReload} onClick={() => setRefreshVersion((version) => version + 1)}>Reload tasks &amp; confirmed plan</button>
+        <div><p className="eyebrow">安排与确认</p><h2 id="weekly-plan-heading">周计划</h2></div>
+        <button className="button subtle" type="button" disabled={!canReload} onClick={() => setRefreshVersion((version) => version + 1)}>重新加载任务和正式计划</button>
       </div>
       <form className="panel" onSubmit={generate}>
-        <label className="week-selector">Week date
+        <label className="week-selector">选择周日期
           <input type="date" value={weekStart} required disabled={busy} onChange={(event) => changeWeek(event.target.value)} />
         </label>
-        <p className="helper">Any date selects its Monday. Times are shown in Shanghai (UTC+08:00).</p>
-        {weekStart && <h3>Week of {weekStart}</h3>}
+        <p className="helper">选择任意日期，将切换到该周的周一。所有时间按北京时间显示。</p>
+        {weekStart && <h3>本周起始日：{weekStart}</h3>}
         {weekError && <p className="error-box" role="alert">{weekError}</p>}
-        <h3>Tasks to schedule</h3>
-        {tasksLoading && <p role="status">Loading tasks...</p>}
-        {tasksError && <div className="error-box" role="alert">Could not load tasks. {tasksError} <button className="button subtle" type="button" disabled={!canReload} onClick={() => setRefreshVersion((version) => version + 1)}>Retry</button></div>}
-        {!tasksLoading && !tasksError && todoTasks.length === 0 && <p className="helper">No todo tasks. Add a task in Tasks to start planning.</p>}
+        <h3>选择要安排的任务</h3>
+        {tasksLoading && <p role="status">正在加载任务…</p>}
+        {tasksError && <div className="error-box" role="alert">无法加载任务。 {tasksError} <button className="button subtle" type="button" disabled={!canReload} onClick={() => setRefreshVersion((version) => version + 1)}>重试</button></div>}
+        {!tasksLoading && !tasksError && todoTasks.length === 0 && <p className="helper">没有待完成任务，请先在“任务”页面添加。</p>}
         <div className="task-selection">
           {todoTasks.map((task) => (
             <label className="task-option" key={task.id}>
               <input type="checkbox" checked={selectedTaskIds.includes(task.id)} disabled={busy || tasksLoading || Boolean(tasksError)} onChange={(event) => selectTask(task.id, event.target.checked)} />
-              <span><strong>{task.title}</strong><span className="helper">{task.duration_minutes} min · {displayDeadline(task.deadline)} (Shanghai) · {task.priority} priority</span></span>
+              <span><strong>{task.title}</strong><span className="helper">{task.duration_minutes} 分钟 · {displayDeadline(task.deadline)} （北京时间） · 优先级：{PRIORITY_LABELS[task.priority]}</span></span>
             </label>
           ))}
         </div>
-        <div className="button-row"><button className="button primary" type="submit" disabled={busy || tasksLoading || Boolean(tasksError) || !weekStart}>{generating ? 'Generating candidate...' : 'Generate Candidate'}</button></div>
+        <div className="button-row"><button className="button primary" type="submit" disabled={busy || tasksLoading || Boolean(tasksError) || !weekStart}>{generating ? '正在生成候选计划…' : '生成候选计划'}</button></div>
       </form>
       {generationError && <div className="error-box" role="alert">
-        <p>{generationError.code === 'UNSCHEDULABLE' ? 'UNSCHEDULABLE: Could not generate a complete plan under the current scheduling rules.' : generationError.message}</p>
-        {unscheduledTasks?.length > 0 && <ul>{unscheduledTasks.map((item) => <li key={item.task_id}><strong>{tasks.find((task) => task.id === item.task_id)?.title || `Task #${item.task_id}`}</strong> (Task #{item.task_id}): {item.message || item.reason_code}</li>)}</ul>}
+        <p>{generationError.code === 'UNSCHEDULABLE' ? '当前排程规则未找到完整方案。请减少任务或调整截止时间、保留时间后重试。' : generationError.message}</p>
+        {unscheduledTasks?.length > 0 && <ul>{unscheduledTasks.map((item) => <li key={item.task_id}><strong>{tasks.find((task) => task.id === item.task_id)?.title || `任务 #${item.task_id}`}</strong> （任务 #{item.task_id}）：未找到截止前的连续可用时段。</li>)}</ul>}
       </div>}
       {confirmError && <p className="error-box" role="alert">{confirmError}</p>}
       {notice && <p className="success-box" role="status">{notice}</p>}
-      {generating && <p role="status">Generating candidate...</p>}
-      {confirming && <p role="status">Confirming candidate...</p>}
-      {confirmedLoading && <p role="status">Loading confirmed plan...</p>}
-      {confirmedError && <div className="error-box" role="alert">Could not load confirmed plan. {confirmedError} <button className="button subtle" type="button" disabled={!canReload} onClick={() => setRefreshVersion((version) => version + 1)}>Retry</button></div>}
+      {generating && <p role="status">正在生成候选计划…</p>}
+      {confirming && <p role="status">正在确认候选计划…</p>}
+      {confirmedLoading && <p role="status">正在加载正式计划…</p>}
+      {confirmedError && <div className="error-box" role="alert">无法加载正式计划。 {confirmedError} <button className="button subtle" type="button" disabled={!canReload} onClick={() => setRefreshVersion((version) => version + 1)}>重试</button></div>}
       <div className="plan-columns">
-        <PlanPreview plan={confirmedPlan} emptyText={!weekStart ? 'Choose a week date.' : confirmedLoading ? 'Loading confirmed plan...' : confirmedError ? 'Confirmed plan could not be loaded. Retry above.' : 'No confirmed plan for this week.'} />
+        <PlanPreview plan={confirmedPlan} emptyText={!weekStart ? '请选择周日期。' : confirmedLoading ? '正在加载正式计划…' : confirmedError ? '正式计划加载失败，请点击上方“重试”。' : '本周还没有正式计划。'} />
         <PlanPreview plan={candidatePlan} candidate outdated={outdated} blocked={confirmBlocked} selectionChanged={selectionChanged} busy={busy || confirmedLoading} onConfirm={confirm} />
       </div>
     </section>

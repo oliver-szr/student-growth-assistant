@@ -11,3 +11,7 @@ frontend/dist/
 frontend/.env
 .vscode/
 .idea/
+.pip-cache/
+**/.npm-cache/
+codex/.runtime/
+codex/evidence/

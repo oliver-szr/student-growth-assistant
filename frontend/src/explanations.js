@@ -4,10 +4,10 @@ const interval = (start, end) => `${displayDeadline(start)} → ${displayDeadlin
 
 export function diffGroups(diff) {
   return [
-    { key: 'added', label: 'Added', items: diff.added.map((item) => ({ ...item, description: interval(item.start_at, item.end_at) })) },
-    { key: 'moved', label: 'Moved', items: diff.moved.map((item) => ({ ...item, description: `From ${interval(item.from_start, item.from_end)} to ${interval(item.to_start, item.to_end)}` })) },
-    { key: 'removed', label: 'Not included in candidate', items: diff.removed.map((item) => ({ ...item, description: `Baseline: ${interval(item.start_at, item.end_at)}` })) },
-    { key: 'unchanged', label: 'Unchanged', items: diff.unchanged.map((item) => ({ ...item, description: interval(item.start_at, item.end_at) })) },
+    { key: 'added', label: '新增', items: diff.added.map((item) => ({ ...item, description: interval(item.start_at, item.end_at) })) },
+    { key: 'moved', label: '时间调整', items: diff.moved.map((item) => ({ ...item, description: `原安排：${interval(item.from_start, item.from_end)}；新安排：${interval(item.to_start, item.to_end)}` })) },
+    { key: 'removed', label: '未纳入候选计划', items: diff.removed.map((item) => ({ ...item, description: `原安排：${interval(item.start_at, item.end_at)}` })) },
+    { key: 'unchanged', label: '未变化', items: diff.unchanged.map((item) => ({ ...item, description: interval(item.start_at, item.end_at) })) },
   ]
 }
 

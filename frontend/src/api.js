@@ -1,3 +1,5 @@
+import { localizedError } from './localization.js'
+
 const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 
 export function readableDetail(detail) {
@@ -17,7 +19,7 @@ export function readableDetail(detail) {
 
 export class ApiError extends Error {
   constructor(status, detail) {
-    super(readableDetail(detail) || `Request failed (${status}).`)
+    super(localizedError(status, detail))
     this.name = 'ApiError'
     this.status = status
     this.code = typeof detail?.code === 'string' ? detail.code : ''
@@ -42,13 +44,13 @@ async function request(path, options = {}, timeoutMs = 15000) {
     return body
   } catch (error) {
     if (controller.signal.aborted) {
-      throw new Error('The request timed out. Reload the latest state before retrying a change.')
+      throw new Error('请求超时。请重新加载最新状态，再重试操作。')
     }
     if (error instanceof TypeError) {
-      throw new Error('Could not connect to the backend. Check that it is running.')
+      throw new Error('无法连接后端，请检查后端服务是否正在运行。')
     }
     if (error instanceof SyntaxError) {
-      throw new Error('The backend returned an unreadable response.')
+      throw new Error('后端返回了无法读取的内容，请稍后重试。')
     }
     throw error
   } finally {
@@ -72,4 +74,4 @@ export const getPlan = (id) => request(`/api/plans/${id}`)
 export const getConfirmedPlan = (weekStart) => request(`/api/plans/confirmed?week_start=${encodeURIComponent(weekStart)}`)
 export const confirmPlan = (id) => request(`/api/plans/${id}/confirm`, { method: 'POST' })
 
-export const explainCandidate = (id, language = 'en') => request(`/api/plans/${id}/explanation`, { method: 'POST', body: JSON.stringify({ language }) }, 25000)
+export const explainCandidate = (id, language = 'zh-CN') => request(`/api/plans/${id}/explanation`, { method: 'POST', body: JSON.stringify({ language }) }, 25000)

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { STATUS_LABELS, PRIORITY_LABELS } from '../localization.js'
 import { createTask, getTasks, updateTask } from '../api.js'
 import { displayDeadline } from '../datetime.js'
 import TaskForm from '../components/TaskForm.jsx'
@@ -70,34 +71,34 @@ export default function TasksPage() {
 
   return (
     <section aria-labelledby="tasks-heading">
-      <div className="section-heading"><div><p className="eyebrow">Your work</p><h2 id="tasks-heading">Tasks</h2></div></div>
+      <div className="section-heading"><div><p className="eyebrow">我的任务</p><h2 id="tasks-heading">任务</h2></div></div>
       <div className="panel">
-        <h3>Add a task</h3>
-        <p className="helper">Deadlines are entered and shown in Shanghai time (UTC+08:00).</p>
+        <h3>添加任务</h3>
+        <p className="helper">截止时间按北京时间（UTC+08:00）填写和显示。</p>
         <TaskForm key={formVersion} pending={pending} disabled={loading || Boolean(loadError)} onSubmit={(data) => save(data)} />
       </div>
       {actionError && <p className="error-box" role="alert">{actionError}</p>}
-      <div className="list-heading"><h3>All tasks</h3><span className="count">{tasks.length}</span></div>
-      {loading ? <p className="state-box" role="status">Loading tasks...</p> : loadError ? (
-        <div className="error-box" role="alert">Could not load tasks. {loadError} <button className="button subtle" onClick={load} type="button">Retry</button></div>
-      ) : tasks.length === 0 ? <p className="state-box">No tasks yet.</p> : (
+      <div className="list-heading"><h3>全部任务</h3><span className="count">{tasks.length}</span></div>
+      {loading ? <p className="state-box" role="status">正在加载任务…</p> : loadError ? (
+        <div className="error-box" role="alert">无法加载任务。 {loadError} <button className="button subtle" onClick={load} type="button">重试</button></div>
+      ) : tasks.length === 0 ? <p className="state-box">还没有任务，请先添加。</p> : (
         <div className="card-list">
           {tasks.map((task) => (
             <article className="item-card" key={task.id}>
-              <div className="item-top"><h4>{task.title}</h4><span className={`badge status-${task.status}`}>{task.status.toUpperCase()}</span></div>
+              <div className="item-top"><h4>{task.title}</h4><span className={`badge status-${task.status}`}>{STATUS_LABELS[task.status]}</span></div>
               {task.description && <p className="description">{task.description}</p>}
               <dl className="details">
-                <div><dt>Duration</dt><dd>{task.duration_minutes} min</dd></div>
-                <div><dt>Deadline</dt><dd>{displayDeadline(task.deadline)} (Shanghai)</dd></div>
-                <div><dt>Priority</dt><dd>{task.priority}</dd></div>
+                <div><dt>预计时长</dt><dd>{task.duration_minutes} 分钟</dd></div>
+                <div><dt>截止时间</dt><dd>{displayDeadline(task.deadline)} （北京时间）</dd></div>
+                <div><dt>优先级</dt><dd>{PRIORITY_LABELS[task.priority]}</dd></div>
               </dl>
               {editingId === task.id ? (
                 <TaskForm key={task.id} task={task} pending={pending} onSubmit={(data) => save(data, task.id)} onCancel={() => setEditingId(null)} />
               ) : task.status === 'todo' && (
                 <div className="button-row">
-                  <button className="button subtle" type="button" disabled={pending} onClick={() => { setActionError(''); setEditingId(task.id) }}>Edit</button>
-                  <button className="button secondary" type="button" disabled={pending} onClick={() => setStatus(task, 'done')}>Mark Done</button>
-                  <button className="button subtle" type="button" disabled={pending} onClick={() => setStatus(task, 'cancelled')}>Cancel task</button>
+                  <button className="button subtle" type="button" disabled={pending} onClick={() => { setActionError(''); setEditingId(task.id) }}>编辑</button>
+                  <button className="button secondary" type="button" disabled={pending} onClick={() => setStatus(task, 'done')}>标记完成</button>
+                  <button className="button subtle" type="button" disabled={pending} onClick={() => setStatus(task, 'cancelled')}>取消任务</button>
                 </div>
               )}
             </article>

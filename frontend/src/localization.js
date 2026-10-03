@@ -1,0 +1,64 @@
+// Translate display values only. API enums and original error detail remain unchanged.
+export const STATUS_LABELS = { todo: '待完成', done: '已完成', cancelled: '已取消', candidate: '候选', confirmed: '已确认', superseded: '已替换' }
+export const PRIORITY_LABELS = { low: '低', normal: '普通', high: '高' }
+export const RECURRENCE_LABELS = { weekly: '每周', once: '仅一次' }
+
+const CODE_MESSAGES = {
+  STALE_CANDIDATE: '候选计划已过期：任务、时间规则或正式计划发生了变化。请重新生成后再确认。',
+  PLAN_NOT_CANDIDATE: '此计划已不是待确认的候选计划，请重新加载并生成新方案。',
+  PLAN_NOT_FOUND: '未找到计划，请重新加载。',
+  PLAN_BASELINE_INVALID: '该候选计划的对比基准不可用，请重新生成。',
+  TASK_NOT_FOUND: '部分所选任务已不存在，请重新加载任务列表。',
+  TASK_NOT_TODO: '只能安排待完成任务，请重新加载后选择。',
+  UNSCHEDULABLE: '当前排程规则未找到完整方案。请减少任务、调整截止时间或保留时间后重试。',
+  GENERATED_SCHEDULE_INVALID: '生成的计划未通过校验，未保存。请重新生成。',
+  INVALID_WEEK: '请选择有效的周日期（以周一为起点）。',
+  INVALID_TASKS: '所选任务信息无效，请检查任务时长、截止时间和状态。',
+  INVALID_TIME_RULES: '时间规则无效，请检查课程是否重叠，以及日期和起止时间是否正确。',
+  AI_NOT_CONFIGURED: '尚未配置 AI，仍可手动添加课程和保留时间。',
+  AI_UNAVAILABLE: 'AI 暂时不可用，仍可手动操作。',
+  AI_RESPONSE_INVALID: 'AI 返回的内容未通过校验，请补充描述后重试或手动添加。',
+}
+
+const FIELD_LABELS = {
+  title: '标题', description: '说明', duration_minutes: '预计时长', deadline: '截止时间',
+  priority: '优先级', status: '状态', kind: '类型', recurrence: '重复方式', weekday: '星期',
+  date: '日期', start_time: '开始时间', end_time: '结束时间', week_start: '周日期',
+  task_ids: '所选任务', active: '启用状态', text: '时间描述', language: '语言',
+}
+
+function validationMessage(item) {
+  const message = typeof item?.msg === 'string' ? item.msg : ''
+  const location = Array.isArray(item?.loc) ? item.loc.filter((part) => part !== 'body').map((part) => FIELD_LABELS[part] || (typeof part === 'number' ? `第 ${part + 1} 项` : '输入')).join(' / ') : ''
+  let correction = '内容无效，请检查后重试。'
+  if (/title must not be blank|title cannot be null|Field required|field cannot be null/.test(message)) correction = '不能为空，请填写。'
+  else if (/multiple of 30/.test(message)) correction = '必须是大于零的 30 分钟整数倍。'
+  else if (/start_time must be before end_time/.test(message)) correction = '开始时间必须早于结束时间，暂不支持跨夜。'
+  else if (/weekly requires/.test(message)) correction = '每周重复时请选择星期，不要填写具体日期。'
+  else if (/once requires/.test(message)) correction = '仅一次时请填写日期，不要选择星期。'
+  else if (/course must be weekly/.test(message)) correction = '课程必须设置为每周重复。'
+  else if (/Monday/.test(message)) correction = '请选择周一。'
+  else if (/task_ids must be unique/.test(message)) correction = '不能重复选择同一个任务。'
+  else if (/timezone|offset|local times/.test(message)) correction = '时间格式无效，请按北京时间填写。'
+  else if (item?.type === 'greater_than') correction = `必须大于 ${item.ctx?.gt ?? 0}。`
+  else if (item?.type === 'less_than_equal') correction = `不能大于 ${item.ctx?.le ?? '允许的上限'}。`
+  else if (item?.type === 'string_too_long') correction = `不能超过 ${item.ctx?.max_length ?? '允许的'} 个字符。`
+  return `${location ? `${location}：` : ''}${correction}`
+}
+
+export function localizedError(status, detail) {
+  if (detail?.code && CODE_MESSAGES[detail.code]) return CODE_MESSAGES[detail.code]
+  if (Array.isArray(detail)) return detail.map(validationMessage).join('；')
+  if (detail === 'Task not found') return '未找到任务，请重新加载。'
+  if (detail === 'TimeRule not found') return '未找到时间规则，请重新加载。'
+  if (status >= 500) return '服务暂时不可用，请稍后重试；操作前请重新加载最新状态。'
+  if (status === 422) return '输入内容无效，请检查表单后重试。'
+  return `请求未成功（${status}），请重新加载后重试。`
+}
+
+export function clarificationMessage(message) {
+  // Preserve Chinese provider clarification; English uses an actionable local fallback.
+  return typeof message === 'string' && /[\u4e00-\u9fff]/.test(message)
+    ? message
+    : '请补充具体日期或星期、开始时间、结束时间，以及是否每周重复。'
+}

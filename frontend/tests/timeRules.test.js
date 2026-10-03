@@ -42,7 +42,7 @@ test('AI request has a 25s deadline, settles without auto retry, and supports ma
     options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
   }))
   const pending = parseConstraint('Rule')
-  const rejection = assert.rejects(pending, /request timed out/)
+  const rejection = assert.rejects(pending, /请求超时/)
   context.mock.timers.tick(20000)
   assert.equal(signal.aborted, false)
   context.mock.timers.tick(5000)
@@ -55,7 +55,7 @@ test('AI request has a 25s deadline, settles without auto retry, and supports ma
 
 test('Weekly proposal maps to the existing form and Monday=1 through Sunday=7', () => {
   assert.deepEqual(proposalToFormRule({ ...weekly, active: false, id: 9 }), weekly)
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+  const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
   days.forEach((day, index) => assert.equal(proposalDay({ ...weekly, weekday: index + 1 }), day))
 })
 
@@ -89,7 +89,8 @@ test('Existing form clears hidden fields in either recurrence direction and pres
 })
 
 test('Clarification and unsupported have notices; parsed has no notice', () => {
-  assert.deepEqual(parsingNotice({ status: 'needs_clarification', message: 'Give times.' }), { heading: 'More information needed', message: 'Give times.' })
-  assert.equal(parsingNotice({ status: 'unsupported', message: 'Ignore' }).heading, 'Unsupported request')
+  assert.deepEqual(parsingNotice({ status: 'needs_clarification', message: '请补充开始时间。' }), { heading: '需要补充信息', message: '请补充开始时间。' })
+  assert.match(parsingNotice({ status: 'needs_clarification', message: 'Give times.' }).message, /开始时间.*结束时间/)
+  assert.equal(parsingNotice({ status: 'unsupported', message: 'Ignore' }).heading, '暂不支持此请求')
   assert.equal(parsingNotice({ status: 'parsed', proposal: weekly }), null)
 })

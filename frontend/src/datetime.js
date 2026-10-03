@@ -4,7 +4,7 @@ const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000
 
 export function toBackendDeadline(localValue, originalApiValue) {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(localValue)) {
-    throw new Error('Choose a deadline date and time.')
+    throw new Error('请选择截止日期和时间。')
   }
   // Editing another field should not truncate existing seconds or microseconds.
   if (originalApiValue && localValue === toDatetimeLocalValue(originalApiValue)) return originalApiValue
@@ -24,13 +24,13 @@ export function displayDeadline(apiValue) {
 }
 
 export function mondayOfDate(dateValue) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) throw new Error('Choose a valid week date.')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) throw new Error('请选择有效的周日期。')
   const [year, month, day] = dateValue.split('-').map(Number)
   // Construct calendar fields explicitly; never parse a date-only string in local time.
   const calendar = new Date(0)
   calendar.setUTCFullYear(year, month - 1, day)
   if (year < 1 || calendar.toISOString().slice(0, 10) !== dateValue) {
-    throw new Error('Choose a valid week date.')
+    throw new Error('请选择有效的周日期。')
   }
   calendar.setUTCDate(calendar.getUTCDate() - (calendar.getUTCDay() + 6) % 7)
   return calendar.toISOString().slice(0, 10)

@@ -40,7 +40,7 @@ test('Week dates normalize to Monday across month, year, and leap-day boundaries
 
 test('Invalid calendar dates cannot become a week_start', () => {
   for (const date of ['', 'invalid', '2026-02-29', '2026-13-01', '2026-04-31', '0000-01-01']) {
-    assert.throws(() => mondayOfDate(date), /Choose a valid week date/)
+    assert.throws(() => mondayOfDate(date), /请选择有效的周日期/)
   }
 })
 

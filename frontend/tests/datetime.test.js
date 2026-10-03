@@ -17,7 +17,7 @@ test('offset-aware responses are converted and naive or invalid values are rejec
   assert.equal(toDatetimeLocalValue('2026-10-05T14:00:00'), '')
   assert.equal(toDatetimeLocalValue('invalid'), '')
   assert.equal(toDatetimeLocalValue(null), '')
-  assert.throws(() => toBackendDeadline(''), /Choose a deadline/)
+  assert.throws(() => toBackendDeadline(''), /请选择截止/)
 })
 
 test('editing other fields preserves the precise deadline; changing it sends Shanghai minutes', () => {

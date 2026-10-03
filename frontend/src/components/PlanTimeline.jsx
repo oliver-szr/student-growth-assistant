@@ -10,7 +10,7 @@ export default function PlanTimeline({ items }) {
             {day.items.map((item) => (
               <li className={`plan-item ${item.kind}`} key={item.id}>
                 <span className="plan-time">{planTimeRange(item)}</span>
-                <div><strong>{item.title_snapshot}</strong><span className="plan-kind">{item.kind === 'course' ? 'Course' : 'Task'}</span></div>
+                <div><strong>{item.title_snapshot}</strong><span className="plan-kind">{item.kind === 'course' ? '课程' : '任务'}</span></div>
               </li>
             ))}
           </ol>

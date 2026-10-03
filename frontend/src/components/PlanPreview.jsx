@@ -1,25 +1,26 @@
 import PlanTimeline from './PlanTimeline.jsx'
+import { STATUS_LABELS } from '../localization.js'
 import PlanExplanation from './PlanExplanation.jsx'
 
-export default function PlanPreview({ plan, candidate = false, outdated, blocked, selectionChanged = false, busy, onConfirm, emptyText = 'No confirmed plan for this week.' }) {
-  const heading = candidate ? 'Candidate Plan' : 'Current Confirmed Plan'
+export default function PlanPreview({ plan, candidate = false, outdated, blocked, selectionChanged = false, busy, onConfirm, emptyText = '本周还没有正式计划。' }) {
+  const heading = candidate ? '候选计划' : '当前正式计划'
   return (
     <section className={`panel plan-panel ${candidate ? 'candidate-panel' : 'confirmed-panel'}`} aria-label={heading}>
       <h3>{heading}</h3>
-      {!plan ? <p className="helper">{candidate ? 'Generate a candidate to review your week.' : emptyText}</p> : <>
-        <p className="plan-state">{candidate ? outdated ? 'Outdated candidate' : blocked ? 'Candidate status changed' : selectionChanged ? 'Selection changed' : 'Candidate — not confirmed yet' : 'Confirmed'}</p>
-        {candidate && selectionChanged && <p className="helper" role="status">Task selection changed. Generate a new candidate before confirming.</p>}
-        <p className="helper">Plan #{plan.id} · Week of {plan.week_start} · {plan.status}</p>
+      {!plan ? <p className="helper">{candidate ? '先生成候选计划，查看本周安排。' : emptyText}</p> : <>
+        <p className="plan-state">{candidate ? outdated ? '候选计划已过期' : blocked ? '候选计划状态已变化' : selectionChanged ? '所选任务已变化' : '候选计划，尚未确认' : '已确认'}</p>
+        {candidate && selectionChanged && <p className="helper" role="status">所选任务已变化，请重新生成候选计划后再确认。</p>}
+        <p className="helper">计划 #{plan.id} · 周起始日：{plan.week_start} · {STATUS_LABELS[plan.status]}</p>
         <details className="plan-metadata">
-          <summary>Plan details</summary>
+          <summary>计划详情</summary>
           <dl className="details">
-            <div><dt>Source revision</dt><dd>{plan.source_revision}</dd></div>
-            <div><dt>Based on plan</dt><dd>{plan.based_on_plan_id === null ? 'None' : `#${plan.based_on_plan_id}`}</dd></div>
+            <div><dt>数据版本</dt><dd>{plan.source_revision}</dd></div>
+            <div><dt>参考计划</dt><dd>{plan.based_on_plan_id === null ? '无' : `#${plan.based_on_plan_id}`}</dd></div>
           </dl>
         </details>
         <PlanTimeline items={plan.items} />
         {candidate && <div className="button-row">
-          <button className="button primary" type="button" disabled={busy || outdated || blocked || selectionChanged} onClick={onConfirm}>{busy ? 'Please wait...' : 'Confirm Candidate'}</button>
+          <button className="button primary" type="button" disabled={busy || outdated || blocked || selectionChanged} onClick={onConfirm}>{busy ? '请稍候…' : '确认候选计划'}</button>
         </div>}
         {candidate && <PlanExplanation key={plan.id} plan={plan} outdated={outdated} blocked={blocked} busy={busy} />}
       </>}

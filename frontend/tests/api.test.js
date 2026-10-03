@@ -16,9 +16,9 @@ test('API rejects a real 422 response shape and exposes a network error', async 
   context.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({
     detail: [{ loc: ['body', 'title'], msg: 'Value error, title must not be blank' }],
   }), { status: 422 }))
-  await assert.rejects(createTask({ title: ' ' }), /title: Value error, title must not be blank/)
+  await assert.rejects(createTask({ title: ' ' }), /标题.*不能为空/)
   globalThis.fetch = async () => { throw new TypeError('Failed to fetch') }
-  await assert.rejects(getTasks(), /Could not connect to the backend/)
+  await assert.rejects(getTasks(), /无法连接后端/)
 })
 
 test('Plan endpoints preserve the existing backend paths, methods, and bodies', async (context) => {
@@ -49,7 +49,7 @@ for (const [status, code] of [[404, 'PLAN_NOT_FOUND'], [409, 'STALE_CANDIDATE'],
       assert.ok(error instanceof ApiError)
       assert.equal(error.status, status)
       assert.equal(error.code, code)
-      assert.equal(error.message, 'Server explanation')
+      assert.match(error.message, /[\u4e00-\u9fff]/)
       assert.deepEqual(error.detail, detail)
       return true
     })
@@ -63,7 +63,7 @@ test('Request timeout rejects and the next request can recover', async (context)
     options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
   }))
   const pending = getConfirmedPlan('2026-10-05')
-  const rejection = assert.rejects(pending, /The request timed out/)
+  const rejection = assert.rejects(pending, /请求超时/)
   context.mock.timers.tick(15000)
   await rejection
   globalThis.fetch = async () => new Response(JSON.stringify({ id: 4 }), { status: 200 })
@@ -72,5 +72,5 @@ test('Request timeout rejects and the next request can recover', async (context)
 
 test('Unreadable backend response is a recoverable error', async (context) => {
   context.mock.method(globalThis, 'fetch', async () => new Response('not JSON', { status: 500 }))
-  await assert.rejects(getPlan(7), /unreadable response/)
+  await assert.rejects(getPlan(7), /无法读取/)
 })

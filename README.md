@@ -1,5 +1,7 @@
 # Student Growth Assistant
 
+本地中文版本：[本地使用说明](codex/本地使用说明.md) · [中文化与产品测试报告](codex/中文化与产品测试报告.md)
+
 ## Project Overview
 
 Student Growth Assistant is a deterministic weekly planning and replanning web application with optional AI-assisted input parsing and plan-change explanation.

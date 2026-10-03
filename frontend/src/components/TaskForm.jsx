@@ -29,30 +29,30 @@ export default function TaskForm({ task, pending, disabled = false, onSubmit, on
   return (
     <form onSubmit={submit} className="editor">
       <div className="form-grid">
-        <label className="span-two">Title
+        <label className="span-two">标题
           <input value={title} onChange={(event) => setTitle(event.target.value)} required disabled={pending || disabled} />
         </label>
-        <label className="span-two">Description <span className="optional">optional</span>
+        <label className="span-two">说明 <span className="optional">选填</span>
           <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows="2" disabled={pending || disabled} />
         </label>
-        <label>Duration (minutes)
+        <label>预计时长（分钟）
           <input type="number" min="30" step="30" value={duration} onChange={(event) => setDuration(event.target.value)} required disabled={pending || disabled} />
         </label>
-        <label>Deadline (Shanghai time)
+        <label>截止时间（北京时间）
           <input type="datetime-local" value={deadline} onChange={(event) => setDeadline(event.target.value)} required disabled={pending || disabled} />
         </label>
-        <label>Priority
+        <label>优先级
           <select value={priority} onChange={(event) => setPriority(event.target.value)} disabled={pending || disabled}>
-            <option value="low">Low</option>
-            <option value="normal">Normal</option>
-            <option value="high">High</option>
+            <option value="low">低</option>
+            <option value="normal">普通</option>
+            <option value="high">高</option>
           </select>
         </label>
       </div>
       {formError && <p className="error-box" role="alert">{formError}</p>}
       <div className="button-row">
-        <button className="button primary" type="submit" disabled={pending || disabled}>{pending ? 'Saving...' : task ? 'Save task' : 'Create task'}</button>
-        {onCancel && <button className="button subtle" type="button" onClick={onCancel} disabled={pending}>Cancel edit</button>}
+        <button className="button primary" type="submit" disabled={pending || disabled}>{pending ? '正在保存…' : task ? '保存任务' : '添加任务'}</button>
+        {onCancel && <button className="button subtle" type="button" onClick={onCancel} disabled={pending}>取消编辑</button>}
       </div>
     </form>
   )

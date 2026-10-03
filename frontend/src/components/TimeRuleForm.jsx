@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { WEEKDAYS } from '../constants.js'
 import { timeRuleFormPayload } from '../timeRules.js'
 
-export default function TimeRuleForm({ kind, rule, pending, onSubmit, onCancel, submitLabel, cancelLabel = 'Cancel' }) {
+export default function TimeRuleForm({ kind, rule, pending, onSubmit, onCancel, submitLabel, cancelLabel = '取消' }) {
   const [title, setTitle] = useState(rule?.title ?? '')
   const [recurrence, setRecurrence] = useState(kind === 'course' ? 'weekly' : rule?.recurrence ?? 'weekly')
   const [weekday, setWeekday] = useState(rule?.weekday?.toString() ?? '')
@@ -25,32 +25,32 @@ export default function TimeRuleForm({ kind, rule, pending, onSubmit, onCancel, 
   return (
     <form className="editor" onSubmit={submit}>
       <div className="form-grid">
-        <label className="span-two">Title
+        <label className="span-two">标题
           <input value={title} onChange={(event) => setTitle(event.target.value)} required disabled={pending} />
         </label>
-        {kind === 'protected' && <label>Repeats
+        {kind === 'protected' && <label>重复方式
           <select value={recurrence} onChange={(event) => changeRecurrence(event.target.value)} disabled={pending}>
-            <option value="weekly">Every week</option>
-            <option value="once">Once</option>
+            <option value="weekly">每周</option>
+            <option value="once">仅一次</option>
           </select>
         </label>}
-        {recurrence === 'weekly' ? <label>Weekday
+        {recurrence === 'weekly' ? <label>星期
           <select value={weekday} onChange={(event) => setWeekday(event.target.value)} required disabled={pending}>
-            <option value="">Choose a day</option>
+            <option value="">请选择星期</option>
             {WEEKDAYS.map((day, index) => <option value={index + 1} key={day}>{day}</option>)}
           </select>
-        </label> : <label>Date
+        </label> : <label>日期
           <input type="date" value={date} onChange={(event) => setDate(event.target.value)} required disabled={pending} />
         </label>}
-        <label>Start time
+        <label>开始时间
           <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} required disabled={pending} />
         </label>
-        <label>End time
+        <label>结束时间
           <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} required disabled={pending} />
         </label>
       </div>
       <div className="button-row">
-        <button className="button primary" type="submit" disabled={pending}>{pending ? 'Saving...' : submitLabel || (rule ? 'Save changes' : `Create ${kind === 'course' ? 'course' : 'protected time'}`)}</button>
+        <button className="button primary" type="submit" disabled={pending}>{pending ? '正在保存…' : submitLabel || (rule ? '保存修改' : `添加${kind === 'course' ? '课程' : '保留时间'}`)}</button>
         <button className="button subtle" type="button" onClick={onCancel} disabled={pending}>{cancelLabel}</button>
       </div>
     </form>
