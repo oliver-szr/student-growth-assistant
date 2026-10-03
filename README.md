@@ -2,6 +2,8 @@
 
 本地中文版本：[本地使用说明](codex/本地使用说明.md) · [中文化与产品测试报告](codex/中文化与产品测试报告.md)
 
+AI日程助手MVP：[设计与构建](codex/MVP设计与构建说明.md) · [启动与四分钟演示](codex/MVP启动与演示.md) · [实际验收结果](codex/MVP验收报告.md)。默认入口为聊天与周日程，任务修改先预览，再由用户采用；本地演示版使用独立数据库与固定时钟。
+
 ## Project Overview
 
 Student Growth Assistant is a deterministic weekly planning and replanning web application with optional AI-assisted input parsing and plan-change explanation.

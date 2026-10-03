@@ -1,0 +1,15 @@
+const formatter=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})
+export function shanghaiTime(value){return formatter.format(new Date(value)).replace(' ','T')}
+export function calendarPosition(item){
+  const start=shanghaiTime(item.start_at),end=shanghaiTime(item.end_at)
+  const minutes=s=>Number(s.slice(11,13))*60+Number(s.slice(14,16))
+  return {date:start.slice(0,10),top:minutes(start)-480,height:minutes(end)-minutes(start)}
+}
+export function visibleSchedule(confirmed,proposal){
+  if(proposal?.status!=='ready')return confirmed
+  return [...confirmed.filter(x=>!proposal.selected_refs.includes(x.ref)&&!(proposal.removed_refs||[]).includes(x.ref)),...proposal.items.map(x=>({...x,candidate:true}))]
+}
+export function manualAction(form){
+  return {op:form.target?'update':'add',...(form.target?{target:form.target}:{}),fields:{title:form.title,duration_minutes:Number(form.minutes),deadline:`${form.deadline}:00+08:00`,priority:form.priority}}
+}
+export const PRIORITIES={high:'重要',normal:'普通',low:'较低'}

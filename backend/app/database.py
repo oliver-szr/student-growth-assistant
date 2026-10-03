@@ -3,6 +3,7 @@
 from collections.abc import Generator
 from datetime import datetime, timezone
 from pathlib import Path
+import os
 from sqlite3 import Connection as SQLiteConnection
 
 from sqlalchemy import DateTime, create_engine, event
@@ -13,7 +14,10 @@ from sqlalchemy.types import TypeDecorator
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-DB_PATH = DATA_DIR / "app.db"
+DB_PATH = Path(os.getenv('SGA_DATABASE_PATH') or DATA_DIR / 'app.db').resolve()
+if os.getenv('SGA_DEMO') == '1':
+    from .services.assistant_clock import demo_database
+    demo_database(str(DB_PATH))
 DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
 
 def create_sqlite_engine(database_url: str) -> Engine:

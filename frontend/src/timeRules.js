@@ -18,7 +18,7 @@ export function proposalDay(proposal) {
 }
 
 export function timeRuleFormPayload({ kind, title, recurrence, weekday, date, startTime, endTime }, originalRule) {
-  const repeats = kind === 'course' ? 'weekly' : recurrence
+  const repeats = recurrence
   return {
     kind,
     title,

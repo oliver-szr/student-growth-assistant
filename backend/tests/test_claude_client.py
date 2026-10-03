@@ -14,6 +14,21 @@ from app.services.claude_client import AIServiceError, ClaudeConfig, get_claude_
 CONFIG = ClaudeConfig("test-only-placeholder-secret", "configured-model", "https://gateway.example/", "2023-06-01")
 
 
+def test_assistant_can_request_larger_output_without_extending_deadline(monkeypatch):
+    def handler(request):
+        assert json.loads(request.content)['max_tokens']==1600
+        assert request.extensions['timeout']['read']==20.0
+        return httpx.Response(200,json={'content':[{'type':'text','text':'OK'}]})
+    mock_http(monkeypatch,handler)
+    assert asyncio.run(request_claude('data','system',CONFIG,max_tokens=1600))=='OK'
+
+
+def test_budget_exhausted_response_is_never_accepted_as_complete(monkeypatch):
+    mock_http(monkeypatch,lambda request:httpx.Response(200,json={'stop_reason':'max_tokens','content':[{'type':'text','text':'{"actions":[],"questions":[]}'}]}))
+    with pytest.raises(AIServiceError) as captured:call()
+    assert captured.value.code=='AI_RESPONSE_INVALID'
+
+
 @pytest.mark.parametrize("suffix", ["", "/", "/v1", "/v1/"])
 def test_gateway_base_url_never_duplicates_api_version(monkeypatch, suffix):
     def handler(request):

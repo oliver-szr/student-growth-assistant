@@ -147,3 +147,47 @@ class PlanningState(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class CourseImport(Base):
+    __tablename__ = 'course_imports'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_hash: Mapped[str] = mapped_column(String, unique=True)
+    rule_ids: Mapped[list] = mapped_column(JSON)
+    warnings: Mapped[list] = mapped_column(JSON)
+
+
+class TaskSchedulingProfile(Base):
+    __tablename__ = 'task_scheduling_profiles'
+    task_id: Mapped[int] = mapped_column(ForeignKey('tasks.id'), primary_key=True)
+    settings: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class AssistantSession(Base):
+    __tablename__ = 'assistant_sessions'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    week_start: Mapped[DateValue] = mapped_column(Date)
+    latest_proposal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now)
+
+
+class AssistantProposal(Base):
+    __tablename__ = 'assistant_proposals'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey('assistant_sessions.id'))
+    source_revision: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String)
+    payload: Mapped[dict] = mapped_column(JSON)
+    plan_id: Mapped[int | None] = mapped_column(ForeignKey('plans.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now)
+
+
+class AssistantMessage(Base):
+    __tablename__ = 'assistant_messages'
+    __table_args__ = (Index('assistant_message_once', 'session_id', 'client_message_id', unique=True),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey('assistant_sessions.id'))
+    client_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    role: Mapped[str] = mapped_column(String)
+    text: Mapped[str] = mapped_column(Text)
+    proposal_id: Mapped[int | None] = mapped_column(ForeignKey('assistant_proposals.id'), nullable=True)

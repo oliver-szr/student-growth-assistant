@@ -20,7 +20,7 @@ def test_development_cors_preflight(client: TestClient, origin: str) -> None:
 def test_other_origin_is_not_allowed(client: TestClient) -> None:
     response = client.options(
         "/api/tasks",
-        headers={"Origin": "http://localhost:5174", "Access-Control-Request-Method": "POST"},
+        headers={"Origin": "http://localhost:5199", "Access-Control-Request-Method": "POST"},
     )
     assert response.status_code == 400
     assert "access-control-allow-origin" not in response.headers

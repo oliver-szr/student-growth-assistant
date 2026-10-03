@@ -90,8 +90,6 @@ def expand_time_rules(week_start: date, time_rules: Sequence[TimeRuleInput]) -> 
             raise SchedulingInputError("INVALID_TIME_RULES", f"TimeRule {rule.id} clock times must have no offset.")
         if rule.start_time >= rule.end_time:
             raise SchedulingInputError("INVALID_TIME_RULES", f"TimeRule {rule.id} must not cross midnight or have nonpositive duration.")
-        if rule.kind == "course" and rule.recurrence != "weekly":
-            raise SchedulingInputError("INVALID_TIME_RULES", f"Course {rule.id} must be weekly.")
         if rule.recurrence == "weekly":
             if type(rule.weekday) is not int or not 1 <= rule.weekday <= 7 or rule.date is not None:
                 raise SchedulingInputError("INVALID_TIME_RULES", f"Weekly rule {rule.id} requires weekday 1-7 and no date.")

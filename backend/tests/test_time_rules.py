@@ -57,7 +57,6 @@ def test_create_get_and_database_persistence(
 @pytest.mark.parametrize("changes", [
     {"weekday": None},
     {"date": "2026-10-07"},
-    {"kind": "course", "recurrence": "once", "weekday": None, "date": "2026-10-07"},
     {"start_time": "10:00", "end_time": "10:00"},
     {"start_time": "12:00", "end_time": "10:00"},
     {"weekday": 0},
@@ -121,9 +120,9 @@ def test_patch_rejects_invalid_final_state_without_writing(client: TestClient) -
         f"/api/time-rules/{rule_id}",
         json={"recurrence": "once", "weekday": None, "date": "2026-10-07"},
     )
-    assert response.status_code == 422
-    assert "course must be weekly" in str(response.json())
-    assert client.get("/api/time-rules").json()[0] == before
+    assert response.status_code == 200
+    assert response.json()['recurrence'] == 'once'
+    assert response.json()['date'] == '2026-10-07'
 
 
 def test_patch_missing_rule_and_no_delete(client: TestClient) -> None:

@@ -112,8 +112,6 @@ class TimeRuleCreate(BaseModel):
         elif self.date is None or self.weekday is not None:
             raise ValueError("once requires date and no weekday")
 
-        if self.kind == TimeRuleKind.course and self.recurrence != Recurrence.weekly:
-            raise ValueError("course must be weekly")
         if self.start_time.tzinfo is not None or self.end_time.tzinfo is not None:
             raise ValueError("start_time and end_time must be local times without offsets")
         if self.start_time >= self.end_time:

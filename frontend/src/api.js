@@ -75,3 +75,11 @@ export const getConfirmedPlan = (weekStart) => request(`/api/plans/confirmed?wee
 export const confirmPlan = (id) => request(`/api/plans/${id}/confirm`, { method: 'POST' })
 
 export const explainCandidate = (id, language = 'zh-CN') => request(`/api/plans/${id}/explanation`, { method: 'POST', body: JSON.stringify({ language }) }, 25000)
+
+export const createAssistantSession=()=>request('/api/assistant/sessions',{method:'POST',body:'{}'})
+export const getAssistantSession=id=>request(`/api/assistant/sessions/${id}`)
+export const sendAssistantMessage=(id,data)=>request(`/api/assistant/sessions/${id}/messages`,{method:'POST',body:JSON.stringify(data)},25000)
+export const previewAssistant=(id,data)=>request(`/api/assistant/proposals/${id}/preview`,{method:'POST',body:JSON.stringify(data)})
+export const confirmAssistant=id=>request(`/api/assistant/proposals/${id}/confirm`,{method:'POST'})
+export const discardAssistant=id=>request(`/api/assistant/proposals/${id}/discard`,{method:'POST'})
+export const explainAssistant=id=>request(`/api/assistant/proposals/${id}/explanation`,{method:'POST'},25000)

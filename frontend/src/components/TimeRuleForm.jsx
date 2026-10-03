@@ -4,7 +4,7 @@ import { timeRuleFormPayload } from '../timeRules.js'
 
 export default function TimeRuleForm({ kind, rule, pending, onSubmit, onCancel, submitLabel, cancelLabel = '取消' }) {
   const [title, setTitle] = useState(rule?.title ?? '')
-  const [recurrence, setRecurrence] = useState(kind === 'course' ? 'weekly' : rule?.recurrence ?? 'weekly')
+  const [recurrence, setRecurrence] = useState(rule?.recurrence ?? 'weekly')
   const [weekday, setWeekday] = useState(rule?.weekday?.toString() ?? '')
   const [date, setDate] = useState(rule?.date ?? '')
   const [startTime, setStartTime] = useState(rule?.start_time?.slice(0, 5) ?? '')
@@ -28,7 +28,7 @@ export default function TimeRuleForm({ kind, rule, pending, onSubmit, onCancel, 
         <label className="span-two">标题
           <input value={title} onChange={(event) => setTitle(event.target.value)} required disabled={pending} />
         </label>
-        {kind === 'protected' && <label>重复方式
+        {<label>重复方式
           <select value={recurrence} onChange={(event) => changeRecurrence(event.target.value)} disabled={pending}>
             <option value="weekly">每周</option>
             <option value="once">仅一次</option>

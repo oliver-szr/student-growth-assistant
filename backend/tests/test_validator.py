@@ -188,7 +188,6 @@ def test_invalid_week_is_a_structured_violation() -> None:
 @pytest.mark.parametrize("rules", [
     [rule(1), rule(2, start_time=time(9), end_time=time(11))],
     [rule(weekday=None)],
-    [rule(recurrence="once", weekday=None, date=WEEK)],
 ])
 def test_invalid_or_overlapping_courses_are_structured_violations(rules) -> None:
     assert codes(validate_schedule(WEEK, [], rules, [])) == {"INVALID_TIME_RULES"}

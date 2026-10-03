@@ -231,7 +231,6 @@ def test_invalid_week_is_rejected(week_start) -> None:
 
 @pytest.mark.parametrize("changes", [
     {"weekday": None}, {"weekday": 0}, {"weekday": True}, {"date": WEEK},
-    {"recurrence": "once", "weekday": None, "date": WEEK},
     {"kind": "protected", "recurrence": "once", "weekday": None, "date": None},
     {"start_time": time(10)}, {"end_time": time(7)},
     {"start_time": time(8, tzinfo=timezone.utc)}, {"end_time": "10:00"},

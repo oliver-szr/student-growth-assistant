@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from . import models  # Register all tables with the existing Base.
 from .database import Base, engine
-from .routers import constraints, plan_explanations, plans, tasks, time_rules
+from .routers import constraints, plan_explanations, plans, tasks, time_rules, assistant
 from .services.planning_state import get_or_create_planning_state
 
 
@@ -32,7 +32,7 @@ app = FastAPI(lifespan=lifespan)
 app.state.db_engine = engine
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"],
     allow_methods=["GET", "POST", "PATCH"],
     allow_headers=["Content-Type"],
 )
@@ -41,6 +41,7 @@ app.include_router(time_rules.router)
 app.include_router(plans.router)
 app.include_router(constraints.router)
 app.include_router(plan_explanations.router)
+app.include_router(assistant.router)
 
 
 @app.get("/api/health", response_model=HealthResponse, tags=["Health"])

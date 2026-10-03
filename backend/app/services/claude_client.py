@@ -70,7 +70,7 @@ def extract_text(body: object) -> str:
     return text
 
 
-async def request_claude(text: str, system: str, config: ClaudeConfig) -> str:
+async def request_claude(text: str, system: str, config: ClaudeConfig, max_tokens: int = 600) -> str:
     # Accept a gateway origin or its /v1 API base without duplicating the version.
     base_url = config.base_url.rstrip("/").removesuffix("/v1")
     try:
@@ -86,7 +86,7 @@ async def request_claude(text: str, system: str, config: ClaudeConfig) -> str:
                     },
                     json={
                         "model": config.model,
-                        "max_tokens": 600,
+                        "max_tokens": max_tokens,
                         # Omit temperature for gateway/model compatibility.
                         "system": system,
                         "messages": [{"role": "user", "content": text}],
@@ -100,4 +100,6 @@ async def request_claude(text: str, system: str, config: ClaudeConfig) -> str:
         body = response.json()
     except (ValueError, RecursionError):
         raise AIServiceError("AI_RESPONSE_INVALID") from None
+    if isinstance(body,dict) and body.get('stop_reason')=='max_tokens':
+        raise AIServiceError('AI_RESPONSE_INVALID')
     return extract_text(body)
