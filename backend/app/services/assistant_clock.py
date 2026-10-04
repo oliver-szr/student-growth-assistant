@@ -1,5 +1,6 @@
 """A fixed clock is available only for isolated, explicitly named demo databases."""
 import os
+import json
 from pathlib import Path
 from datetime import datetime
 from .scheduling_types import SHANGHAI
@@ -19,7 +20,9 @@ def clock_settings() -> dict:
     demo = os.getenv('SGA_DEMO') == '1'
     if demo:
         demo_database(os.getenv('SGA_DATABASE_PATH', ''))
-        now = datetime.fromisoformat(os.getenv('SGA_DEMO_NOW', '2026-10-07T18:00:00+08:00'))
+        scenario_path = ROOT / 'codex' / 'demo_scenario.json'
+        scenario_now = json.loads(scenario_path.read_text(encoding='utf-8'))['now'] if scenario_path.exists() else '2026-10-14T18:00:00+08:00'
+        now = datetime.fromisoformat(os.getenv('SGA_DEMO_NOW', scenario_now))
         if now.tzinfo is None:
             raise ValueError('演示时间必须包含时区。')
         now = now.astimezone(SHANGHAI)

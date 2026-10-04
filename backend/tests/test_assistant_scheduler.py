@@ -55,3 +55,16 @@ def test_confirmation_validator_rejects_time_advance_and_locked_move():
     moved=[dict(ref='task:1',start_at='2026-10-08T11:00:00+08:00',end_at='2026-10-08T12:00:00+08:00')]
     errors=validate_assistant(WEEK,datetime(2026,10,8,11,15,tzinfo=SHANGHAI),[task('task:1',locked=True)],[],moved,old)
     assert errors
+
+
+def test_personal_preference_can_change_candidate_schedule_without_breaking_deadline():
+    from app.services.assistant_scheduler import arrange
+    prefs={'task_windows':{'writing':[{'start':'08:00','end':'12:00'}]},'avoid_windows':[], 'deadline_buffer_hours':0,'adjustment_mode':'balanced'}
+    t=task('draft:report',60,'2026-10-11T22:00:00+08:00')
+    t['task_type']='writing'
+    result=arrange(WEEK,NOW,[t],[],[],preferences=prefs,include_strategies=True)
+    assert result['status']=='ready'
+    assert result['candidate_options']
+    preferred=next(x for x in result['candidate_options'] if x['strategy']=='preference')
+    assert datetime.fromisoformat(preferred['items'][0]['start_at']).time().hour < 12
+    assert all(datetime.fromisoformat(x['end_at']) <= datetime.fromisoformat(t['deadline']) for c in result['candidate_options'] for x in c['items'])

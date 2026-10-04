@@ -17,14 +17,14 @@ test('Explanation wrapper posts language and retains unavailable diff', async (c
   assert.deepEqual(await explainCandidate(2, 'zh-CN'), result)
 })
 
-test('Explanation wrapper waits for backend 20-second deadline and stops at 25 seconds', async (context) => {
+test('Explanation wrapper waits for backend 120-second deadline and stops at 125 seconds', async (context) => {
   context.mock.timers.enable({ apis: ['setTimeout'] })
   let aborted = false
   context.mock.method(globalThis, 'fetch', (_url, options) => new Promise((_resolve, reject) => {
     options.signal.addEventListener('abort', () => { aborted = true; reject(new DOMException('Aborted', 'AbortError')) })
   }))
   const rejection = assert.rejects(explainCandidate(2), /请求超时/)
-  context.mock.timers.tick(20000)
+  context.mock.timers.tick(120000)
   assert.equal(aborted, false)
   context.mock.timers.tick(5000)
   await rejection

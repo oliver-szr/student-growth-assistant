@@ -3,6 +3,26 @@ import asyncio
 import pytest
 
 
+@pytest.mark.parametrize('priority,accepted', [(2, True), ('normal', False)])
+def test_profile_goal_priority_contract_is_numeric_and_strict(monkeypatch, priority, accepted):
+    from app.services import assistant_ai
+    from app.services.claude_client import ClaudeConfig, AIServiceError
+    monkeypatch.setattr(assistant_ai, 'get_claude_config', lambda: ClaudeConfig('test', 'test'))
+    async def response(text, system, config, max_tokens):
+        payload = json.loads(text)
+        assert payload['goal_create_schema']['properties']['priority']['type'] == 'integer'
+        return json.dumps({'reply': '目标草案待确认', 'questions': [], 'operations': [
+            {'op': 'create_goal', 'title': '完成项目原型', 'metric_kind': 'deliverable', 'weekly_target': 1, 'priority': priority}
+        ]})
+    monkeypatch.setattr(assistant_ai, 'request_claude', response)
+    if accepted:
+        result = asyncio.run(assistant_ai.workspace_message('profile', '每周交付一个原型', {}))
+        assert result['operations'][0]['priority'] == 2
+    else:
+        with pytest.raises(AIServiceError):
+            asyncio.run(assistant_ai.workspace_message('profile', '每周交付一个原型', {}))
+
+
 def test_model_contract_rejects_invented_fields_and_multiple_adds(monkeypatch):
     from app.services import assistant_ai
     from app.services.claude_client import AIServiceError, ClaudeConfig
@@ -24,6 +44,41 @@ def test_model_context_and_missing_deadline_are_not_fabricated(monkeypatch):
     parsed=asyncio.run(assistant_ai.parse_message('新增报告',dict(now='2026-10-07T18:00:00+08:00',tasks=[dict(ref='task:42',deadline='2026-10-08T12:00:00+08:00')])))
     assert parsed.actions[0].fields.deadline is None
     assert parsed.questions
+
+
+def test_profile_prompt_preserves_goal_name_and_maps_deliverables(monkeypatch):
+    from app.services import assistant_ai
+    from app.services.claude_client import ClaudeConfig
+    captured = {}
+    monkeypatch.setattr(assistant_ai, 'get_claude_config', lambda: ClaudeConfig('test', 'test'))
+    async def response(text, system, config, max_tokens):
+        captured['system'] = system
+        return json.dumps({'reply': '我理解了。', 'questions': [], 'operations': []})
+    monkeypatch.setattr(assistant_ai, 'request_claude', response)
+    asyncio.run(assistant_ai.workspace_message('profile', '新增一个目标', {}))
+    assert '目标名称必须保留用户明确说出的原名' in captured['system']
+    assert 'deliverable表示可核实的成果物' in captured['system']
+
+
+@pytest.mark.parametrize('message,window,expected_count', [
+    ('新增编程类别，编程尽量安排在下午', {'start': '14:00', 'end': '18:00'}, 0),
+    ('新增编程类别，编程尽量安排在下午13:00到17:00', {'start': '13:00', 'end': '17:00'}, 1),
+])
+def test_profile_chat_does_not_guess_vague_preference_windows(monkeypatch, message, window, expected_count):
+    from app.services import assistant_ai
+    from app.services.claude_client import ClaudeConfig
+    monkeypatch.setattr(assistant_ai, 'get_claude_config', lambda: ClaudeConfig('test', 'test'))
+    async def response(*args):
+        return json.dumps({'reply': '我先整理类别。', 'questions': [], 'operations': [
+            {'op': 'create_category', 'name': '编程', 'temp_ref': 'draftcat:programming'},
+            {'op': 'create_preference_rule', 'name': '编程时段', 'description': '编程偏好时段', 'kind': 'prefer_time',
+             'category_ref': 'draftcat:programming', 'parameters': window},
+        ]})
+    monkeypatch.setattr(assistant_ai, 'request_claude', response)
+    result = asyncio.run(assistant_ai.workspace_message('profile', message, {'categories': [], 'preference_rules': []}))
+    assert sum(item['op'] == 'create_preference_rule' for item in result['operations']) == expected_count
+    if expected_count == 0:
+        assert any('请告诉我希望的开始和结束时间' in question for question in result['questions'])
 
 
 def test_fenced_json_is_validated_and_duplicate_fields_rejected(monkeypatch):
@@ -64,3 +119,62 @@ def test_model_context_keeps_all_task_constraints_without_database_metadata(monk
         return '{"actions":[],"questions":["几点截止？"]}'
     monkeypatch.setattr(assistant_ai,'request_claude',response)
     asyncio.run(assistant_ai.parse_message('新增任务',dict(tasks=tasks,history=['旧消息']*4+['最新一轮']*6)))
+
+
+def test_recommendation_can_only_select_a_supplied_candidate(monkeypatch):
+    from app.services import assistant_ai
+    from app.services.claude_client import ClaudeConfig
+    monkeypatch.setattr(assistant_ai,'get_claude_config',lambda:ClaudeConfig('test','test'))
+    async def response(*args):return '{"candidate_id":"preference:0","reason_codes":["follows_task_window"]}'
+    monkeypatch.setattr(assistant_ai,'request_claude',response)
+    payload={'personal_preferences':{'task_windows':{'writing':[{'start':'08:00','end':'12:00'}]}},'candidate_options':[{'candidate_id':'preference:0','strategy':'preference','metrics':{},'changes':[]}]}
+    result=asyncio.run(assistant_ai.recommend(payload))
+    assert result=={'candidate_id':'preference:0','reason_codes':['follows_task_window']}
+
+
+def test_recommendation_rejects_an_invented_candidate_id(monkeypatch):
+    from app.services import assistant_ai
+    from app.services.claude_client import ClaudeConfig,AIServiceError
+    monkeypatch.setattr(assistant_ai,'get_claude_config',lambda:ClaudeConfig('test','test'))
+    async def response(*args):return '{"candidate_id":"invented:0","reason_codes":[]}'
+    monkeypatch.setattr(assistant_ai,'request_claude',response)
+    payload={'candidate_options':[{'candidate_id':'balanced:0','strategy':'balanced','metrics':{},'changes':[]}]}
+    with pytest.raises(AIServiceError):asyncio.run(assistant_ai.recommend(payload))
+
+
+def test_parser_prompt_shows_exact_persistent_preference_shape(monkeypatch):
+    from app.services import assistant_ai
+    from app.services.claude_client import ClaudeConfig
+    monkeypatch.setattr(assistant_ai,'get_claude_config',lambda:ClaudeConfig('test','test'))
+    async def response(_text,system,*args):
+        assert '"preference_updates":{"task_windows":{"writing":[{"start":"08:00","end":"12:00"}]}}' in system
+        return '{"actions":[],"questions":[]}'
+    monkeypatch.setattr(assistant_ai,'request_claude',response)
+    asyncio.run(assistant_ai.parse_message('以后写作上午8点到12点',{}))
+
+
+def test_growth_insight_picker_receives_confirmed_preferences_and_only_returns_known_ids(monkeypatch):
+    from app.services import assistant_ai
+    from app.services.claude_client import ClaudeConfig
+    monkeypatch.setattr(assistant_ai,'get_claude_config',lambda:ClaudeConfig('test','test'))
+    candidates=[{'candidate_id':'practice:afternoon','sample_count':5,'active_days':5}]
+    preferences={'task_windows':{'writing':[{'start':'08:00','end':'12:00'}]}}
+    async def response(text,system,config,max_tokens):
+        request=json.loads(text)
+        assert request['supported_observations']==candidates
+        assert request['confirmed_preferences']==preferences
+        assert '至少来自5项不同任务' in system
+        assert max_tokens==800
+        return '{"candidate_ids":["practice:afternoon"]}'
+    monkeypatch.setattr(assistant_ai,'request_claude',response)
+    assert asyncio.run(assistant_ai.select_growth_insights(candidates,preferences))==['practice:afternoon']
+
+
+def test_growth_insight_picker_rejects_invented_candidate(monkeypatch):
+    from app.services import assistant_ai
+    from app.services.claude_client import ClaudeConfig, AIServiceError
+    monkeypatch.setattr(assistant_ai,'get_claude_config',lambda:ClaudeConfig('test','test'))
+    async def response(*args):return '{"candidate_ids":["invented:evening"]}'
+    monkeypatch.setattr(assistant_ai,'request_claude',response)
+    with pytest.raises(AIServiceError):
+        asyncio.run(assistant_ai.select_growth_insights([{'candidate_id':'practice:afternoon'}],{}))

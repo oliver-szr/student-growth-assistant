@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import TimeRule, utc_now
 from ..schemas import TimeRuleCreate, TimeRuleResponse, TimeRuleUpdate
-from ..services.planning_state import begin_planning_transaction, bump_revision
+from ..services.planning_state import bump_revision, planning_transaction
 
 
 router = APIRouter(prefix="/api/time-rules", tags=["Time Rules"])
@@ -24,17 +24,12 @@ def list_time_rules(db: Session = Depends(get_db)) -> list[TimeRule]:
 @router.post("", response_model=TimeRuleResponse, status_code=201)
 def create_time_rule(payload: TimeRuleCreate, db: Session = Depends(get_db)) -> TimeRuleResponse:
     rule = TimeRule(**payload.model_dump())
-    try:
-        begin_planning_transaction(db)
+    with planning_transaction(db):
         db.add(rule)
         bump_revision(db)
         db.flush()
         db.refresh(rule)
         response = TimeRuleResponse.model_validate(rule)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
     return response
 
 
@@ -42,8 +37,7 @@ def create_time_rule(payload: TimeRuleCreate, db: Session = Depends(get_db)) -> 
 def update_time_rule(
     rule_id: int, payload: TimeRuleUpdate, db: Session = Depends(get_db)
 ) -> TimeRuleResponse:
-    try:
-        begin_planning_transaction(db)
+    with planning_transaction(db):
         rule = db.get(TimeRule, rule_id)
         if rule is None:
             raise HTTPException(status_code=404, detail="TimeRule not found")
@@ -68,8 +62,4 @@ def update_time_rule(
         db.flush()
         db.refresh(rule)
         response = TimeRuleResponse.model_validate(rule)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
     return response

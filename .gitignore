@@ -16,3 +16,17 @@ frontend/.env
 codex/.runtime/
 codex/evidence/
 codex/.local/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+**/backups/
+.pytest_run_tmp/
+codex/_pytesttmp/
+.env.*
+!.env.example
+**/.env.*
+!**/.env.example
+*.log

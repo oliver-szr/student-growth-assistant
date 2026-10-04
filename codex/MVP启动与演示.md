@@ -2,6 +2,8 @@
 
 在项目目录打开PowerShell。依赖沿用《本地使用说明.md》。密钥与模型写在被Git忽略的backend/.env，公共backend/.env.example不要填密钥。
 
+DeepSeek官方API可使用OpenAI兼容格式，配置及独立测试见[DeepSeek官方接入说明](DeepSeek官方接入说明.md)。切换接口或密钥后重启后端；OpenAI格式使用OPENAI_MODEL，原格式使用CLAUDE_MODEL。
+
 ## 演示版
 
 ```powershell
@@ -17,7 +19,7 @@
 
 Reset停止本脚本的演示进程，创建新演示数据库，旧数据库保留；不会清空正常数据库。普通停止和重启保留已有演示任务及会话。
 
-本机配置的MiniMax-M3在连续解析中出现多次20秒超时。同网关模型可仅在演示实例覆盖，保留backend/.env与正常版配置：
+此前MiniMax-M3在连续解析中出现多次20秒超时。继续使用原Anthropic兼容网关时，可仅在演示实例覆盖为经实际验收的模型，保留backend/.env与正常版配置：
 
 ```powershell
 & .\codex\启动演示版.ps1 -Reset -AiModel 'glm-5.3-flash'
@@ -25,7 +27,7 @@ Reset停止本脚本的演示进程，创建新演示数据库，旧数据库保
 
 切换模型须重启实例；正在运行的实例不会因再次执行普通启动而更换模型。模型必须在你的网关账户可用，实际验收结果见《MVP验收报告.md》。
 
-本机私有课表位于codex/.local/基础课表.json。没有该文件的同学会使用匿名示例课程。私有原始PDF、课表、数据库与截图均不提交Git。
+默认使用匿名示例课程。个人课表需显式指定 -CourseSource 参数，启动脚本不会自动读取本地课表。私有原始PDF、课表、数据库与截图均不提交Git。
 
 ## 四分钟展示
 

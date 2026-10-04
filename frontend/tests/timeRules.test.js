@@ -32,7 +32,7 @@ for (const [status, code] of [[503, 'AI_NOT_CONFIGURED'], [503, 'AI_UNAVAILABLE'
   })
 }
 
-test('AI request has a 25s deadline, settles without auto retry, and supports manual retry', async (context) => {
+test('AI request has a 125s deadline, settles without auto retry, and supports manual retry', async (context) => {
   context.mock.timers.enable({ apis: ['setTimeout'] })
   let calls = 0
   let signal
@@ -43,7 +43,7 @@ test('AI request has a 25s deadline, settles without auto retry, and supports ma
   }))
   const pending = parseConstraint('Rule')
   const rejection = assert.rejects(pending, /请求超时/)
-  context.mock.timers.tick(20000)
+  context.mock.timers.tick(120000)
   assert.equal(signal.aborted, false)
   context.mock.timers.tick(5000)
   await rejection

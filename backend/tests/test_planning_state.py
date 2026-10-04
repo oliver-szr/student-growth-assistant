@@ -14,6 +14,7 @@ from app.routers import tasks, time_rules
 from app.schemas import TaskCreate, TaskUpdate, TimeRuleCreate, TimeRuleUpdate
 from app.services.planning_state import (
     begin_planning_transaction, bump_revision, get_or_create_planning_state,
+    planning_transaction,
 )
 from .test_tasks import TASK
 from .test_time_rules import COURSE
@@ -39,6 +40,23 @@ def test_first_access_initializes_singleton_and_helpers_do_not_commit(test_engin
         session.rollback()
         assert session.get(PlanningState, 1).revision == 0
         assert session.scalar(select(func.count()).select_from(PlanningState)) == 1
+
+
+def test_planning_transaction_commits_success_and_rolls_back_failure(test_engine):
+    Base.metadata.create_all(test_engine)
+    with Session(test_engine) as session:
+        with planning_transaction(session):
+            state = get_or_create_planning_state(session)
+            state.revision = 1
+        assert not session.in_transaction()
+
+        with pytest.raises(RuntimeError, match="injected failure"):
+            with planning_transaction(session):
+                state = session.get(PlanningState, 1)
+                state.revision = 2
+                raise RuntimeError("injected failure")
+        assert not session.in_transaction()
+        assert session.get(PlanningState, 1).revision == 1
 
 
 def test_startup_initializes_state_without_manual_seed(client, test_engine):

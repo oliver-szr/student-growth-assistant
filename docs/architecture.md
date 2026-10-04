@@ -1,4 +1,22 @@
-# Student Growth Assistant 架构（Phase 1–7 实现，核心规则冻结）
+# 个人成长助手：现行架构与历史设计
+
+## 现行三页工作台（2026-10）
+
+React 的 `App` 提供规划、复盘、我的档案三个入口；复盘和档案复用 `WorkspaceChat`，规划保留周日程、任务抽屉和候选比较。页面显示采用北京时间，数据库身份隔离浏览器会话缓存。
+
+FastAPI 将 HTTP 校验交给 routers，排程、业务事务、统计和模型接入交给 services。SQLite 保存任务、课程、目标版本、偏好规则、执行反馈、对话、后台运行和修改草案；显式迁移和备份支持已有数据升级。
+
+规划会话按周组织，复盘按选定周组织，档案跨周保留。AI 返回结构化意图，程序校验引用与字段，草案只写候选数据。用户确认时检查来源版本，在事务内应用相关修改；正式修改使旧候选失效。
+
+助手排程服务枚举可行连续时段，按均衡、习惯与稳定策略搜索不同候选，并独立校验课程、保护时间、DDL、锁定和过去时间。基础 `scheduler.py` 保留旧接口兼容，其“最早空位”策略不代表当前助手的全部逻辑。
+
+个人偏好采用稳定类别标识和可编辑规则；软偏好不解除硬约束。执行反馈保存历史快照，统计先由程序计算，再交由 AI 组织解释；未经确认的观察不能自动变为长期习惯。
+
+匿名演示由 `codex/demo_scenario.json` 定义。正常时钟与数据库不因演示启动改变，私有课程只能显式导入。更多目录见仓库根目录 `DIRECTORY_STRUCTURE.md`。
+
+## 核心日程引擎历史架构（Phase 1–7）
+
+> 本文保留基础周排程与候选确认阶段的详细设计和验证证据。当前 V2 还包含成长目标、执行记录、个人资料与复盘模块；现行目录和分层规则以仓库根目录的 `DIRECTORY_STRUCTURE.md` 为准。
 
 本文依据已审核的 Phase 0 降复杂度修订，并记录 Phase 1–6、Phase 7A 与 Phase 7B 的实际实现。已完成 Task / TimeRule 管理、冻结的 Scheduler / Validator、Plan 持久化与 Candidate / Confirm API，以及 Weekly Plan 浏览器流程。Phase 7A 增加可选的自然语言 TimeRule proposal，其独立 review 修复和 gateway availability 限制仍见验收文档。Phase 7B 增加 deterministic Plan diff 与用户主动请求的可选解释，AI 失败保留 diff；真实模型措辞限制见 Phase 7B 验收文档。
 

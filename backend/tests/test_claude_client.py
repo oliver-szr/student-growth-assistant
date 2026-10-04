@@ -14,13 +14,113 @@ from app.services.claude_client import AIServiceError, ClaudeConfig, get_claude_
 CONFIG = ClaudeConfig("test-only-placeholder-secret", "configured-model", "https://gateway.example/", "2023-06-01")
 
 
+def test_deepseek_official_defaults_to_low_thinking_with_room_for_final_json(monkeypatch):
+    monkeypatch.setenv('AI_API_FORMAT','openai')
+    monkeypatch.setenv('OPENAI_API_KEY','official-test-placeholder')
+    monkeypatch.setenv('OPENAI_MODEL','deepseek-v4-pro')
+    monkeypatch.setenv('OPENAI_BASE_URL','https://api.deepseek.com/v1/')
+    monkeypatch.delenv('AI_THINKING_EFFORT',raising=False)
+    config=get_claude_config()
+    def handler(request):
+        assert str(request.url)=='https://api.deepseek.com/v1/chat/completions'
+        assert request.headers['authorization']=='Bearer official-test-placeholder'
+        assert 'x-api-key' not in request.headers
+        body=json.loads(request.content)
+        assert body['model']=='deepseek-v4-pro'
+        assert body['thinking']=={'type':'enabled'}
+        assert body['reasoning_effort']=='low'
+        assert body['max_tokens']>=8192
+        assert body['messages']==[{'role':'system','content':'system'},{'role':'user','content':'data'}]
+        return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'role':'assistant','reasoning_content':'private reasoning','content':'{"actions":[],"questions":[]}'}}]})
+    mock_http(monkeypatch,handler)
+    assert asyncio.run(request_claude('data','system',config,1600))=='{"actions":[],"questions":[]}'
+
+
+def test_deepseek_thinking_can_be_disabled_without_raising_output_budget(monkeypatch):
+    monkeypatch.setenv('AI_API_FORMAT','openai')
+    monkeypatch.setenv('OPENAI_API_KEY','official-test-placeholder')
+    monkeypatch.setenv('OPENAI_MODEL','deepseek-v4-pro')
+    monkeypatch.setenv('OPENAI_BASE_URL','https://api.deepseek.com')
+    monkeypatch.setenv('AI_THINKING_EFFORT','none')
+    config=get_claude_config()
+    def handler(request):
+        body=json.loads(request.content)
+        assert body['thinking']=={'type':'disabled'}
+        assert 'reasoning_effort' not in body
+        assert body['max_tokens']==1600
+        return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':'OK'}}]})
+    mock_http(monkeypatch,handler)
+    assert asyncio.run(request_claude('data','system',config,1600))=='OK'
+
+
+def test_invalid_thinking_configuration_is_rejected_before_provider_call(monkeypatch):
+    monkeypatch.setenv('CLAUDE_API_KEY','test-placeholder')
+    monkeypatch.setenv('CLAUDE_MODEL','deepseek-v4-pro')
+    monkeypatch.setenv('AI_THINKING_EFFORT','unknown')
+    with pytest.raises(AIServiceError) as captured:get_claude_config()
+    assert captured.value.code=='AI_NOT_CONFIGURED'
+
+
+def test_openai_mode_never_uses_legacy_gateway_key_when_official_key_is_missing(monkeypatch):
+    monkeypatch.setenv('AI_API_FORMAT','openai')
+    monkeypatch.setenv('CLAUDE_API_KEY','old-gateway-placeholder')
+    monkeypatch.setenv('OPENAI_MODEL','deepseek-v4-pro')
+    monkeypatch.delenv('OPENAI_API_KEY',raising=False)
+    with pytest.raises(AIServiceError) as captured:get_claude_config()
+    assert captured.value.code=='AI_NOT_CONFIGURED'
+
+
+@pytest.mark.parametrize('suffix',['','/','/v1','/v1/'])
+def test_generic_openai_gateway_uses_chat_format_without_deepseek_extensions(monkeypatch,suffix):
+    config=ClaudeConfig('generic-placeholder','generic-model','https://gateway.example'+suffix,api_format='openai')
+    def handler(request):
+        assert str(request.url)=='https://gateway.example/v1/chat/completions'
+        assert request.headers['authorization']=='Bearer generic-placeholder'
+        assert 'anthropic-version' not in request.headers
+        body=json.loads(request.content)
+        assert body=={'model':'generic-model','max_tokens':600,'messages':[{'role':'system','content':'system'},{'role':'user','content':'data'}]}
+        return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':'OK'}}]})
+    mock_http(monkeypatch,handler)
+    assert asyncio.run(request_claude('data','system',config))=='OK'
+
+
+@pytest.mark.parametrize('body',[
+    {'choices':[{'finish_reason':'length','message':{'content':'{"actions":[],"questions":[]}'}}]},
+    {'choices':[{'finish_reason':'stop','message':{'content':None,'reasoning_content':'not a final answer'}}]},
+    {'choices':[]}, {'choices':[None]}, {'choices':[{'message':{'content':5}}]},
+])
+def test_openai_truncated_or_missing_final_answer_is_rejected(monkeypatch,body):
+    mock_http(monkeypatch,lambda request:httpx.Response(200,json=body))
+    config=ClaudeConfig('placeholder','generic-model','https://gateway.example',api_format='openai')
+    with pytest.raises(AIServiceError) as captured:asyncio.run(request_claude('data','system',config))
+    assert captured.value.code=='AI_RESPONSE_INVALID'
+
+
+def test_unknown_api_format_is_configuration_error(monkeypatch):
+    monkeypatch.setenv('CLAUDE_API_KEY','placeholder')
+    monkeypatch.setenv('CLAUDE_MODEL','model')
+    monkeypatch.setenv('AI_API_FORMAT','unknown')
+    with pytest.raises(AIServiceError) as captured:get_claude_config()
+    assert captured.value.code=='AI_NOT_CONFIGURED'
+
+
 def test_assistant_can_request_larger_output_without_extending_deadline(monkeypatch):
     def handler(request):
         assert json.loads(request.content)['max_tokens']==1600
-        assert request.extensions['timeout']['read']==20.0
+        assert request.extensions['timeout']['read']==120.0
         return httpx.Response(200,json={'content':[{'type':'text','text':'OK'}]})
     mock_http(monkeypatch,handler)
     assert asyncio.run(request_claude('data','system',CONFIG,max_tokens=1600))=='OK'
+
+
+def test_provider_timeout_can_be_configured_up_to_the_two_minute_limit(monkeypatch):
+    monkeypatch.setenv('AI_TIMEOUT_SECONDS','45')
+    def handler(request):
+        assert request.extensions['timeout']['read']==45.0
+        return httpx.Response(200,json={'content':[{'type':'text','text':'OK'}]})
+    original=httpx.AsyncClient; transport=httpx.MockTransport(handler)
+    monkeypatch.setattr(claude_client.httpx,'AsyncClient',lambda **kwargs:original(transport=transport,**kwargs))
+    assert asyncio.run(request_claude('data','system',CONFIG))=='OK'
 
 
 def test_budget_exhausted_response_is_never_accepted_as_complete(monkeypatch):
@@ -43,7 +143,7 @@ def mock_http(monkeypatch, handler):
     original = httpx.AsyncClient
     transport = httpx.MockTransport(handler)
     def factory(**kwargs):
-        assert kwargs["timeout"] == 20.0
+        assert kwargs["timeout"] == 120.0
         return original(transport=transport, **kwargs)
     monkeypatch.setattr(claude_client.httpx, "AsyncClient", factory)
 
@@ -63,7 +163,7 @@ def test_native_messages_request_and_text_only_extraction(monkeypatch):
         assert body == {"model": "configured-model", "max_tokens": 600, "system": "Parser system",
                         "messages": [{"role": "user", "content": "Every Wednesday is lab time"}]}
         assert all(message["role"] != "system" for message in body["messages"])
-        assert request.extensions["timeout"]["read"] == 20.0
+        assert request.extensions["timeout"]["read"] == 120.0
         return httpx.Response(200, json={"content": [{"type": "thinking", "thinking": "ignore"}, {"type": "text", "text": "{\"status\":"}, {"type": "text", "text": "\"unsupported\"}"}]})
     mock_http(monkeypatch, handler)
     assert call() == '{"status":"unsupported"}'

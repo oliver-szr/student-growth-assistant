@@ -70,21 +70,56 @@ def validate_assistant(week,now,tasks,rules,items,previous):
     return errors
 
 
-def score(items,tasks,old,week):
-    cost=miss=distance=early=0
+def score(items,tasks,old,week,preferences=None,strategy='balanced'):
+    moved=miss=avoid=temporary_avoid=buffer=distance=early=goal_penalty=0
+    preferences=preferences or {}
+    total_weight=sum(WEIGHTS[t['priority']] for t in tasks.values()) or 1
     for x in items:
         t=tasks[x['ref']]; start,end=interval(x); before=old.get(x['ref'])
         if before and interval(before)!=(start,end):
-            cost+=WEIGHTS[t['priority']]
+            moved+=WEIGHTS[t['priority']]
             distance+=abs((start-interval(before)[0]).total_seconds())/60
-        preference=(t.get('profile') or {}).get('preferred_windows') or []
-        if preference and not any(dt(w['start_at'])<=start and end<=dt(w['end_at']) for w in preference):
-            miss+=WEIGHTS[t['priority']]
-        early+=(start-datetime.combine(week,time.min,SHANGHAI)).total_seconds()/60
-    return cost,miss,distance,early,tuple((x['ref'],x['start_at']) for x in items)
+        profile=(t.get('profile') or {})
+        preference=profile.get('preferred_windows') or []
+        category=(t.get('task_type') or 'other')
+        preference_map=preferences.get('task_windows') or {}
+        personal=(preference_map.get(category) or [])+(preference_map.get('*') or [])
+        start_min=start.hour*60+start.minute; end_min=end.hour*60+end.minute
+        weekday=start.isoweekday()
+        matches=any(dt(w['start_at'])<=start and end<=dt(w['end_at']) for w in preference) if preference else any(
+            start_min>=_clock(w['start']) and end_min<=_clock(w['end']) and (not w.get('weekdays') or weekday in w['weekdays']) for w in personal)
+        if (preference or personal) and not matches: miss+=WEIGHTS[t['priority']]
+        avoided_windows=(preferences.get('avoid_windows',[]) or [])+(preferences.get('avoid_windows_by_category',{}).get(category,[]) or [])
+        if any(start_min<_clock(w['end']) and _clock(w['start'])<end_min and (not w.get('weekdays') or weekday in w['weekdays']) for w in avoided_windows):
+            avoid+=WEIGHTS[t['priority']]
+        if any(overlaps(start,end,dt(w['start_at']),dt(w['end_at'])) for w in preferences.get('temporary_avoid_windows',[])):
+            temporary_avoid+=WEIGHTS[t['priority']]
+        desired=float((preferences.get('deadline_buffer_by_category',{}).get(category)
+                       if category in preferences.get('deadline_buffer_by_category',{})
+                       else preferences.get('deadline_buffer_hours',0)) or 0)
+        if t['priority']=='high' and desired:
+            remaining=max(0,(dt(t['deadline'])-end).total_seconds()/3600)
+            buffer+=WEIGHTS[t['priority']]*max(0,desired-remaining)/desired
+        start_minutes=(start-datetime.combine(week,time.min,SHANGHAI)).total_seconds()/60
+        early+=start_minutes
+        goal=(t.get('goal') or {})
+        goal_priority=int(goal.get('priority',3)) if goal else 3
+        goal_penalty+=(goal_priority-1)*WEIGHTS[t['priority']]*start_minutes
+    mode=preferences.get('adjustment_mode','balanced')
+    weights={'balanced':(4,3,3),'preference':(6,2,2),'stable':(2,6,2)}[strategy if strategy in ('preference','stable') else mode]
+    preference_penalty=(miss+avoid+temporary_avoid)/(3*total_weight)
+    movement_penalty=moved/total_weight
+    buffer_penalty=buffer/total_weight
+    composite=(weights[0]*preference_penalty+weights[1]*movement_penalty+weights[2]*buffer_penalty)/sum(weights)
+    return composite,movement_penalty,preference_penalty,buffer_penalty,goal_penalty,distance,early,tuple((x['ref'],x['start_at']) for x in items)
 
 
-def arrange(week,now,tasks,rules,previous,allow_alternatives=True):
+def _clock(value):
+    hour,minute=map(int,value.split(':')[:2])
+    return hour*60+minute
+
+
+def _arrange_single(week,now,tasks,rules,previous,allow_alternatives=True,preferences=None,strategy='balanced'):
     old={x['ref']:x for x in previous}
     intervals=expand_time_rules(week,rules)
     busy=[(x.start_at,x.end_at) for x in intervals]
@@ -127,7 +162,7 @@ def arrange(week,now,tasks,rules,previous,allow_alternatives=True):
                     break
         empty['alternatives']=alternatives[:2]
         return dict(status='conflict' if alternatives or any(x['code']=='FIXED_TIME_CONFLICT' for x in diagnostics) else 'no_plan',**empty)
-    ordered=sorted(tasks,key=lambda t:(len(choices[t['ref']]),max(x['start_at'] for x in choices[t['ref']]) if choices[t['ref']] else '',-WEIGHTS[t['priority']],t['deadline'],t['ref']))
+    ordered=sorted(tasks,key=lambda t:(len(choices[t['ref']]),max(x['start_at'] for x in choices[t['ref']]) if choices[t['ref']] else '',-WEIGHTS[t['priority']],(t.get('goal') or {}).get('priority',3),t['deadline'],t['ref']))
     beam=[[]]; expansions=0; capped=False
     for t in ordered:
         expanded=[]
@@ -142,9 +177,10 @@ def arrange(week,now,tasks,rules,previous,allow_alternatives=True):
             if capped: break
         if capped or not expanded:
             return dict(status='no_plan',items=[],alternatives=[],diagnostics=[dict(code='SEARCH_LIMIT' if capped else 'NO_PLAN_FOUND',message='有界搜索未找到完整方案，请调整时间要求或任务范围；这不等于证明无解。')])
-        expanded.sort(key=lambda s:score(s,tasks_by_ref,old,week))
+        expanded.sort(key=lambda s:score(s,tasks_by_ref,old,week,preferences,strategy))
         beam=expanded[:64]
     solutions=[]; seen=set()
+    beam.sort(key=lambda s:score(s,tasks_by_ref,old,week,preferences,strategy))
     for state in beam:
         key=tuple(sorted((x['ref'],x['start_at']) for x in state))
         if key in seen: continue
@@ -153,3 +189,46 @@ def arrange(week,now,tasks,rules,previous,allow_alternatives=True):
         solutions.append(sorted(state,key=lambda x:(x['start_at'],x['ref'])))
         if len(solutions)==3: break
     return dict(status='ready',items=solutions[0] if solutions else [],alternatives=solutions[1:],diagnostics=[])
+
+
+def arrange(week,now,tasks,rules,previous,allow_alternatives=True,preferences=None,include_strategies=False):
+    """Return verified schedules; personal preferences only affect soft ranking."""
+    if not include_strategies:
+        return _arrange_single(week,now,tasks,rules,previous,allow_alternatives,preferences)
+    options=[]; errors=[]; seen=set()
+    for strategy in ('balanced','preference','stable'):
+        result=_arrange_single(week,now,tasks,rules,previous,allow_alternatives,preferences,strategy)
+        if result['status']!='ready':
+            errors.extend(result.get('diagnostics',[])); continue
+        for items in [result['items']]+result['alternatives']:
+            key=tuple(sorted((x['ref'],x['start_at']) for x in items))
+            if key in seen: continue
+            if validate_assistant(week,now,tasks,rules,items,previous):
+                raise RuntimeError('排程未通过独立校验')
+            seen.add(key)
+            options.append({'candidate_id':strategy+':'+str(len(options)),'strategy':strategy,'items':items,'metrics':_metrics(items,tasks,previous,week,preferences)})
+            break
+    if not options:
+        fallback=_arrange_single(week,now,tasks,rules,previous,allow_alternatives,preferences)
+        return {**fallback,'candidate_options':[],'search_diagnostics':errors}
+    preferred=next((x for x in options if x['strategy']=='balanced'),options[0])
+    return {'status':'ready','items':preferred['items'],'alternatives':[x['items'] for x in options if x is not preferred][:2],'candidate_options':options,'diagnostics':[],'search_diagnostics':errors}
+
+
+def _metrics(items,tasks,previous,week,preferences):
+    old={x['ref']:x for x in previous}; by_ref={x['ref']:x for x in tasks}
+    total=sum(WEIGHTS[t['priority']] for t in tasks) or 1
+    moved=preference_misses=avoided=temporary_avoided=buffer_hours=0
+    for item in items:
+        task=by_ref[item['ref']]; a,b=interval(item); weight=WEIGHTS[task['priority']]
+        if item['ref'] in old and interval(old[item['ref']])!=(a,b): moved+=weight
+        category=task.get('task_type') or 'other'; preference_map=(preferences or {}).get('task_windows',{}); windows=(preference_map.get(category) or [])+(preference_map.get('*') or [])
+        weekday=a.isoweekday()
+        if windows and not any(a.hour*60+a.minute>=_clock(w['start']) and b.hour*60+b.minute<=_clock(w['end']) and (not w.get('weekdays') or weekday in w['weekdays']) for w in windows): preference_misses+=weight
+        avoided_windows=((preferences or {}).get('avoid_windows',[]) or [])+((preferences or {}).get('avoid_windows_by_category',{}).get(category,[]) or [])
+        if any(a.hour*60+a.minute<_clock(w['end']) and _clock(w['start'])<b.hour*60+b.minute and (not w.get('weekdays') or weekday in w['weekdays']) for w in avoided_windows):avoided+=weight
+        if any(overlaps(a,b,dt(w['start_at']),dt(w['end_at'])) for w in (preferences or {}).get('temporary_avoid_windows',[])):temporary_avoided+=weight
+        prefs=preferences or {}; buffers=prefs.get('deadline_buffer_by_category',{})
+        desired=float((buffers.get(category) if category in buffers else prefs.get('deadline_buffer_hours',0)) or 0)
+        if task['priority']=='high' and desired: buffer_hours+=max(0,desired-(dt(task['deadline'])-b).total_seconds()/3600)
+    return {'changed_tasks_weight':moved,'total_tasks_weight':total,'preference_misses_weight':preference_misses,'avoided_tasks_weight':avoided,'temporary_avoided_tasks_weight':temporary_avoided,'deadline_buffer_shortfall_hours':round(buffer_hours,1)}

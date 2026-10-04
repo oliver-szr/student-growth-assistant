@@ -1,5 +1,7 @@
-"""Small SQLite transaction and global revision helpers; callers own commit."""
+"""SQLite write transactions and the shared planning revision."""
 
+from contextlib import contextmanager
+from collections.abc import Iterator
 from sqlalchemy import text, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session
@@ -14,6 +16,23 @@ def begin_planning_transaction(session: Session) -> None:
     CRUD writes, and confirmation, avoiding read-then-write transaction races.
     """
     session.execute(text("BEGIN IMMEDIATE"))
+
+
+@contextmanager
+def planning_transaction(session: Session) -> Iterator[Session]:
+    """Run one atomic planning write and always leave the Session clean.
+
+    Reserve the SQLite writer before reading mutable planning state. The
+    context owns commit/rollback so route handlers cannot accidentally commit
+    business data without its associated revision, or forget to roll back.
+    """
+    try:
+        begin_planning_transaction(session)
+        yield session
+        session.commit()
+    except BaseException:
+        session.rollback()
+        raise
 
 
 def get_or_create_planning_state(session: Session) -> PlanningState:
