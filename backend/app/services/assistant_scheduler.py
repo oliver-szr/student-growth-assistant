@@ -127,6 +127,21 @@ def _clock(value):
     return hour*60+minute
 
 
+def _schedule_key(items):
+    return tuple(sorted((x['ref'],x['start_at'],x['end_at']) for x in items))
+
+
+def _meaningfully_different(left,right):
+    """Prefer a real choice over another five-minute nudge of the same plan."""
+    a=old_segments(left); b=old_segments(right)
+    for ref in a:
+        first=sorted(interval(x) for x in a[ref]); second=sorted(interval(x) for x in b.get(ref,[]))
+        if len(first)!=len(second):return True
+        if any(abs((x-y).total_seconds())>=1800 for pair,other in zip(first,second) for x,y in zip(pair,other)):
+            return True
+    return False
+
+
 def _split_options(task,starts,week,now,busy,old,preferences,strategy):
     """Bounded packing of exact free grid cells; retain one identity and full duration."""
     p=task.get('profile') or {}
@@ -232,14 +247,21 @@ def _arrange_single(week,now,tasks,rules,previous,allow_alternatives=True,prefer
         if not expanded:return dict(status='no_plan',items=[],alternatives=[],diagnostics=[dict(code='NO_PLAN_FOUND',message='有界搜索未找到完整方案；这不等于证明无解。')])
         expanded.sort(key=lambda state:(len(state),score(state,by_ref,old,week,preferences,strategy)))
         beam=expanded[:64]
-    solutions=[];seen=set()
+    pool=[];seen=set()
     for state in beam:
-        key=tuple(sorted((x['ref'],x['start_at'],x['end_at']) for x in state))
+        key=_schedule_key(state)
         if key in seen:continue
         seen.add(key)
+        pool.append(sorted(state,key=lambda x:(x['start_at'],x['ref'])))
+    solutions=pool[:1]
+    for meaningful in (True,False):
+        for state in pool[1:]:
+            if len(solutions)>=3:break
+            if any(_schedule_key(state)==_schedule_key(x) for x in solutions):continue
+            if meaningful and not all(_meaningfully_different(state,x) for x in solutions):continue
+            solutions.append(state)
+    for state in solutions:
         if validate_assistant(week,now,tasks,rules,state,previous):raise RuntimeError('排程未通过独立校验')
-        solutions.append(sorted(state,key=lambda x:(x['start_at'],x['ref'])))
-        if len(solutions)==3:break
     return dict(status='ready',items=solutions[0] if solutions else [],alternatives=solutions[1:],diagnostics=[])
 
 
@@ -247,19 +269,28 @@ def arrange(week,now,tasks,rules,previous,allow_alternatives=True,preferences=No
     """Return verified schedules; personal preferences only affect soft ranking."""
     if not include_strategies:
         return _arrange_single(week,now,tasks,rules,previous,allow_alternatives,preferences)
-    options=[]; errors=[]; seen=set()
+    options=[]; errors=[]; seen=set(); results=[]
+    def append_option(strategy,items):
+        key=_schedule_key(items)
+        if key in seen:return
+        if validate_assistant(week,now,tasks,rules,items,previous):
+            raise RuntimeError('排程未通过独立校验')
+        seen.add(key)
+        options.append({'candidate_id':strategy+':'+str(len(options)),'strategy':strategy,'items':items,'metrics':{**_metrics(items,tasks,previous,week,preferences),'strategy_weights':list(STRATEGY_WEIGHTS[strategy])}})
     for strategy in ('balanced','preference','stable'):
         result=_arrange_single(week,now,tasks,rules,previous,allow_alternatives,preferences,strategy)
         if result['status']!='ready':
             errors.extend(result.get('diagnostics',[])); continue
-        for items in [result['items']]:
-            key=tuple(sorted((x['ref'],x['start_at'],x['end_at']) for x in items))
-            if key in seen: continue
-            if validate_assistant(week,now,tasks,rules,items,previous):
-                raise RuntimeError('排程未通过独立校验')
-            seen.add(key)
-            options.append({'candidate_id':strategy+':'+str(len(options)),'strategy':strategy,'items':items,'metrics':{**_metrics(items,tasks,previous,week,preferences),'strategy_weights':list(STRATEGY_WEIGHTS[strategy])}})
-            break
+        results.append((strategy,result))
+        append_option(strategy,result['items'])
+    # Keep distinct strategy winners first, then use their verified runners-up.
+    # Do not relax hard constraints or invent another strategy label to fill cards.
+    for meaningful in (True,False):
+        for strategy,result in results:
+            for items in result.get('alternatives',[]):
+                if len(options)>=3:break
+                if meaningful and not all(_meaningfully_different(items,x['items']) for x in options):continue
+                append_option(strategy,items)
     if not options:
         fallback=_arrange_single(week,now,tasks,rules,previous,allow_alternatives,preferences)
         return {**fallback,'candidate_options':[],'search_diagnostics':errors}

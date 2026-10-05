@@ -19,6 +19,22 @@ def new_action(title='实验报告'):
     return dict(op='add',fields=dict(title=title,duration_minutes=120,deadline='2026-10-09T20:00:00+08:00',priority='normal'))
 
 
+def test_distinct_runner_up_can_be_selected_and_confirmed(client):
+    sid=session(client)
+    p=proposal(client,sid,[new_action()])
+    assert len(p['candidate_options'])==3
+    option=p['candidate_options'][1]
+    response=client.post(f"/api/assistant/proposals/{p['id']}/preview",json={'candidate_id':option['candidate_id']})
+    assert response.status_code==200,response.text
+    selected=response.json()
+    assert selected['selected_candidate_id']==option['candidate_id']
+    assert selected['items']==option['items']
+    assert client.get('/api/tasks').json()==[]
+    response=client.post(f"/api/assistant/proposals/{p['id']}/confirm")
+    assert response.status_code==200,response.text
+    assert len(client.get('/api/tasks').json())==1
+
+
 def proposal(client,sid,actions):
     r=client.post(f'/api/assistant/sessions/{sid}/messages',json=dict(client_message_id=str(uuid.uuid4()),text='手动录入',actions=actions))
     assert r.status_code==200,r.text

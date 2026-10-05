@@ -1,5 +1,7 @@
 # 个人成长助手 · Student Growth Assistant
 
+当前发布版本：[v1](https://github.com/szt1107/student-growth-assistant/releases/tag/v1)。
+
 通过 AI 对话整理任务、目标和偏好，根据真实执行记录改善下一次安排。本项目是 **本地单用户课程项目 MVP**，使用 React、FastAPI 和 SQLite。
 
 ## 三个工作台
