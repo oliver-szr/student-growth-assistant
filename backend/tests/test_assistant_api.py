@@ -76,7 +76,7 @@ def test_missing_information_and_two_adds(client):
 
 def test_off_grid_unknown_target_and_lock_require_confirmation(client):
     sid=session(client)
-    a=new_action(); a['fields']['duration_minutes']=45
+    a=new_action(); a['fields']['duration_minutes']=43
     p=proposal(client,sid,[a]); assert p['status']=='needs_input'
     p=proposal(client,sid,[dict(op='update',target='task:999',fields=dict(priority='high'))])
     assert p['status']=='needs_input'
@@ -149,10 +149,11 @@ def test_ai_run_is_idempotent_and_returns_a_verified_recommendation(client,monke
     assert restored['status']=='ready'
     assert restored['recommendation']['source']=='ai'
     assert restored['selected_candidate_id'] in {x['candidate_id'] for x in restored['candidate_options']}
-    assert len(restored['candidate_options'])>=2
+    assert 1<=len(restored['candidate_options'])<=3
+    assert len({str(x['items']) for x in restored['candidate_options']})==len(restored['candidate_options'])
     assert len(calls)==1
     assert client.get('/api/tasks').json()==[]
-    option=next(x for x in restored['candidate_options'] if x['candidate_id']!=restored['selected_candidate_id'])
+    option=next((x for x in restored['candidate_options'] if x['candidate_id']!=restored['selected_candidate_id']),restored['candidate_options'][0])
     selected=client.post(f"/api/assistant/proposals/{restored['id']}/preview",json={'candidate_id':option['candidate_id']})
     assert selected.status_code==200 and selected.json()['selected_candidate_id']==option['candidate_id']
     assert selected.json()['recommendation']['source']=='user_selected'
@@ -484,3 +485,39 @@ def test_review_workspace_chat_saves_confirmed_execution_feedback(client, monkey
     assert result.status_code == 200
     saved_tasks = client.get("/api/tasks").json()
     assert next(item for item in saved_tasks if item["id"] == task["id"])["status"] == "done"
+
+def test_profile_draft_updates_existing_preference_fields_without_duplicate_keywords(client, monkeypatch):
+    import time
+    from app.services import assistant_ai
+    rule=client.post('/api/assistant/preference-rules',json={'name':'写作上午','kind':'prefer_time','parameters':{'start':'08:00','end':'12:00'}}).json()
+    async def reply(scope,text,context):
+        return {'reply':'请核对','questions':[],'operations':[{'op':'update_preference_rule','id':rule['id'],'fields':{'name':'写作下午','parameters':{'start':'14:00','end':'17:00'}}}]}
+    monkeypatch.setattr(assistant_ai,'workspace_message',reply)
+    opened=client.post('/api/assistant/sessions/open',json={'scope':'profile'}).json()
+    run=client.post(f"/api/assistant/sessions/{opened['id']}/runs",json={'client_message_id':'rename-rule-regression','text':'写作偏好改名并改时间'}).json()
+    for _ in range(100):
+        result=client.get(f"/api/assistant/runs/{run['id']}").json()
+        if result['status']!='running':break
+        time.sleep(.02)
+    assert result['status']=='completed',result
+    draft=client.get(f"/api/assistant/sessions/{opened['id']}").json()['draft']
+    assert next(item for item in client.get('/api/assistant/preference-rules').json()['rules'] if item['id']==rule['id'])['name']=='写作上午'
+    saved=client.post(f"/api/assistant/drafts/{draft['id']}/confirm")
+    assert saved.status_code==200,saved.text
+    updated=next(item for item in client.get('/api/assistant/preference-rules').json()['rules'] if item['id']==rule['id'])
+    assert updated['name']=='写作下午' and updated['parameters']=={'start':'14:00','end':'17:00'}
+    assert client.post(f"/api/assistant/drafts/{draft['id']}/confirm").status_code==200
+def test_failed_schedule_does_not_report_formal_tasks_removed(client):
+    sid=session(client)
+    existing=new_action('原有会议')
+    existing['fields'].update(duration_minutes=60,profile={'fixed_start':'2026-10-08T19:00:00+08:00'})
+    first=proposal(client,sid,[existing])
+    assert client.post(f"/api/assistant/proposals/{first['id']}/confirm").status_code==200
+    incoming=new_action('紧急会议')
+    incoming['fields'].update(duration_minutes=60,profile={'fixed_start':'2026-10-08T19:00:00+08:00'})
+    failed=proposal(client,sid,[incoming])
+    assert failed['status']!='ready'
+    assert any(d['code']=='FIXED_TASK_CONFLICT' for d in failed['diagnostics'])
+    assert failed['changes']==[]
+    assert failed['removed_refs']==[]
+    assert len(client.get(f'/api/assistant/sessions/{sid}').json()['confirmed_items'])==1

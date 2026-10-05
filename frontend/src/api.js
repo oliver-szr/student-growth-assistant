@@ -126,3 +126,7 @@ export const createGrowthReview = (weekStart) => request('/api/growth/reviews', 
 export const getLocalBackups = () => request('/api/data/backups')
 export const exportGrowthData = () => request('/api/data/export', {}, 60000)
 export const importGrowthData = (snapshot) => request('/api/data/import', { method: 'POST', body: JSON.stringify(snapshot) }, 60000)
+
+export const getTasksDashboard=()=>request('/api/tasks/dashboard')
+export const getProfileContext=()=>request('/api/profile/context')
+export const getReviewContext=()=>request('/api/review/context')

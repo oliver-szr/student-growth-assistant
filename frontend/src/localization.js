@@ -10,18 +10,18 @@ const CODE_MESSAGES = {
   PLAN_BASELINE_INVALID: '该候选计划的对比基准不可用，请重新生成。',
   TASK_NOT_FOUND: '部分所选任务已不存在，请重新加载任务列表。',
   TASK_NOT_TODO: '只能安排待完成任务，请重新加载后选择。',
-  UNSCHEDULABLE: '当前排程规则未找到完整方案。请减少任务、调整截止时间或保留时间后重试。',
+  UNSCHEDULABLE: '当前排程规则未找到完整方案。请减少任务、调整截止时间或保护时间后重试。',
   GENERATED_SCHEDULE_INVALID: '生成的计划未通过校验，未保存。请重新生成。',
   INVALID_WEEK: '请选择有效的周日期（以周一为起点）。',
   INVALID_TASKS: '所选任务信息无效，请检查任务时长、截止时间和状态。',
   INVALID_TIME_RULES: '时间规则无效，请检查课程是否重叠，以及日期和起止时间是否正确。',
-  AI_NOT_CONFIGURED: '尚未配置 AI，仍可手动添加课程和保留时间。',
+  AI_NOT_CONFIGURED: '尚未配置 AI，仍可手动添加课程和保护时间。',
   AI_UNAVAILABLE: 'AI 暂时不可用，仍可手动操作。',
   AI_RESPONSE_INVALID: 'AI 返回的内容未通过校验，请补充描述后重试或手动添加。',
 }
 
 const FIELD_LABELS = {
-  title: '标题', description: '说明', duration_minutes: '预计时长', deadline: '截止时间',
+  title: '标题', description: '说明', duration_minutes: '剩余时长', deadline: '截止时间',
   priority: '优先级', status: '状态', kind: '类型', recurrence: '重复方式', weekday: '星期',
   date: '日期', start_time: '开始时间', end_time: '结束时间', week_start: '周日期',
   task_ids: '所选任务', active: '启用状态', text: '时间描述', language: '语言',
@@ -32,7 +32,7 @@ function validationMessage(item) {
   const location = Array.isArray(item?.loc) ? item.loc.filter((part) => part !== 'body').map((part) => FIELD_LABELS[part] || (typeof part === 'number' ? `第 ${part + 1} 项` : '输入')).join(' / ') : ''
   let correction = '内容无效，请检查后重试。'
   if (/title must not be blank|title cannot be null|Field required|field cannot be null/.test(message)) correction = '不能为空，请填写。'
-  else if (/multiple of 30/.test(message)) correction = '必须是大于零的 30 分钟整数倍。'
+  else if (/multiple of 5/.test(message)) correction = '必须是大于零的 5 分钟整数倍。'
   else if (/start_time must be before end_time/.test(message)) correction = '开始时间必须早于结束时间，暂不支持跨夜。'
   else if (/weekly requires/.test(message)) correction = '每周重复时请选择星期，不要填写具体日期。'
   else if (/once requires/.test(message)) correction = '仅一次时请填写日期，不要选择星期。'

@@ -1,4 +1,4 @@
-import { displayDeadline } from './datetime.js'
+import { displayDeadline } from '../../../frontend/src/datetime.js'
 
 const interval = (start, end) => `${displayDeadline(start)} → ${displayDeadline(end)}`
 

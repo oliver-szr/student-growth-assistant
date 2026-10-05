@@ -29,9 +29,6 @@ def apply_growth_migrations(db: Session) -> None:
     """Apply idempotent, additive V2 data migrations without altering old tables."""
     begin_planning_transaction(db)
     try:
-        _upgrade_feedback_snapshots(db)
-        _upgrade_workspace_columns(db)
-        _upgrade_taxonomy_snapshots(db)
         migrate_taxonomy(db)
         if db.get(GrowthUserProfile, 1) is None:
             db.add(GrowthUserProfile(id=1, direction="", version=1))

@@ -7,10 +7,11 @@ export function calendarPosition(item){
 }
 export function visibleSchedule(confirmed,proposal){
   if(proposal?.status!=='ready')return confirmed
-  return [...confirmed.filter(x=>!proposal.selected_refs.includes(x.ref)&&!(proposal.removed_refs||[]).includes(x.ref)),...proposal.items.map(x=>({...x,candidate:true}))]
+  const items=[...confirmed.filter(x=>!proposal.selected_refs.includes(x.ref)&&!(proposal.removed_refs||[]).includes(x.ref)),...(proposal.retained||[]),...proposal.items.map(x=>({...x,candidate:true}))]
+  return [...new Map(items.map(x=>[`${x.ref}:${x.start_at}:${x.end_at}`,x])).values()]
 }
 export function manualAction(form){
-  return {op:form.target?'update':'add',...(form.target?{target:form.target}:{}),fields:{title:form.title,duration_minutes:Number(form.minutes),deadline:`${form.deadline}:00+08:00`,priority:form.priority,task_type:form.task_type||'other'}}
+  return {op:form.target?'update':'add',...(form.target?{target:form.target}:{}),fields:{title:form.title,duration_minutes:Number(form.minutes),deadline:`${form.deadline}:00+08:00`,priority:form.priority,task_type:form.task_type||'other',...(form.splittable===undefined?{}:{profile:{splittable:Boolean(form.splittable),min_block_minutes:Number(form.min_block_minutes||30),max_segments:Number(form.max_segments||4)}})}}
 }
 const URGENCY_LABELS={overdue:'已逾期',critical:'很紧急',urgent:'近期截止',soon:'7天内截止',normal:'截止较远',at_risk:'当前有风险',available:'可安排'}
 export function focusCards(items){

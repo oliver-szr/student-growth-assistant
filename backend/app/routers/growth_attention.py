@@ -8,23 +8,25 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import GrowthGoal, Plan, PlanItem, PlanningState, Task, TaskFeedback, TaskGrowthContext, TaskStatus
+from ..models import GrowthGoal, Plan, PlanItem, PlanningState, Task, TaskFeedback, TaskGrowthContext, TaskStatus, TaskSchedulingProfile
 from ..services import assistant_clock
 from ..services.assistant_state import time_rules
 from ..services.scheduling_types import SHANGHAI
 from ..services.validator import expand_time_rules
+from ..services.planning_window import GRID_MINUTES, WINDOW_DAYS, expand_window_rules
+from ..services.assistant_scheduler import arrange
 
 router = APIRouter(prefix="/api/growth", tags=["Personal Growth"])
 
-_URGENCY_ORDER = {"overdue": 0, "critical": 1, "urgent": 2, "soon": 3, "at_risk": 4, "normal": 5}
+_URGENCY_ORDER = {"overdue": 0, "critical": 1, "urgent": 2, "soon": 3, "at_risk": 1, "normal": 5}
 _IMPORTANCE_ORDER = {"high": 0, "normal": 1, "low": 2}
 
 
-def _duration_advice(db: Session, task: Task, context: TaskGrowthContext, now: datetime) -> dict:
+def _duration_advice(db: Session, task: Task, context: TaskGrowthContext, now: datetime, samples_snapshot=None) -> dict:
     if not context.family_confirmed or not context.family.strip():
         return {"task_id": task.id, "status": "needs_task_type", "suggestion": None, "evidence": {"sample_count": 0}}
     cutoff = now - timedelta(days=28)
-    rows = db.scalars(
+    rows = samples_snapshot if samples_snapshot is not None else db.scalars(
         select(TaskFeedback)
         .where(
             TaskFeedback.outcome == "completed",
@@ -40,7 +42,7 @@ def _duration_advice(db: Session, task: Task, context: TaskGrowthContext, now: d
     seen: set[int] = set()
     samples = []
     for row in rows:
-        if row.task_id in seen:
+        if row.family_snapshot != context.family or row.task_id in seen:
             continue
         seen.add(row.task_id)
         baseline = row.initial_estimate_minutes
@@ -98,22 +100,22 @@ def _possible_starts(task: Task, now: datetime, week_start: date, fixed_busy: li
     deadline = task.deadline.astimezone(SHANGHAI)
     if deadline <= now:
         return 0
-    window_end = min(deadline, datetime.combine(week_start + timedelta(days=7), time.min, SHANGHAI))
+    window_end = min(deadline, datetime.combine(week_start + timedelta(days=WINDOW_DAYS), time.min, SHANGHAI))
     own = assigned.get(task.id)
     count = 0
-    for day in range(7):
+    for day in range(WINDOW_DAYS):
         current_date = week_start + timedelta(days=day)
-        for step in range(28):
-            start = datetime.combine(current_date, time(8), SHANGHAI) + timedelta(minutes=30 * step)
+        for step in range(840 // GRID_MINUTES):
+            start = datetime.combine(current_date, time(8), SHANGHAI) + timedelta(minutes=GRID_MINUTES * step)
             end = start + timedelta(minutes=task.duration_minutes)
             if start < now or end > window_end or end.date() != start.date() or end.time() > time(22):
                 continue
             if any(_overlap(start, end, a, b) for a, b in fixed_busy):
                 continue
-            other_assigned = [slot for task_id, slot in assigned.items() if task_id != task.id]
+            other_assigned = [slot for task_id, slots in assigned.items() if task_id != task.id for slot in slots]
             if any(_overlap(start, end, a, b) for a, b in other_assigned):
                 continue
-            if own and own[0] == start and own[1] == end:
+            if own and (start,end) in own:
                 count += 1
                 continue
             count += 1
@@ -124,18 +126,20 @@ def _possible_starts(task: Task, now: datetime, week_start: date, fixed_busy: li
 def attention_items(db: Session = Depends(get_db)) -> dict:
     now = assistant_clock.assistant_now().astimezone(SHANGHAI)
     week_start = now.date() - timedelta(days=now.weekday())
-    expanded = expand_time_rules(week_start, time_rules(db))
+    rules=time_rules(db)
+    expanded = expand_window_rules(week_start, rules)
     fixed_busy = [(entry.start_at, entry.end_at) for entry in expanded]
 
-    confirmed = db.scalar(select(Plan).where(Plan.week_start == week_start, Plan.status == "confirmed"))
+    confirmed = list(db.scalars(select(Plan).where(Plan.week_start.in_([week_start, week_start+timedelta(days=7)]), Plan.status == "confirmed")).all())
     assigned: dict[int, tuple[datetime, datetime]] = {}
     if confirmed:
-        for item in db.scalars(select(PlanItem).where(PlanItem.plan_id == confirmed.id, PlanItem.kind == "task")).all():
+        for item in db.scalars(select(PlanItem).where(PlanItem.plan_id.in_([p.id for p in confirmed]), PlanItem.kind == "task")).all():
             if item.task_id:
-                assigned[item.task_id] = (
+                assigned.setdefault(item.task_id, []).append((
                     item.start_at.astimezone(SHANGHAI), item.end_at.astimezone(SHANGHAI),
-                )
+                ))
 
+    profiles={p.task_id:p.settings for p in db.scalars(select(TaskSchedulingProfile)).all()}
     contexts = {item.task_id: item for item in db.scalars(select(TaskGrowthContext)).all()}
     goals = {item.id: item for item in db.scalars(select(GrowthGoal)).all() if item.status == "active"}
     items = []
@@ -158,9 +162,15 @@ def attention_items(db: Session = Depends(get_db)) -> dict:
         else:
             urgency = "normal"
             reason = "截止时间较远，可以和更紧急的任务一起规划。"
-        if slots == 0 and deadline > now and deadline.date() < week_start + timedelta(days=7):
-            urgency = "at_risk"
-            reason = "本周当前课程、保护时间和已确认安排中，找不到足够长的空档；需要调整条件。"
+        profile=profiles.get(task.id,{})
+        if profile:
+            t=dict(ref=f'task:{task.id}',title=task.title,duration_minutes=task.duration_minutes,deadline=task.deadline.isoformat(),priority=task.priority.value,profile=profile)
+            previous=[dict(ref=t['ref'],title=task.title,start_at=a.isoformat(),end_at=b.isoformat()) for a,b in assigned.get(task.id,[])]
+            result=arrange(week_start,now,[t],rules,previous,False)
+            slots=1 if result['status']=='ready' else 0
+        if slots == 0 and deadline > now and deadline.date() < week_start + timedelta(days=WINDOW_DAYS):
+            if urgency not in ("critical","urgent"):urgency = "at_risk"
+            reason = "本周与下周的当前约束下，找不到完整可行时段；需要调整条件。"
         elif slots == 1 and deadline > now:
             reason += " 当前只找到一个可用连续时段。"
 
@@ -182,7 +192,7 @@ def attention_items(db: Session = Depends(get_db)) -> dict:
     items.sort(key=lambda item: (
         _URGENCY_ORDER[item["urgency"]],
         _IMPORTANCE_ORDER[item["importance"]],
-        -(item["goal"]["priority"] if item["goal"] else 0),
+        (item["goal"]["priority"] if item["goal"] else 4),
         item["deadline"],
         item["task_id"],
     ))

@@ -1,0 +1,190 @@
+/* Shared workbench design layer. Imported last; business styles retain their layout-independent rules. */
+.compact-shell {
+  --ui-ink:#173a46; --ui-muted:#526974; --ui-accent:#087968;
+  --ui-line:#d9e4e7; --ui-panel:#fff; --ui-radius:12px;
+  --ui-space:20px; --ui-body:15px; --ui-small:13px; --ui-label:14px;
+  font-size:var(--ui-body); line-height:1.65; color:var(--ui-ink);
+}
+.compact-shell .container {width:min(calc(100% - 48px),1440px);max-width:1440px}
+.compact-shell h1,.compact-shell h2,.compact-shell h3,.compact-shell h4 {letter-spacing:normal;line-height:1.35}
+.compact-shell .site-header {padding:16px 0;background:#fff}
+.compact-shell .brand-row {display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.compact-shell .brand-row h1 {font-size:20px;font-weight:700;margin:0}
+.compact-shell .brand-row span,.compact-shell .workspace-clock {font-size:13px;color:var(--ui-muted)}
+.compact-shell .navigation-row {display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--ui-line);margin-bottom:20px;flex-wrap:wrap}
+.compact-shell .tabs {border:0;margin:0;padding:12px 0}
+.compact-shell .growth-page {gap:0}
+.compact-shell .growth-page-heading {display:flex;align-items:center;flex-direction:row;gap:12px;margin:0 0 20px;padding:0;min-height:44px}
+.compact-shell .growth-page-heading h2 {font-size:28px;font-weight:700;margin:0}
+.compact-shell .review-week {margin-left:auto;font-size:13px}
+.compact-shell h3,.compact-shell .panel-heading h3,.compact-shell .workspace-chat-heading h3 {font-size:18px;font-weight:600;margin:0}
+.compact-shell h4,.compact-shell .preference-rule-title strong {font-size:16px;font-weight:600}
+.compact-shell .muted,.compact-shell .helper,.compact-shell small {color:var(--ui-muted)}
+.compact-shell small,.compact-shell .goal-metric,.compact-shell .task-context-label {font-size:13px;line-height:1.5}
+.compact-shell .badge,.compact-shell .today-urgency {font-size:12px;font-weight:500;color:#255848}
+.compact-shell .button,.compact-shell .tab,.compact-shell .manual-link {font-size:14px;font-weight:600;min-height:44px}
+.compact-shell input:not([type=checkbox]),.compact-shell select,.compact-shell textarea {font-size:15px;min-height:44px;max-width:100%;min-width:0;line-height:1.5}
+.compact-shell textarea::placeholder,.compact-shell input::placeholder {color:var(--ui-muted);opacity:1}
+.compact-shell label {font-size:14px;font-weight:500}
+.compact-shell .button.primary {background:var(--ui-accent);color:#fff}
+.compact-shell :focus-visible {outline:2px solid #087968;outline-offset:3px}
+.compact-shell button:disabled {cursor:default}
+[hidden] {display:none!important}
+
+/* One grid and breakpoint for all three pages. Hiding never unmounts forms or conversations. */
+.compact-shell .workbench-grid {display:grid;grid-template-columns:clamp(320px,36%,440px) minmax(0,1fr);gap:var(--ui-space);align-items:start}
+.compact-shell .workbench-chat-column,.compact-shell .workbench-result-column {min-width:0}
+.compact-shell .workbench-chat-column.can-stick {position:sticky;top:16px}
+.compact-shell .workbench-result-column,.compact-shell .result-panels {display:grid;gap:20px;align-content:start}
+.compact-shell .workbench-switch {display:none}
+.compact-shell .growth-section,.compact-shell .chat-panel,.compact-shell .schedule-panel,.compact-shell .proposal-panel,.compact-shell .workspace-chat {border:1px solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-panel);box-shadow:0 3px 12px #173a4607;margin:0;min-width:0}
+.compact-shell .growth-section,.compact-shell .proposal-panel {padding:20px}
+.compact-shell .growth-section-heading {margin:0 0 16px;align-items:center;gap:12px}
+.compact-shell .growth-section-heading h4 {margin-top:12px}
+.compact-shell .panel-heading,.compact-shell .workspace-chat-heading {padding:16px 20px;min-height:60px;gap:8px;border-bottom:1px solid var(--ui-line)}
+.compact-shell .panel-heading .preference-entry {margin:0 0 0 auto;padding:0 6px;white-space:nowrap}
+.compact-shell .chat-panel,.compact-shell .workspace-chat {overflow:hidden;padding:0;border-top:3px solid #198575}
+.compact-shell .chat-history {position:relative}
+.compact-shell .chat-scroll {display:flex;flex-direction:column;gap:12px;height:auto;min-height:180px;max-height:480px;overflow-y:auto;overflow-x:hidden;padding:20px;margin:0;scrollbar-gutter:stable;overscroll-behavior:contain}
+.compact-shell .assistant-bubble,.compact-shell .user-bubble,.compact-shell .workspace-message {font-size:15px;line-height:1.65;max-width:96%;padding:12px 14px;margin:0;overflow-wrap:anywhere}
+.compact-shell .workspace-message.user {align-self:flex-end}
+.compact-shell .workspace-message strong,.compact-shell .assistant-bubble>small,.compact-shell .user-bubble>small {font-size:12px;font-weight:500}
+.compact-shell .new-reply {position:absolute;bottom:10px;right:16px;box-shadow:0 2px 10px #173a4620;background:#fff}
+.compact-shell .chat-compose,.compact-shell .workspace-chat-input {padding:16px 20px;background:#f7faf9;border-top:1px solid var(--ui-line);margin:0;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.compact-shell .chat-compose label {width:100%}
+.compact-shell .chat-compose textarea,.compact-shell .workspace-chat-input textarea {width:100%;flex-basis:100%;min-height:88px;margin:0;padding:12px}
+.compact-shell .chat-compose>div {width:100%;display:flex;justify-content:space-between;margin:0}
+.compact-shell .workspace-chat-input .button {margin-left:auto}
+.compact-shell .workspace-run-status,.compact-shell .run-progress {margin:12px 16px;font-size:14px}
+.compact-shell .manual-task {padding:20px}
+.compact-shell .workspace-draft,.compact-shell .workspace-confirmed {margin:0;padding:20px;border:1px solid #d4a044;border-radius:12px;background:#fffbf1}
+.compact-shell .workspace-confirmed {border-color:#b5d9cc;background:#f3faf6;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.compact-shell .draft-change {margin:12px 0;overflow-wrap:anywhere}
+.compact-shell .draft-change>div {display:grid;gap:6px}
+.compact-shell .draft-change span {font-size:14px}
+.compact-shell .recently-saved {animation:saved-highlight 1.5s ease-out}
+@keyframes saved-highlight {from{box-shadow:0 0 0 3px #a0d9c7}to{box-shadow:none}}
+
+/* Priority cards and calendar use data hierarchy rather than small print. */
+.compact-shell .today-focus {display:block;padding:16px 20px;margin:0 0 20px;background:#f4faf7;border-left:3px solid #278571}
+.compact-shell .today-focus-intro {margin-bottom:12px}
+.compact-shell .today-focus ol {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;overflow:visible;padding:0}
+.compact-shell .today-focus-item {padding:12px 14px;line-height:1.5}
+.compact-shell .today-focus-item>div {align-items:flex-start;flex-wrap:wrap}
+.compact-shell .today-focus-item strong {font-size:16px;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+.compact-shell .today-focus-item>p {font-size:13px;min-height:0;margin:8px 0}
+.compact-shell .today-focus-item details {margin-top:8px;font-size:13px}
+.compact-shell .risk-label,.compact-shell .urgency-overdue .today-urgency {color:#a43228;font-weight:600}
+.compact-shell .schedule-heading {display:grid;grid-template-columns:minmax(0,1fr) auto}
+.compact-shell .calendar-legend {font-size:12px;grid-column:1/-1;flex-wrap:wrap}
+.compact-shell .week-switch button {width:44px;height:44px;min-height:44px}
+.compact-shell .week-switch-range {font-size:13px;min-width:88px}
+.compact-shell .week-scroll {width:100%;height:auto;max-height:none;overflow:visible}
+.compact-shell .week-grid {width:100%;min-width:0;grid-template-columns:40px repeat(7,minmax(0,1fr));padding-bottom:16px}
+.compact-shell .day-heading {font-size:12px;position:static}
+.compact-shell .day-heading span {font-size:12px}
+.compact-shell .hours span {font-size:11px;left:4px;color:#526974}
+.compact-shell .calendar-block {min-height:0;border:0;border-left:3px solid #438970;left:3px;right:3px;width:auto;max-width:none;padding:4px;text-align:left;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;line-height:1.35;border-radius:5px;color:#214b3e}
+.compact-shell .calendar-block.past {opacity:1;background:#f1f4f3;color:#526974}
+.compact-shell .calendar-block.course {background:#eef0fb;color:#343d68;border-left-color:#7885bc}
+.compact-shell .course-key:before {background:#7885bc}
+.compact-shell .calendar-block.changed {color:#654817;border-left-color:#bc8a2c}
+.compact-shell .calendar-block span,.compact-shell .calendar-block small {font-size:11px;margin-top:0;color:inherit}
+.compact-shell .calendar-block strong {font-size:12px;line-height:1.35;margin:2px 0;overflow-wrap:anywhere}
+.compact-shell .calendar-block.short-block {padding:0 2px}
+.compact-shell .calendar-block.short-block span,.compact-shell .calendar-block.short-block small {display:none}
+.compact-shell .calendar-block.short-block strong {margin:0}
+.compact-shell .calendar-block:focus-visible {z-index:4;outline:2px solid #087968;outline-offset:1px}
+.compact-shell .schedule-detail {max-width:min(480px,calc(100% - 32px));border:1px solid var(--ui-line);border-radius:12px;padding:24px;color:var(--ui-ink);overflow-wrap:anywhere}
+.compact-shell .schedule-detail::backdrop {background:#173a4640}
+.compact-shell .detail-tags {display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;font-size:13px}
+.compact-shell .detail-tags span {padding:4px 8px;background:#edf5f2;border-radius:6px}
+.compact-shell .proposal-panel {border-top:3px solid #d4a044;scroll-margin-top:20px}
+.compact-shell .proposal-panel.applied {border-top-color:#278571}
+.compact-shell .proposal-heading {gap:12px;align-items:flex-start}
+.compact-shell .proposal-heading>span {font-size:13px}
+.compact-shell .proposal-change-count {font-size:15px;font-weight:600}
+.compact-shell .candidate-options {grid-template-columns:1fr;gap:12px}
+.compact-shell .candidate-option {min-height:0;border-radius:8px;padding:12px;text-align:left}
+.compact-shell .candidate-option.selected {border:2px solid #087968;background:#edf8f3}
+.compact-shell .candidate-option strong {font-size:16px;display:flex;justify-content:space-between;gap:8px}
+.compact-shell .candidate-option span,.compact-shell .candidate-option small {font-size:13px}
+.compact-shell .selected-label {color:#087968;font-size:12px}
+.compact-shell .change-list {grid-template-columns:1fr;gap:12px}
+.compact-shell .change-list strong {font-size:16px}
+.compact-shell .change-list span {font-size:14px}
+.compact-shell .proposal-actions {position:sticky;bottom:0;z-index:5;margin:16px -20px -20px;padding:16px 20px;background:#fff;border-top:1px solid var(--ui-line);flex-wrap:wrap;border-radius:0 0 12px 12px}
+.compact-shell details>summary {cursor:pointer;font-size:14px;color:#365d6d;padding:8px 0;min-height:36px}
+.compact-shell .task-memory {padding:20px;margin-top:20px}
+.compact-shell .task-memory>h3 {margin:16px 0}
+.compact-shell .task-memory .section-heading h2 {font-size:18px}
+
+/* Fact panels stay full width inside the results column. */
+.compact-shell .review-metrics {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.compact-shell .review-metrics>div {background:#f3f8f6;padding:12px;border-radius:8px;min-width:0}
+.compact-shell .review-metrics span {font-size:13px;color:var(--ui-muted);display:block}
+.compact-shell .review-metrics strong {display:block;font-size:26px;line-height:1.4;font-weight:700;color:var(--ui-ink);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.compact-shell .review-metrics small {font-size:12px;font-weight:400;margin-left:6px}
+.compact-shell .review-narrative {font-size:15px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+.compact-shell .goal-list,.compact-shell .preference-rule-list {gap:12px}
+.compact-shell .goal-card,.compact-shell .insight-card,.compact-shell .preference-rule-card {border-radius:8px;padding:16px;min-width:0}
+.compact-shell .goal-card h4,.compact-shell .insight-card h4 {overflow-wrap:anywhere}
+.compact-shell .goal-card-top>div {min-width:0}
+.compact-shell .preference-rule-card {display:flex;align-items:center;justify-content:space-between;gap:16px}
+.compact-shell .preference-rule-copy {min-width:0;gap:2px}
+.compact-shell .preference-rule-title {flex-wrap:wrap}
+.compact-shell .preference-rule-copy strong {overflow-wrap:anywhere}
+.compact-shell .preference-rule-copy p {font-size:14px;margin:6px 0;line-height:1.5}
+.compact-shell .preference-rule-copy small {display:block;font-size:13px}
+.compact-shell .preference-rule-actions {flex-shrink:0;gap:8px}
+.compact-shell .preference-rule-editor,.compact-shell #goal-editor {margin-top:16px;scroll-margin-top:20px}
+.compact-shell .goal-card progress {display:block;width:100%;height:8px;accent-color:#087968;margin:10px 0}
+.compact-shell .insight-card>p>strong {font-size:22px}
+.compact-shell .goal-progress {font-size:14px;margin:10px 0 0}
+.compact-shell .goal-priority {font-size:12px}
+.compact-shell .goal-metric {gap:8px}
+.compact-shell .growth-empty {font-size:14px;line-height:1.65;margin:0;padding:12px;background:#f5f8f7}
+.compact-shell .backup-list,.compact-shell .revision-list {overflow-wrap:anywhere}
+@media(max-width:1023px) {
+  .compact-shell .workbench-grid {grid-template-columns:minmax(0,1fr)}
+  .compact-shell .workbench-chat-column.can-stick {position:static}
+  .compact-shell .workbench-switch {display:flex;gap:4px;margin-bottom:16px;padding:4px;background:#eaf2ef;border:1px solid var(--ui-line);border-radius:10px}
+  .compact-shell .workbench-switch button {flex:1;min-height:44px;border:0;border-radius:7px;background:transparent;color:var(--ui-muted);font-size:14px;font-weight:600}
+  .compact-shell .workbench-switch button[aria-pressed=true] {background:#fff;color:var(--ui-accent)}
+  .compact-shell .workbench-grid[data-view=chat]>.workbench-result-column,.compact-shell .workbench-grid[data-view=result]>.workbench-chat-column {display:none}
+  .compact-shell .chat-scroll {max-height:480px}
+}
+@media(max-width:600px) {
+  .compact-shell {--ui-space:16px}
+  .compact-shell .container {width:calc(100% - 32px)}
+  .compact-shell .brand-row {gap:6px}
+  .compact-shell .brand-row h1 {font-size:18px}
+  .compact-shell .brand-row span {width:100%}
+  .compact-shell .navigation-row {padding-bottom:12px;margin-bottom:16px}
+  .compact-shell .workspace-clock {font-size:12px}
+  .compact-shell .growth-page-heading {margin-bottom:16px;flex-wrap:wrap}
+  .compact-shell .growth-page-heading h2 {font-size:24px}
+  .compact-shell .review-week {margin-left:auto}
+  .compact-shell .growth-section,.compact-shell .proposal-panel,.compact-shell .manual-task {padding:16px}
+  .compact-shell .growth-section-heading {flex-direction:row;align-items:center;flex-wrap:wrap}
+  .compact-shell .panel-heading,.compact-shell .workspace-chat-heading {padding:12px 16px;flex-wrap:wrap}
+  .compact-shell .chat-scroll {padding:16px}
+  .compact-shell .chat-compose,.compact-shell .workspace-chat-input {padding:16px}
+  .compact-shell .today-focus {padding:16px}
+  .compact-shell .today-focus ol {grid-template-columns:1fr}
+  .compact-shell .today-focus-item>div {flex-wrap:nowrap}
+  .compact-shell .today-focus-item strong {flex:1}
+  .compact-shell .today-urgency {flex-shrink:0}
+  .compact-shell .week-grid {grid-template-columns:32px repeat(7,minmax(0,1fr))}
+  .compact-shell .calendar-block {left:1px;right:1px;padding:2px;border-left-width:2px}
+  .compact-shell .hours span {font-size:10px;left:1px}
+  .compact-shell .day-heading,.compact-shell .day-heading span {font-size:11px}
+  .compact-shell .preference-rule-card {align-items:flex-start;flex-direction:column;gap:8px}
+  .compact-shell .preference-rule-actions {align-self:flex-end}
+  .compact-shell .review-metrics {gap:6px}
+  .compact-shell .review-metrics>div {padding:10px 8px}
+  .compact-shell .review-metrics strong {font-size:24px}
+  .compact-shell .proposal-actions {margin:16px -16px -16px;padding:12px 16px}
+  .compact-shell .proposal-actions .button.primary {flex:none}
+}
+@media(prefers-reduced-motion:reduce){.compact-shell .recently-saved{animation:none}}

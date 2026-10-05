@@ -8,6 +8,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'backend'))
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from app.services.schema_migrations import upgrade_database
 from app.database import Base,create_sqlite_engine
 from app.models import (Task,TimeRule,Plan,PlanItem,TaskGrowthContext,TaskSchedulingProfile,
     TaskFeedback,TaskWorkSession,GrowthGoal,GrowthGoalRevision,GrowthUserProfile,AssistantPreference,TaskCategory)
@@ -119,7 +120,7 @@ def seed(db,source):
 
 def initialize(path,source=None):
     target=demo_database(str(path));target.parent.mkdir(parents=True,exist_ok=True)
-    engine=create_sqlite_engine(f'sqlite:///{target.as_posix()}');Base.metadata.create_all(engine)
+    engine=create_sqlite_engine(f'sqlite:///{target.as_posix()}');upgrade_database(engine)
     with Session(engine) as db:
         seed(db,source or example_source());db.commit()
     engine.dispose()

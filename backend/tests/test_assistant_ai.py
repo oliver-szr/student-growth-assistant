@@ -178,3 +178,19 @@ def test_growth_insight_picker_rejects_invented_candidate(monkeypatch):
     monkeypatch.setattr(assistant_ai,'request_claude',response)
     with pytest.raises(AIServiceError):
         asyncio.run(assistant_ai.select_growth_insights([{'candidate_id':'practice:afternoon'}],{}))
+def test_schedule_explanation_uses_gentle_style_and_preserves_facts(monkeypatch):
+    import asyncio,json
+    from app.services import assistant_ai
+    seen={}
+    original='我把阅读留在周五晚上，给其他任务留出空间。**这份安排还待你确认**，也可以继续调整。'
+    async def request(message,system,config,*args):
+        seen.update(facts=json.loads(message),system=system)
+        return original
+    monkeypatch.setattr(assistant_ai,'request_claude',request)
+    monkeypatch.setattr(assistant_ai,'get_claude_config',lambda:None)
+    facts={'changes':[{'title':'文献阅读','after':'周五晚上'}],'summary':'待确认','diagnostics':[],'notices':[]}
+    result=asyncio.run(assistant_ai.explain({**facts,'private_unrelated':'不得发送'}))
+    assert result==original
+    assert seen['facts']==facts
+    for instruction in ('语气温柔但克制','不猜测','没有依据的安排理由不编造','不宣称已保存','修改仍需用户确认'):
+        assert instruction in seen['system']

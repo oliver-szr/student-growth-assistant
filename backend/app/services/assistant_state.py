@@ -3,11 +3,12 @@ from copy import deepcopy
 from datetime import date, timedelta
 from uuid import uuid4
 from sqlalchemy import select
-from ..models import GrowthGoal, Task, TaskGrowthContext, TimeRule, TaskSchedulingProfile, Plan, PlanItem, CourseImport, AssistantPreference, TaskCategory
+from ..models import GrowthGoal, Task, TaskGrowthContext, TimeRule, TaskSchedulingProfile, Plan, PlanItem, CourseImport, AssistantPreference, TaskCategory, TaskFeedback
 from ..schemas import TaskResponse
 from ..assistant_schemas import PreferenceSettings
 from .scheduling_types import TimeRuleInput
-from .assistant_scheduler import arrange, dt, interval
+from .assistant_scheduler import arrange, dt, interval, old_segments
+from .planning_window import GRID_MINUTES, WINDOW_DAYS
 from . import assistant_clock
 from .taxonomy import compile_preferences, category_rows, validate_category
 
@@ -55,9 +56,12 @@ def time_rules(db):
 
 
 def baseline(db,week):
-    p=db.scalar(select(Plan).where(Plan.week_start==week,Plan.status=='confirmed'))
-    if not p: return None,[]
-    return p.id,[dict(ref=f'task:{x.task_id}',title=x.title_snapshot,start_at=x.start_at.astimezone(assistant_clock.SHANGHAI).isoformat(),end_at=x.end_at.astimezone(assistant_clock.SHANGHAI).isoformat()) for x in db.scalars(select(PlanItem).where(PlanItem.plan_id==p.id,PlanItem.kind=='task')).all()]
+    plans=list(db.scalars(select(Plan).where(Plan.week_start.in_([week,week+timedelta(days=7)]),Plan.status=='confirmed')).all())
+    current=next((p for p in plans if p.week_start==week),None)
+    ids=[p.id for p in plans]
+    items=[dict(ref=f'task:{x.task_id}',title=x.title_snapshot,start_at=x.start_at.astimezone(assistant_clock.SHANGHAI).isoformat(),end_at=x.end_at.astimezone(assistant_clock.SHANGHAI).isoformat()) for x in db.scalars(select(PlanItem).where(PlanItem.plan_id.in_(ids),PlanItem.kind=='task')).all()] if ids else []
+    return current.id if current else None,items
+
 
 
 def merge_actions(base,incoming):
@@ -78,6 +82,7 @@ def merge_actions(base,incoming):
 def proposed_world(db,week,actions,previous_override=None):
     tasks={t['ref']:deepcopy(t) for t in task_library(db)}
     questions=[]; focus=set()
+    confirmed_remaining={a.get('target') for a in actions if 'duration_minutes' in a.get('fields',{})}
     for a in actions:
         ref=a.get('target'); focus.add(ref)
         if a['op']=='add':
@@ -88,39 +93,57 @@ def proposed_world(db,week,actions,previous_override=None):
         for k,v in a['fields'].items():
             if k=='profile': t[k]={**(t.get(k) or {}),**(v or {})}
             else: t[k]=v
+    goals={g.id:g for g in db.scalars(select(GrowthGoal).where(GrowthGoal.status=='active')).all()}
+    for t in tasks.values():
+        goal=goals.get(t.get('goal_id'))
+        t['goal']=dict(id=goal.id,title=goal.title,priority=goal.priority) if goal else None
     now=assistant_clock.assistant_now()
     current,previous=baseline(db,week)
     if previous_override is not None:
         previous=previous_override
-    byold={x['ref']:x for x in previous}
+    byold=old_segments(previous)
+    # Earlier-week unfinished tasks need explicit remaining-time evidence, not elapsed schedule time.
+    historical=list(db.execute(select(PlanItem.task_id,PlanItem.end_at).join(Plan,Plan.id==PlanItem.plan_id).where(Plan.status=='confirmed',Plan.week_start<week,PlanItem.kind=='task')).all())
+    past_ends={}
+    for task_id,end in historical: past_ends[task_id]=max(end,past_ends.get(task_id,end))
+    feedbacks={}
+    for f in db.scalars(select(TaskFeedback).where(TaskFeedback.retracted_at.is_(None)).order_by(TaskFeedback.id)).all():feedbacks[f.task_id]=f
     relevant=[]; retained=[]; notices=[]
     for ref,t in tasks.items():
-        old=byold.get(ref)
-        if old and interval(old)[1]<=now:
-            retained.append(old)
-            if t['status']=='todo': notices.append(f"{t['title']}：过去安排已结束，请核对完成进度。")
-            if ref not in focus: continue
-        if old and interval(old)[0]<=now<interval(old)[1] and t['status']!='todo':
-            retained.append(old)
+        segments=byold.get(ref,[])
+        old=next((x for x in segments if interval(x)[1]>now),None)
+        elapsed=[x for x in segments if interval(x)[1]<=now]
+        retained.extend(elapsed)
+        task_id=t.get('id'); feedback=feedbacks.get(task_id)
+        past_end=max([dt(x['end_at']) for x in elapsed]+([past_ends[task_id]] if task_id in past_ends else []),default=None)
+        if past_end and t['status']=='todo' and ref not in confirmed_remaining and (not feedback or feedback.outcome!='partial' or feedback.occurred_at<past_end):
+            if ref in focus:questions.append(f"{t['title']}：请确认预计剩余分钟，再重新安排。")
+            notices.append(f"{t['title']}：旧安排已结束，需要确认预计剩余时长；保留原任务与DDL，未自动安排。")
+            if old:
+                # Keep existing future segments rather than silently deleting them.
+                retained.extend(x for x in segments if x not in elapsed)
+            continue
+        if old and interval(old)[0]<=now<interval(old)[1] and t['status']!='todo':retained.append(old)
         if ref in focus:
             missing=[label for key,label in [('title','任务名称'),('duration_minutes','预计剩余时长'),('deadline','具体截止时间')] if not t.get(key)]
             questions.extend(f"{t.get('title') or '新任务'}：请补充{label}。" for label in missing)
         if t['status']!='todo': continue
         if not t.get('deadline') or not t.get('duration_minutes'): continue
-        if t['duration_minutes']%30:
-            questions.append(f"{t['title']}：请确认30分钟整数倍的时长，不会自动取整。"); continue
+        if t['duration_minutes']%GRID_MINUTES:
+            questions.append(f"{t['title']}：请确认5分钟整数倍的时长，不会自动取整。"); continue
         p=t.get('profile') or {}
-        if p.get('fixed_start') and (dt(p['fixed_start']).minute%30 or dt(p['fixed_start']).second):
-            questions.append(f"{t['title']}：请确认整点或半点的安排时间。"); continue
+        if p.get('fixed_start') and (dt(p['fixed_start']).minute%GRID_MINUTES or dt(p['fixed_start']).second):
+            questions.append(f"{t['title']}：请确认5分钟粒度的安排时间。"); continue
         if p.get('locked') and not old:
             questions.append(f"{t['title']}：先安排并采用后，才能锁定既有时段。"); continue
         if dt(t['deadline'])<=now:
+            retained.extend(x for x in segments if x not in elapsed)
             notices.append(f"{t['title']}：已逾期，需要处理，未自动修改DDL。")
             if ref in focus: questions.append(f"{t['title']}：请明确新的有效截止时间或标记完成/取消。")
             continue
-        if (old and interval(old)[1]>now) or dt(t['deadline']).date()<week+timedelta(days=7) or ref in focus:
+        if (old and interval(old)[1]>now) or dt(t['deadline']).date()<week+timedelta(days=WINDOW_DAYS) or ref in focus:
             relevant.append(t)
-        else: notices.append(f"{t['title']}：后续待安排，尚未保证跨周DDL。")
+        else: notices.append(f"{t['title']}：后续待安排，超出两周规划范围，尚未保证DDL。")
     return dict(tasks=list(tasks.values()),selected=relevant,previous=previous,retained=retained,current_plan_id=current,questions=questions,notices=notices,now=now,week=week)
 
 
@@ -128,12 +151,12 @@ def world_rules(db,world,blocked_windows=None):
     rules=time_rules(db);next_id=max((r.id for r in rules),default=0)+1
     for x in world['retained']:
         a,b=interval(x)
-        if a<=world['now']<b:
+        if b>world['now']:
             rules.append(TimeRuleInput(id=next_id,kind='protected',title=x['title'],recurrence='once',date=a.date(),start_time=a.time().replace(tzinfo=None),end_time=b.time().replace(tzinfo=None)))
             next_id+=1
     for block in blocked_windows or []:
         a=dt(block['start_at']);b=dt(block['end_at'])
-        if a.date()!=b.date() or not world['week']<=a.date()<world['week']+timedelta(days=7) or b<=world['now']:
+        if a.date()!=b.date() or not world['week']<=a.date()<world['week']+timedelta(days=WINDOW_DAYS) or b<=world['now']:
             continue
         a=max(a,world['now'])
         rules.append(TimeRuleInput(id=next_id,kind='protected',title='本轮临时安排要求',recurrence='once',date=a.date(),start_time=a.time().replace(tzinfo=None),end_time=b.time().replace(tzinfo=None)))
@@ -154,13 +177,13 @@ def build_proposal(db,week,actions,questions=None,preferences=None,strategy='bal
     temporary_preferences=temporary_preferences or {}
     for block in temporary_preferences.get('blocked_windows',[]):
         start=dt(block['start_at']);end=dt(block['end_at'])
-        if start.date()!=end.date() or not week<=start.date()<week+timedelta(days=7) or end<=world['now']:
-            qs.append('本轮临时时段必须在本周内且仍有未来时间，请重新说明日期和时长。')
+        if start.date()!=end.date() or not week<=start.date()<week+timedelta(days=WINDOW_DAYS) or end<=world['now']:
+            qs.append('本轮临时时段必须在本周与下周范围内且仍有未来时间，请重新说明日期和时长。')
     saved=preference_settings(db)
     persistent=merge_preference_patch(saved['settings'],preference_updates)
     preferences=preferences or persistent
     legacy_persistent={key:persistent[key] for key in ('task_windows','avoid_windows','deadline_buffer_hours','adjustment_mode')}
-    payload=dict(actions=actions,tasks=world['tasks'],questions=qs,notices=world['notices'],items=[],alternatives=[],candidate_options=[],selected_candidate_id=None,selected_strategy='balanced',selected_metrics={},personal_preferences=preferences,preference_is_sample=saved['is_sample'] and not bool(preference_updates),preference_updates={'settings':legacy_persistent} if preference_updates else None,temporary_preferences=temporary_preferences,diagnostics=[],changes=[],summary='',selected_refs=[t['ref'] for t in world['selected']],retained=world['retained'],removed_refs=[],unmet_preferences=[])
+    payload=dict(window_start=week.isoformat(),window_end_exclusive=(week+timedelta(days=WINDOW_DAYS)).isoformat(),actions=actions,tasks=world['tasks'],questions=qs,notices=world['notices'],items=[],alternatives=[],candidate_options=[],selected_candidate_id=None,selected_strategy='balanced',selected_metrics={},personal_preferences=preferences,preference_is_sample=saved['is_sample'] and not bool(preference_updates),preference_updates={'settings':legacy_persistent} if preference_updates else None,temporary_preferences=temporary_preferences,diagnostics=[],changes=[],summary='',selected_refs=[t['ref'] for t in world['selected']],retained=world['retained'],removed_refs=[],unmet_preferences=[])
     if qs or (not actions and not allow_replan):
         payload['status']='needs_input'
         if not qs: payload['questions']=['请输入任务，或使用手动任务卡片。']
@@ -169,18 +192,13 @@ def build_proposal(db,week,actions,questions=None,preferences=None,strategy='bal
         preferences={**preferences,'temporary_avoid_windows':temporary_preferences['avoid_windows']}
     result=arrange(week,world['now'],world['selected'],world_rules(db,world,temporary_preferences.get('blocked_windows')),world['previous'],preferences=preferences,include_strategies=True)
     payload.update(result)
-    selected=next((x for x in result.get('candidate_options',[]) if x['strategy']=='balanced'),None)
+    selected=next((x for x in result.get('candidate_options',[]) if x['items']==result['items']),None)
     if selected:
-        payload['selected_candidate_id']=selected['candidate_id']; payload['selected_metrics']=selected['metrics']
+        payload['selected_candidate_id']=selected['candidate_id']; payload['selected_metrics']=selected['metrics']; payload['selected_strategy']=selected['strategy']
     for option in payload.get('candidate_options',[]):
         option['changes']=_changes_for(option['items'],world)
         option['summary']=_summary(option['changes'])
-    old={x['ref']:x for x in world['previous']}
-    for x in result['items']:
-        before=old.get(x['ref'])
-        if before and interval(before)==interval(x): continue
-        t=next(t for t in world['selected'] if t['ref']==x['ref'])
-        payload['changes'].append(dict(ref=x['ref'],title=x['title'],kind='moved' if before else 'added',before=before,after=x,deadline=t['deadline'],priority=t['priority']))
+    payload['changes']=_changes_for(result['items'],world) if result['status']=='ready' else []
     for x in result['items']:
         t=next(t for t in world['selected'] if t['ref']==x['ref'])
         windows=(t.get('profile') or {}).get('preferred_windows') or []
@@ -199,28 +217,34 @@ def build_proposal(db,week,actions,questions=None,preferences=None,strategy='bal
         if any(k not in ('profile',) for k in a['fields']):
             payload['notices'].append('任务资料修改将与日程一起在采用时保存。'); break
     if result['status']=='ready':
-        lines=[f"{c['title']}：从未来日程移除；任务状态修改会在采用时保存。" if c['kind']=='removed' else f"{c['title']}：{'调整' if c['before'] else '新增'}到{c['after']['start_at'][5:16].replace('T',' ')}，结束不晚于DDL {c['deadline'][5:16].replace('T',' ')}。" for c in payload['changes']]
-        payload['summary']='\n'.join(lines) or '任务资料已更新，现有安排可以保留。'
-        payload['summary']+='\n所有本轮任务都通过课程、截止时间和锁定校验。'
+        payload['summary']=_summary(payload['changes'])+'\n所有本轮任务都通过课程、截止时间和锁定校验。'
     else: payload['summary']='\n'.join(x['message'] for x in result['diagnostics'])
     return payload
 
 
 def _changes_for(items,world):
-    old={x['ref']:x for x in world['previous']}; selected={t['ref']:t for t in world['selected']}; changes=[]
-    for item in items:
-        before=old.get(item['ref'])
-        if before and interval(before)==interval(item): continue
-        task=selected[item['ref']]
-        changes.append(dict(ref=task['ref'],title=task['title'],kind='moved' if before else 'added',before=before,after=item,deadline=task['deadline'],priority=task['priority']))
+    old=old_segments(world['previous']); new=old_segments(items)
+    selected={t['ref']:t for t in world['selected']}; changes=[]
+    for ref,segments in new.items():
+        before=[x for x in old.get(ref,[]) if interval(x)[1]>world['now']]
+        if sorted(interval(x) for x in before)==sorted(interval(x) for x in segments):continue
+        task=selected[ref]
+        changes.append(dict(ref=ref,title=task['title'],kind='moved' if before else 'added',before=before[0] if before else None,after=segments[0],before_segments=before,after_segments=segments,deadline=task['deadline'],priority=task['priority']))
     kept={x['ref'] for x in items+world['retained']}
-    for before in world['previous']:
-        if before['ref'] not in kept:
-            task=next((t for t in world['tasks'] if t['ref']==before['ref']),None)
-            if task: changes.append(dict(ref=task['ref'],title=task['title'],kind='removed',before=before,after=None,deadline=task['deadline'],priority=task['priority']))
+    for ref,before in old.items():
+        if ref not in kept:
+            task=next((t for t in world['tasks'] if t['ref']==ref),None)
+            if task:changes.append(dict(ref=ref,title=task['title'],kind='removed',before=before[0],after=None,before_segments=before,after_segments=[],deadline=task['deadline'],priority=task['priority']))
     return changes
 
 
 def _summary(changes):
-    lines=[f"- **{c['title']}**：从未来日程移除。" if c['kind']=='removed' else f"- **{c['title']}**：{'调整' if c['before'] else '新增'}到 {c['after']['start_at'][5:16].replace('T',' ')}，DDL 为 {c['deadline'][5:16].replace('T',' ')}。" for c in changes]
+    lines=[]
+    for c in changes:
+        if c['kind']=='removed':lines.append(f"- **{c['title']}**：从未来日程移除。")
+        else:
+            segments=c.get('after_segments') or [c['after']]
+            times='；'.join(f"{x['start_at'][5:16].replace('T',' ')}–{x['end_at'][11:16]}" for x in segments)
+            label=f"分成 {len(segments)} 段，" if len(segments)>1 else ''
+            lines.append(f"- **{c['title']}**：{label}{times}，DDL 为 {c['deadline'][5:16].replace('T',' ')}。")
     return '\n'.join(lines) or '**本轮任务资料已更新。**\n现有安排可以保留。'

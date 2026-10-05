@@ -216,8 +216,8 @@ def validate_rule(db: Session, data: dict, own_id: int | None = None) -> dict:
             "parameters": params, "source": data.get("source", "user")}
 
 
-def rule_payload(db: Session, row: PreferenceRule) -> dict:
-    category = db.get(TaskCategory, row.category_key) if row.category_key else None
+def rule_payload(db: Session, row: PreferenceRule, categories=None) -> dict:
+    category = (categories.get(row.category_key) if categories is not None else db.get(TaskCategory, row.category_key)) if row.category_key else None
     return dict(id=row.id, name=row.name, description=row.description, enabled=row.enabled, kind=row.kind,
                 category_key=row.category_key, category_name=category.name if category else None,
                 weekdays=row.weekdays, parameters=row.parameters, source=row.source,
@@ -225,7 +225,8 @@ def rule_payload(db: Session, row: PreferenceRule) -> dict:
 
 
 def rules_payload(db: Session) -> list[dict]:
-    return [rule_payload(db, row) for row in db.scalars(select(PreferenceRule).order_by(PreferenceRule.id)).all()]
+    categories={row.key:row for row in category_rows(db)}
+    return [rule_payload(db, row, categories) for row in db.scalars(select(PreferenceRule).order_by(PreferenceRule.id)).all()]
 
 
 def compile_preferences(db: Session) -> dict:

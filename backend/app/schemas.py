@@ -2,6 +2,7 @@
 
 from datetime import date as DateValue, time
 from typing import Annotated, Literal
+from .services.grid import GRID_MINUTES
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -36,8 +37,8 @@ class TaskCreate(BaseModel):
     @field_validator("duration_minutes")
     @classmethod
     def validate_duration(cls, value: int) -> int:
-        if value % 30 != 0:
-            raise ValueError("duration_minutes must be a multiple of 30")
+        if value % GRID_MINUTES != 0:
+            raise ValueError("duration_minutes must be a multiple of 5")
         return value
 
 
@@ -61,8 +62,8 @@ class TaskUpdate(BaseModel):
     @field_validator("duration_minutes")
     @classmethod
     def validate_duration(cls, value: int | None) -> int:
-        if value is None or value % 30 != 0:
-            raise ValueError("duration_minutes must be a positive multiple of 30")
+        if value is None or value % GRID_MINUTES != 0:
+            raise ValueError("duration_minutes must be a positive multiple of 5")
         return value
 
     @field_validator("deadline", "priority", "status")
@@ -169,7 +170,7 @@ class TaskFeedbackCreate(BaseModel):
     client_action_id: str = Field(min_length=1, max_length=100)
     outcome: Literal["completed", "partial", "postponed"]
     actual_minutes: Annotated[int, Field(strict=True, ge=1, le=1440)] | None = None
-    remaining_minutes: Annotated[int, Field(strict=True, ge=30, le=1440)] | None = None
+    remaining_minutes: Annotated[int, Field(strict=True, ge=5, le=1440)] | None = None
     difficulty: Literal["easy", "expected", "hard"] | None = None
     reason: str | None = Field(default=None, max_length=500)
     family: str | None = Field(default=None, max_length=80)
@@ -194,8 +195,8 @@ class TaskFeedbackCreate(BaseModel):
     @field_validator("remaining_minutes")
     @classmethod
     def validate_remaining_minutes(cls, value: int | None) -> int | None:
-        if value is not None and value % 30 != 0:
-            raise ValueError("remaining_minutes must use 30-minute increments")
+        if value is not None and value % GRID_MINUTES != 0:
+            raise ValueError("remaining_minutes must use 5-minute increments")
         return value
 
     @model_validator(mode="after")

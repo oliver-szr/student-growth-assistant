@@ -10,7 +10,7 @@ from ..models import GrowthGoal, Task, TaskFeedback, TaskGrowthContext, TaskSche
 from ..schemas import TaskFeedbackCreate, TaskGrowthContextUpdate, WorkSessionStart
 from ..services.growth_tracking import (
     ensure_task_context, feedback_payload, pause_work_session, record_feedback, resume_work_session,
-    session_payload, stop_work_session,
+    session_payload, stop_work_session, _active_actual_minutes,
 )
 from ..services.growth_insights import automatic_analysis_is_due, launch_automatic_analysis
 from ..services.planning_state import bump_revision, planning_transaction
@@ -105,11 +105,13 @@ def list_task_feedback(task_id: int, db: Session = Depends(get_db)) -> dict:
     rows = db.scalars(
         select(TaskFeedback).where(TaskFeedback.task_id == task_id).order_by(TaskFeedback.created_at, TaskFeedback.id)
     ).all()
+    context = ensure_task_context(db, task)
+    total = _active_actual_minutes(db, task.id)
     return {
         "task_id": task_id,
         "entries": [
             {
-                **feedback_payload(db, task, row),
+                **feedback_payload(db, task, row, context, total),
                 "reason": row.reason,
                 "difficulty": row.difficulty,
                 "family_confirmed": row.family_confirmed_snapshot,

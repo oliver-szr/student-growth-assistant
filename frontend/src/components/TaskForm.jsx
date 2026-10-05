@@ -35,13 +35,13 @@ export default function TaskForm({ task, pending, disabled = false, onSubmit, on
         <label className="span-two">说明 <span className="optional">选填</span>
           <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows="2" disabled={pending || disabled} />
         </label>
-        <label>预计时长（分钟）
-          <input type="number" min="30" step="30" value={duration} onChange={(event) => setDuration(event.target.value)} required disabled={pending || disabled} />
+        <label>剩余时长（分钟）
+          <input type="number" min="5" step="5" value={duration} onChange={(event) => setDuration(event.target.value)} required disabled={pending || disabled} />
         </label>
-        <label>截止时间（北京时间）
+        <label>截止时间
           <input type="datetime-local" value={deadline} onChange={(event) => setDeadline(event.target.value)} required disabled={pending || disabled} />
         </label>
-        <label>优先级
+        <label>重要程度
           <select value={priority} onChange={(event) => setPriority(event.target.value)} disabled={pending || disabled}>
             <option value="low">低</option>
             <option value="normal">普通</option>
@@ -52,7 +52,7 @@ export default function TaskForm({ task, pending, disabled = false, onSubmit, on
       {formError && <p className="error-box" role="alert">{formError}</p>}
       <div className="button-row">
         <button className="button primary" type="submit" disabled={pending || disabled}>{pending ? '正在保存…' : task ? '保存任务' : '添加任务'}</button>
-        {onCancel && <button className="button subtle" type="button" onClick={onCancel} disabled={pending}>取消编辑</button>}
+        {onCancel && <button className="button subtle" type="button" onClick={onCancel} disabled={pending}>取消</button>}
       </div>
     </form>
   )

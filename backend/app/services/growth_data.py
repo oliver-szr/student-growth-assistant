@@ -196,6 +196,16 @@ def _prepare_snapshot(snapshot: dict) -> tuple[list[tuple[Table, list[dict]]], i
             seen_primary_keys.add(key)
             converted.append(row)
         prepared.append((table, converted))
+    from ..assistant_schemas import Profile
+    from .grid import GRID_MINUTES
+    for table,rows in prepared:
+        if table.name=='task_scheduling_profiles':
+            for row in rows:
+                settings=row['settings'] or {}
+                try:Profile.model_validate({k:v for k,v in settings.items() if k!='task_type'})
+                except Exception:raise HTTPException(status_code=422,detail='备份中有非法任务分段或时间约束') from None
+        if table.name=='tasks':
+            if any(row['duration_minutes']<=0 or row['duration_minutes']%GRID_MINUTES for row in rows):raise HTTPException(status_code=422,detail='备份任务时长不符合5分钟粒度')
     return prepared, snapshot["revision"]
 
 

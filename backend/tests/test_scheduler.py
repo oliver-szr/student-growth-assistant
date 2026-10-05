@@ -134,7 +134,7 @@ def test_protected_overlap_with_courses_and_other_protected_rules_is_allowed() -
 
 def test_non_grid_rule_end_is_not_rounded_into_available_time() -> None:
     result = schedule_week(WEEK, [task()], [rule(end_time=time(9, 15, 1))])
-    assert result.assignments[0].start_at == at(hour=9, minute=30)
+    assert result.assignments[0].start_at == at(hour=9, minute=20)
 
 
 def test_task_may_end_exactly_at_aware_utc_deadline() -> None:
@@ -206,7 +206,7 @@ def test_non_todo_task_is_rejected(status) -> None:
 
 
 @pytest.mark.parametrize("changes", [
-    {"duration_minutes": 45}, {"duration_minutes": 0}, {"duration_minutes": -30},
+    {"duration_minutes": 43}, {"duration_minutes": 0}, {"duration_minutes": -30},
     {"duration_minutes": 30.0}, {"duration_minutes": True}, {"deadline": datetime(2026, 10, 5, 9)},
     {"deadline": "2026-10-05T09:00:00Z"}, {"priority": "urgent"}, {"id": True}, {"id": 0}, {"title": " "},
 ])

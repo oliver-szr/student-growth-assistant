@@ -15,6 +15,7 @@ student-growth-assistant/
 │   │   ├── assistant_schemas.py    # AI 助手与偏好契约
 │   │   ├── routers/                # HTTP 入参校验与响应
 │   │   │   ├── assistant.py        # 会话、运行状态、候选预览与确认
+│   │   │   ├── dashboard.py        # 任务、复盘、档案的聚合读取
 │   │   │   ├── plans.py            # 周计划候选和原子确认
 │   │   │   ├── growth.py           # 成长 API 兼容装配入口
 │   │   │   ├── growth_attention.py # 任务关注排序、估时建议
@@ -30,6 +31,9 @@ student-growth-assistant/
 │   │       ├── assistant_ai.py     # AI 解析、比较和解释编排
 │   │       ├── assistant_scheduler.py
 │   │       ├── assistant_state.py  # 助手上下文、偏好和任务状态
+│   │       ├── grid.py             # 5 分钟网格与 14 天窗口常量
+│   │       ├── planning_window.py  # 两周课程和保护时段展开
+│   │       ├── schema_migrations.py # Alembic 版本检查与升级入口
 │   │       ├── claude_client.py    # Anthropic/OpenAI 兼容网关
 │   │       ├── scheduler.py        # 确定性基础排程
 │   │       ├── validator.py        # 独立日程约束校验
@@ -46,14 +50,16 @@ student-growth-assistant/
 │   │   ├── api.js                  # 统一 HTTP、超时和业务错误映射
 │   │   ├── assistant.js            # 助手纯数据映射
 │   │   ├── datetime.js             # 北京时间转换
-│   │   ├── planning.js              # 计划纯计算
-│   │   ├── pages/                  # 今日、成长、资料、任务和课程页面
+│   │   ├── pages/                  # 规划、复盘、档案及任务和课程辅助页面
 │   │   ├── components/             # 表单、时间线和安全消息组件
 │   │   ├── styles.css              # 全局与成长页面样式
 │   │   └── assistant.css           # 助手工作台样式
 │   └── tests/                      # 纯函数、API 与交互状态测试
 ├── docs/                           # API 契约、架构边界和验证记录
 ├── codex/                          # 本地启动、演示、导入和验收脚本/说明
+│   ├── migrations/                 # Alembic 环境、冻结基线和版本脚本
+│   ├── legacy/frontend/            # 保留契约测试使用的旧版纯函数
+│   └── migrate.py                  # 显式数据库升级命令
 ├── README.md
 └── DIRECTORY_STRUCTURE.md
 ```

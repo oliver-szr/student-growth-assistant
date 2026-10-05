@@ -22,6 +22,9 @@ class Profile(StrictModel):
     preferred_windows: list[Window] = Field(default_factory=list,max_length=14)
     allowed_windows: list[Window] = Field(default_factory=list,max_length=14)
     locked: bool = False
+    splittable: bool = False
+    min_block_minutes: int = Field(default=30, strict=True, ge=5, le=840, multiple_of=5)
+    max_segments: int = Field(default=4, strict=True, ge=1, le=8)
 
     @model_validator(mode='before')
     @classmethod

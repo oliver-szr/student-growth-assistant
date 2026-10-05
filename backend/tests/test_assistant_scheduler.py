@@ -65,6 +65,6 @@ def test_personal_preference_can_change_candidate_schedule_without_breaking_dead
     result=arrange(WEEK,NOW,[t],[],[],preferences=prefs,include_strategies=True)
     assert result['status']=='ready'
     assert result['candidate_options']
-    preferred=next(x for x in result['candidate_options'] if x['strategy']=='preference')
+    preferred=min(result['candidate_options'],key=lambda x:x['metrics']['preference_misses_weight'])
     assert datetime.fromisoformat(preferred['items'][0]['start_at']).time().hour < 12
     assert all(datetime.fromisoformat(x['end_at']) <= datetime.fromisoformat(t['deadline']) for c in result['candidate_options'] for x in c['items'])

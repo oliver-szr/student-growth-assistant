@@ -16,6 +16,7 @@ from ..services.planning_state import begin_planning_transaction, get_or_create_
 from ..services.growth_profile import record_profile_revision
 from ..services.growth_tracking import ensure_task_context, record_unknown_completion, retract_latest_completion
 from ..services.validator import expand_time_rules
+from ..services.planning_window import expand_window_rules
 from ..services.claude_client import AIServiceError
 from ..schemas import GrowthDirectionUpdate, GrowthGoalCreate, GrowthGoalPatch, TaskFeedbackCreate
 from ..services.taxonomy import categories_payload, create_category, rule_payload, rules_from_legacy, rules_payload, update_category, validate_rule
@@ -85,7 +86,7 @@ def base_actions(db,s,revision):
     return p.payload['actions'] if p and p.status not in ('applied','discarded','superseded') and p.source_revision==revision else []
 
 
-def save_proposal(db,s,actions,questions=None,ai_error=None,preferences=None,preference_updates=None,allow_replan=False):
+def proposal_payload(db,s,actions,questions=None,ai_error=None,preferences=None,preference_updates=None,allow_replan=False):
     previous=_active_candidate(db,s)
     temporary_preferences=None
     if previous:
@@ -98,6 +99,11 @@ def save_proposal(db,s,actions,questions=None,ai_error=None,preferences=None,pre
         allow_replan=allow_replan or bool(preference_updates or temporary_preferences)
     payload=build_proposal(db,s.week_start,actions,questions,preferences=preferences,preference_updates=preference_updates,allow_replan=allow_replan,temporary_preferences=temporary_preferences,previous_override=_previous_candidate(db,s))
     payload['ai_error']=ai_error
+    return payload
+
+
+def save_proposal(db,s,actions,questions=None,ai_error=None,preferences=None,preference_updates=None,allow_replan=False,prepared_payload=None):
+    payload=prepared_payload if prepared_payload is not None else proposal_payload(db,s,actions,questions,ai_error,preferences,preference_updates,allow_replan)
     old=db.get(AssistantProposal,s.latest_proposal_id) if s.latest_proposal_id else None
     if old and old.status not in ('applied','discarded'): old.status='superseded'
     p=AssistantProposal(session_id=s.id,source_revision=get_or_create_planning_state(db).revision,status=payload['status'],payload=payload)
@@ -182,7 +188,7 @@ def _run_snapshot(db,s):
     pref=preference_settings(db)
     _,confirmed=baseline(db,s.week_start)
     rules=time_rules(db); names={r.id:r.title for r in rules}
-    courses=[dict(ref=f'course:{x.time_rule_id}',title=names[x.time_rule_id],start_at=x.start_at.isoformat(),end_at=x.end_at.isoformat()) for x in expand_time_rules(s.week_start,rules) if x.kind=='course']
+    courses=[dict(ref=f'course:{x.time_rule_id}',title=names[x.time_rule_id],start_at=x.start_at.isoformat(),end_at=x.end_at.isoformat()) for x in expand_window_rules(s.week_start,rules) if x.kind=='course']
     history=[m.text for m in db.scalars(select(AssistantMessage).where(AssistantMessage.session_id==s.id).order_by(AssistantMessage.id.desc()).limit(10)).all()][::-1]
     goals=[dict(id=g.id,title=g.title,motivation=g.motivation,priority=g.priority,metric_kind=g.metric_kind,weekly_target=g.weekly_target,unit_label=g.unit_label,status=g.status) for g in db.scalars(select(GrowthGoal).where(GrowthGoal.status=='active').order_by(GrowthGoal.priority,GrowthGoal.id)).all()]
     recent_feedback=[dict(task_id=f.task_id,outcome=f.outcome,actual_minutes=f.actual_minutes,initial_estimate_minutes=f.initial_estimate_minutes,family=f.family_snapshot,completed_at=f.completed_at.isoformat() if f.completed_at else None,reason=f.reason) for f in db.scalars(select(TaskFeedback).where(TaskFeedback.retracted_at.is_(None)).order_by(TaskFeedback.id.desc()).limit(12)).all()]
@@ -359,7 +365,7 @@ def _launch_run(db,run_id):
 @router.get('/settings')
 def settings(db:Session=Depends(get_db)):
     identity=db.get(WorkspaceMetadata,1)
-    return {**assistant_clock.clock_settings(),'workspace_id':identity.workspace_id if identity else 'uninitialized'}
+    return {**assistant_clock.clock_settings(),'grid_minutes':5,'planning_window_days':14,'workspace_id':identity.workspace_id if identity else 'uninitialized'}
 
 
 @router.get('/preferences')
@@ -498,7 +504,7 @@ def get_session(id:int,db:Session=Depends(get_db)):
     p=db.get(AssistantProposal,s.latest_proposal_id) if s.latest_proposal_id else None
     _,items=baseline(db,s.week_start)
     rules=time_rules(db); names={r.id:r.title for r in rules}
-    courses=[dict(ref=f'course:{x.time_rule_id}',title=names[x.time_rule_id],start_at=x.start_at.isoformat(),end_at=x.end_at.isoformat(),kind='course') for x in expand_time_rules(s.week_start,rules) if x.kind=='course']
+    courses=[dict(ref=f'course:{x.time_rule_id}',title=names[x.time_rule_id],start_at=x.start_at.isoformat(),end_at=x.end_at.isoformat(),kind='course') for x in expand_window_rules(s.week_start,rules) if x.kind=='course']
     warnings=[w for c in db.scalars(select(CourseImport)).all() for w in c.warnings]
     messages=[dict(id=m.id,role=m.role,text=m.text,content=m.content) for m in db.scalars(select(AssistantMessage).where(AssistantMessage.session_id==s.id).order_by(AssistantMessage.id)).all()]
     proposal_data=response(p) if p else None
@@ -533,6 +539,9 @@ async def message(id:int,payload:MessageRequest,db:Session=Depends(get_db)):
             actions=[a.model_dump(mode='json',exclude_unset=True) for a in parsed.actions]; questions=parsed.questions
         except AIServiceError as exc:
             error=exc.code; questions=['AI暂不可用，输入已保留。请重试或填写手动任务卡片。']
+    merged=merge_actions(base,actions)
+    db.rollback()
+    prepared=await asyncio.to_thread(proposal_payload,db,s,merged,questions,error)
     db.rollback()
     try:
         begin_planning_transaction(db)
@@ -543,8 +552,7 @@ async def message(id:int,payload:MessageRequest,db:Session=Depends(get_db)):
         current_status=current_latest.status if current_latest else None
         if get_or_create_planning_state(db).revision!=revision or s.latest_proposal_id!=latest_id or current_status!=latest_status:
             fail('STALE_CANDIDATE','资料或会话已变化，请重新发送；输入不会自动应用。')
-        merged=merge_actions(base,actions)
-        p=save_proposal(db,s,merged,questions,error)
+        p=save_proposal(db,s,merged,questions,error,prepared_payload=prepared)
         db.add_all([AssistantMessage(session_id=id,client_message_id=payload.client_message_id,role='user',text=payload.text,proposal_id=p.id),AssistantMessage(session_id=id,role='assistant',text='\n'.join(p.payload['questions']) or p.payload['summary'],proposal_id=p.id)])
         r=response(p); db.commit(); return r
     except Exception: db.rollback(); raise
@@ -609,7 +617,15 @@ def confirm(id:int,db:Session=Depends(get_db)):
         world=proposed_world(db,s.week_start,p.payload['actions'],_previous_candidate(db,s))
         if world['questions']: fail('STALE_CANDIDATE','时间或任务状态已变化，请重新生成。')
         blocks=(p.payload.get('temporary_preferences') or {}).get('blocked_windows',[])
-        violations=validate_assistant(s.week_start,world['now'],world['selected'],world_rules(db,world,blocks),p.payload['items'],world['previous'])
+        _,validation_previous=baseline(db,s.week_start)
+        # A user may explicitly lock a pending future slot. Such a lock never
+        # grants the "already started formal task" exception to a past draft.
+        staged_locks={a['target'] for a in p.payload['actions'] if a.get('fields',{}).get('profile',{}).get('locked') is True}
+        for ref in staged_locks:
+            segments=[x for x in p.payload['items'] if x['ref']==ref]
+            if segments and all(dt(x['start_at'])>=world['now'] for x in segments):
+                validation_previous=[x for x in validation_previous if x['ref']!=ref]+segments
+        violations=validate_assistant(s.week_start,world['now'],world['selected'],world_rules(db,world,blocks),p.payload['items'],validation_previous)
         if violations: fail('STALE_CANDIDATE','候选已不满足当前时间或约束，请重新生成。')
         mapping={t['ref']:t.get('id') for t in world['tasks'] if t.get('id')}
         for a in p.payload['actions']:
@@ -647,17 +663,22 @@ def confirm(id:int,db:Session=Depends(get_db)):
             db.flush()
             rules_from_legacy(db, values, source="user")
             db.flush(); record_profile_revision(db)
-        current=db.get(Plan,world['current_plan_id']) if world['current_plan_id'] else None
-        if current: current.status='superseded'; db.flush()
-        plan=Plan(week_start=s.week_start,status='confirmed',source_revision=p.source_revision,based_on_plan_id=current.id if current else None,task_ids=[mapping[t['ref']] for t in world['selected']],confirmed_at=utc_now())
-        db.add(plan); db.flush()
-        for x in p.payload['items']+world['retained']:
-            db.add(PlanItem(plan_id=plan.id,kind='task',task_id=mapping[x['ref']],title_snapshot=x['title'],start_at=dt(x['start_at']),end_at=dt(x['end_at'])))
         names={r.id:r.title for r in time_rules(db)}
-        for x in expand_time_rules(s.week_start,time_rules(db)):
-            if x.kind=='course': db.add(PlanItem(plan_id=plan.id,kind='course',time_rule_id=x.time_rule_id,title_snapshot=names[x.time_rule_id],start_at=x.start_at,end_at=x.end_at))
+        rules=time_rules(db); plans=[]
+        for offset in (0,7):
+            start=s.week_start+timedelta(days=offset)
+            current=db.scalar(select(Plan).where(Plan.week_start==start,Plan.status=='confirmed'))
+            if current: current.status='superseded'; db.flush()
+            weekly_items=[x for x in p.payload['items']+world['retained'] if start<=dt(x['start_at']).date()<start+timedelta(days=7)]
+            plan=Plan(week_start=start,status='confirmed',source_revision=p.source_revision,based_on_plan_id=current.id if current else None,task_ids=sorted({mapping[x['ref']] for x in weekly_items}),confirmed_at=utc_now())
+            db.add(plan); db.flush(); plans.append(plan)
+            for x in weekly_items:
+                db.add(PlanItem(plan_id=plan.id,kind='task',task_id=mapping[x['ref']],title_snapshot=x['title'],start_at=dt(x['start_at']),end_at=dt(x['end_at'])))
+            for x in expand_time_rules(start,rules):
+                if x.kind=='course':db.add(PlanItem(plan_id=plan.id,kind='course',time_rule_id=x.time_rule_id,title_snapshot=names[x.time_rule_id],start_at=x.start_at,end_at=x.end_at))
+        plan=plans[0]
         p.status='applied'; p.plan_id=plan.id; bump_revision(db)
-        db.add(AssistantMessage(session_id=s.id,role='assistant',text='已采用方案：任务资料与本周日程已一起保存。',proposal_id=p.id))
+        db.add(AssistantMessage(session_id=s.id,role='assistant',text='已采用方案：任务资料与本周、下周日程已一起保存。',proposal_id=p.id))
         r=response(p); db.commit(); return r
     except Exception: db.rollback(); raise
 
@@ -714,7 +735,7 @@ def confirm_growth_draft(id:int,db:Session=Depends(get_db)):
             elif draft.scope=='profile' and op=='update_preference_rule':
                 row=require(db,PreferenceRule,int(operation['id']))
                 changes=operation.get('fields') or {}
-                values=validate_rule(db,dict(name=row.name,description=row.description,kind=row.kind,category_key=row.category_key,weekdays=row.weekdays,parameters=row.parameters,source='user',**changes),own_id=row.id)
+                values=validate_rule(db,{**dict(name=row.name,description=row.description,kind=row.kind,category_key=row.category_key,weekdays=row.weekdays,parameters=row.parameters,source='user'),**changes},own_id=row.id)
                 for key,value in values.items(): setattr(row,key,value)
                 if 'enabled' in changes: row.enabled=bool(changes['enabled'])
                 row.updated_at=utc_now()

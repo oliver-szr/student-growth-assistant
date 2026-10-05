@@ -9,6 +9,7 @@ from datetime import datetime
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'backend'))
 from sqlalchemy.orm import Session
+from app.services.schema_migrations import upgrade_database
 from app.database import Base,create_sqlite_engine
 from app.services.course_import import expand_source,import_source
 from app.services.planning_state import begin_planning_transaction
@@ -28,7 +29,7 @@ def main():
             backup=ROOT/'codex'/'.runtime'/f'normal-before-import-{datetime.now():%Y%m%d%H%M%S}.db'
             backup.parent.mkdir(exist_ok=True)
             with sqlite3.connect(target) as a,sqlite3.connect(backup) as b:a.backup(b)
-        engine=create_sqlite_engine(f'sqlite:///{target.as_posix()}');Base.metadata.create_all(engine)
+        engine=create_sqlite_engine(f'sqlite:///{target.as_posix()}');upgrade_database(engine)
         with Session(engine) as db:
             begin_planning_transaction(db)
             report.update(import_source(db,source));db.commit()

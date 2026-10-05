@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { explainCandidate } from '../src/api.js'
-import { createExplanationSession, diffGroups } from '../src/explanations.js'
+import { createExplanationSession, diffGroups } from '../../codex/legacy/frontend/explanations.js'
 
 const plan = { id: 2, based_on_plan_id: 1, status: 'candidate' }
 const task = { task_id: 3, title: 'Read paper', start_at: '2026-10-05T00:00:00Z', end_at: '2026-10-05T01:00:00Z' }

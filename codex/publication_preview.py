@@ -21,6 +21,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', required=True, type=Path)
     parser.add_argument('--python', required=True)
+    parser.add_argument('--api-port', type=int, default=8003)
+    parser.add_argument('--web-port', type=int, default=5188)
     args = parser.parse_args()
     project = args.project.resolve()
     output = ROOT / 'codex' / 'previews'
@@ -30,20 +32,22 @@ def main():
     scenario = json.loads((project / 'codex' / 'demo_scenario.json').read_text(encoding='utf-8'))
     env = {**os.environ, 'SGA_DEMO': '1', 'SGA_DEMO_NOW': scenario['now'], 'SGA_AUTO_BACKUP': '0',
            'AI_API_FORMAT': 'openai', 'OPENAI_API_KEY': '', 'CLAUDE_API_KEY': '',
-           'SGA_DATABASE_PATH': str(project / 'codex' / '.runtime' / 'demo-publication.db')}
-    for port in (8003, 5187):
+           'SGA_DATABASE_PATH': str(project / 'codex' / '.runtime' / f'demo-publication-{uuid.uuid4().hex}.db')}
+    api_url = f'http://127.0.0.1:{args.api_port}'
+    web_url = f'http://127.0.0.1:{args.web_port}'
+    for port in (args.api_port, args.web_port):
         with socket.socket() as connection:
             if connection.connect_ex(('127.0.0.1', port)) == 0:
                 raise RuntimeError(f'Port {port} occupied; no process will be stopped.')
     for _ in range(2):
         subprocess.run([args.python, 'codex/demo_init.py', '--database', env['SGA_DATABASE_PATH']], cwd=project, env=env, check=True, capture_output=True)
     log = (local / 'preview-backend.log').open('w', encoding='utf-8')
-    backend = subprocess.Popen([args.python, '-m', 'uvicorn', 'app.main:app', '--app-dir', 'backend', '--host', '127.0.0.1', '--port', '8003'], cwd=project, env=env, stdout=log, stderr=log)
-    server = http.server.ThreadingHTTPServer(('127.0.0.1', 5187), functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(project / 'frontend' / 'dist')))
+    backend = subprocess.Popen([args.python, '-m', 'uvicorn', 'app.main:app', '--app-dir', 'backend', '--host', '127.0.0.1', '--port', str(args.api_port)], cwd=project, env=env, stdout=log, stderr=log)
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', args.web_port), functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(project / 'frontend' / 'dist')))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     report = {'anonymous_demo': True, 'ai_mode': 'disabled', 'checks': [], 'browser_errors': []}
     try:
-        api = httpx.Client(base_url='http://127.0.0.1:8003', timeout=10)
+        api = httpx.Client(base_url=api_url, timeout=10)
         deadline = time.monotonic() + 30
         while True:
             try:
@@ -63,8 +67,15 @@ def main():
             browser = p.chromium.launch(channel='msedge', headless=True)
             page = browser.new_page(locale='zh-CN', timezone_id='America/Los_Angeles', viewport={'width': 1373, 'height': 1163})
             page.on('pageerror', lambda error: report['browser_errors'].append(str(error)))
-            page.goto('http://127.0.0.1:5187/', wait_until='networkidle')
-            expect(page.get_by_role('heading', name='一起安排这一周', exact=True)).to_be_visible()
+            def proxy(route):
+                path = '/api/' + route.request.url.split('/api/', 1)[1]
+                response = api.request(route.request.method, path, content=route.request.post_data_buffer,
+                                       headers={'Content-Type': 'application/json'})
+                route.fulfill(status=response.status_code, body=response.content,
+                              headers={'Content-Type': response.headers.get('content-type', 'application/json')})
+            page.route('**/api/**', proxy)
+            page.goto(web_url, wait_until='networkidle')
+            expect(page.get_by_role('heading', name='规划', exact=True)).to_be_visible()
             expect(page.get_by_role('heading', name='规划助手', exact=True)).to_be_visible()
             page.screenshot(path=str(output / 'planning.png'), full_page=True)
             page.get_by_role('button', name='复盘', exact=True).click()

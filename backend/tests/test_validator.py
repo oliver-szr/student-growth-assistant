@@ -87,8 +87,8 @@ def test_working_hours_and_cross_day(start, end) -> None:
 
 
 @pytest.mark.parametrize("start,end", [
-    (at(hour=8, minute=10), at(hour=8, minute=40)),
-    (at(hour=8, minute=45), at(hour=9, minute=15)),
+    (at(hour=8, minute=11), at(hour=8, minute=41)),
+    (at(hour=8, minute=46), at(hour=9, minute=16)),
     (at(second=1), at(hour=8, minute=30, second=1)),
     (at(microsecond=1), at(hour=8, minute=30, microsecond=1)),
 ])

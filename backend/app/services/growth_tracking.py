@@ -45,18 +45,19 @@ def _learning_eligible(outcome: str, actual: int | None, context: TaskGrowthCont
     return outcome == "completed" and actual is not None and actual > 0 and context.family_confirmed and bool(context.family.strip())
 
 
-def feedback_payload(db: Session, task: Task, feedback: TaskFeedback) -> dict:
-    context = ensure_task_context(db, task)
+def feedback_payload(db: Session, task: Task, feedback: TaskFeedback, context=None, total=None) -> dict:
+    context = context if context is not None else ensure_task_context(db, task)
+    total = _active_actual_minutes(db, task.id) if total is None else total
     return {
         "id": feedback.id,
         "task_id": task.id,
         "outcome": feedback.outcome,
         "actual_minutes": feedback.actual_minutes,
-        "cumulative_actual_minutes": _active_actual_minutes(db, task.id),
+        "cumulative_actual_minutes": total,
         "remaining_minutes": task.duration_minutes if feedback.outcome == "partial" else None,
         "initial_estimate_minutes": feedback.initial_estimate_minutes,
         "task_status": task.status.value,
-        "eligible_for_learning": _learning_eligible(feedback.outcome, _active_actual_minutes(db, task.id), context),
+        "eligible_for_learning": _learning_eligible(feedback.outcome, total, context),
         "family": feedback.family_snapshot,
         "category_name": feedback.category_name_snapshot,
         "created_at": feedback.created_at,

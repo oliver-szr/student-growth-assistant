@@ -12,9 +12,10 @@ from sqlalchemy.orm import Session
 from . import models  # Register all tables with the existing Base.
 from .models import AssistantRun
 from .database import Base, engine
-from .routers import constraints, data, execution, goals, growth, plan_explanations, plans, tasks, time_rules, assistant, taxonomy
+from .routers import dashboard, constraints, data, execution, goals, growth, plan_explanations, plans, tasks, time_rules, assistant, taxonomy
 from .services.growth_migrations import apply_growth_migrations
 from .services.growth_data import create_daily_backup
+from .services.schema_migrations import upgrade_database
 from .services.planning_state import get_or_create_planning_state
 
 
@@ -26,8 +27,8 @@ class HealthResponse(BaseModel):
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     if os.getenv("SGA_AUTO_BACKUP", "1") != "0":
         create_daily_backup(application.state.db_engine)
-    # create_all creates missing tables; it does not migrate existing tables.
-    Base.metadata.create_all(bind=application.state.db_engine)
+    # Schema changes run through versioned Alembic revisions, with backup first.
+    upgrade_database(application.state.db_engine)
     with Session(application.state.db_engine) as session:
         apply_growth_migrations(session)
         get_or_create_planning_state(session)
@@ -45,6 +46,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "PUT"],
     allow_headers=["Content-Type"],
 )
+app.include_router(dashboard.router)
 app.include_router(tasks.router)
 app.include_router(execution.router)
 app.include_router(time_rules.router)

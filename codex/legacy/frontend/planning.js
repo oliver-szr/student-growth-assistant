@@ -1,4 +1,4 @@
-import { toDatetimeLocalValue } from './datetime.js'
+import { toDatetimeLocalValue } from '../../../frontend/src/datetime.js'
 
 export function sameTaskSelection(selectedTaskIds, candidateTaskIds) {
   if (selectedTaskIds.length !== candidateTaskIds.length) return false

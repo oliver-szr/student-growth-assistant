@@ -73,7 +73,7 @@ def test_rejects_blank_title(client: TestClient, title: str) -> None:
     assert client.post("/api/tasks", json={**TASK, "title": title}).status_code == 422
 
 
-@pytest.mark.parametrize("duration", [0, -30, 45, 75])
+@pytest.mark.parametrize("duration", [0, -30, 43, 73])
 def test_rejects_invalid_duration(client: TestClient, duration: int) -> None:
     assert client.post("/api/tasks", json={**TASK, "duration_minutes": duration}).status_code == 422
 
@@ -112,7 +112,7 @@ def test_patch_title_duration_done_and_cancelled(client: TestClient) -> None:
 
 
 @pytest.mark.parametrize("changes", [
-    {"duration_minutes": 45},
+    {"duration_minutes": 43},
     {"duration_minutes": 0},
     {"title": "   "},
     {"priority": "urgent"},

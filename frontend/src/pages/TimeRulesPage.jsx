@@ -85,10 +85,10 @@ export default function TimeRulesPage() {
         <div className="list-heading"><h3>{heading}</h3><span className="count">{items.length}</span></div>
         {form?.kind === kind ? (
           <div className="panel">
-            <h4>{form.id === null ? `添加${kind === 'course' ? '课程' : '保留时间'}` : '编辑时间规则'}</h4>
+            <h4>{form.id === null ? `添加${kind === 'course' ? '课程' : '保护时间'}` : '编辑时间规则'}</h4>
             <TimeRuleForm key={`${kind}-${form.id ?? 'new'}`} kind={kind} rule={selectedRule} pending={pending} onSubmit={save} onCancel={() => setForm(null)} />
           </div>
-        ) : <button className="button primary add-button" type="button" disabled={pending} onClick={() => { setActionError(''); setForm({ kind, id: null }) }}>添加{kind === 'course' ? '课程' : '保留时间'}</button>}
+        ) : <button className="button primary add-button" type="button" disabled={pending} onClick={() => { setActionError(''); setForm({ kind, id: null }) }}>添加{kind === 'course' ? '课程' : '保护时间'}</button>}
         {items.length === 0 ? <p className="state-box">{emptyText}</p> : (
           <div className="card-list">
             {items.map((rule) => (
@@ -113,7 +113,7 @@ export default function TimeRulesPage() {
 
   return (
     <section aria-labelledby="rules-heading">
-      <div className="section-heading"><div><p className="eyebrow">我的固定安排</p><h2 id="rules-heading">课程与保留时间</h2></div></div>
+      <div className="section-heading"><div><p className="eyebrow">我的固定安排</p><h2 id="rules-heading">课程与保护时间</h2></div></div>
       <p className="helper">日期和时间均按北京时间填写；已停用的规则仍保留在列表中。</p>
       {actionError && <p className="error-box" role="alert">{actionError}</p>}
       {loading ? <p className="state-box" role="status">正在加载时间规则…</p> : loadError ? (
@@ -121,7 +121,7 @@ export default function TimeRulesPage() {
       ) : <>
         <NaturalLanguageTimeRule onApply={applyProposal} manualPending={pending} />
         {section('course', '课程', '还没有课程，请先添加。')}
-        {section('protected', '保留时间', '还没有保留时间，请先添加。')}
+        {section('protected', '保护时间', '还没有保护时间，请先添加。')}
       </>}
     </section>
   )
