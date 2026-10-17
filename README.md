@@ -24,18 +24,22 @@
 
 ## 安装
 
-推荐 Python **3.11**、Node.js **22**、Git；依赖版本通过 `codex/requirements.lock.txt` 固定。Windows 下建议使用较短的项目路径，避免 SQLite 备份超过系统路径限制。下列命令在项目根目录运行，示例使用 Windows PowerShell：
+推荐 Python **3.11**、Node.js **22**、Git；依赖版本通过 `codex/requirements.lock.txt` 固定。当前开发复用已有 Conda 环境 **app_env**，不创建 `.venv`，不修改 base。Node.js 24 已通过本阶段测试和构建，无需更换版本。Windows 下建议使用较短的项目路径，避免 SQLite 备份超过系统路径限制。下列命令在项目根目录运行，示例使用 Windows PowerShell：
 
 ```powershell
 git clone https://github.com/szt1107/student-growth-assistant.git
 cd student-growth-assistant
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt -c codex/requirements.lock.txt
+conda env list
+conda run -n app_env python --version
+conda run -n app_env python -m pip check
+# 先核对现有版本；可加 --dry-run 检查安装计划，冲突时先诊断
+conda run -n app_env python -m pip install -r backend/requirements.txt -c codex/requirements.lock.txt
+conda run -n app_env python -m pip check
 npm --prefix frontend ci
 Copy-Item backend/.env.example backend/.env
 ```
 
-macOS/Linux 的 Python 路径为 `.venv/bin/python`；前后端可以分别手动启动。
+所有后端安装、开发和测试使用 `conda run -n app_env`；不要删除或重建已有环境。上述 Conda 命令也适用于 macOS/Linux，前后端可以分别手动启动。
 
 ## 配置 AI
 
@@ -59,7 +63,7 @@ AI_TIMEOUT_SECONDS=120
 
 ```powershell
 # 终端一：后端
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+conda run -n app_env --no-capture-output python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 # 终端二：前端
 npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
@@ -94,11 +98,11 @@ npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173 --strictPort
 
 ```powershell
 cd backend
-..\.venv\Scripts\python.exe -m pytest --basetemp=../codex/.local/pytest-public
+conda run -n app_env python -m pytest -p no:cacheprovider --basetemp=../codex/.local/pytest-public
 cd ..
 npm --prefix frontend test
 npm --prefix frontend run build
-.\.venv\Scripts\python.exe codex/publication_audit.py
+conda run -n app_env python codex/publication_audit.py
 ```
 
 测试使用独立数据库。实际发布结果见 [发布验收报告](codex/公开发布验收.md)。历史阶段文档保留原阶段上下文，不代表当前版本的全部验收已经通过。
@@ -107,7 +111,9 @@ npm --prefix frontend run build
 
 [仓库目录](DIRECTORY_STRUCTURE.md) · [现行架构](docs/architecture.md) · [使用说明与演示讲稿](codex/公开版使用与演示.md)
 
-本轮升级见 [修改与验收说明](codex/本轮修改与验收.md)，已有数据库升级见 [迁移与恢复说明](codex/数据库迁移与恢复.md)。启动会检查 Alembic 版本，实际升级前先生成本地备份；也可运行 `.\.venv\Scripts\python.exe codex/migrate.py` 单独迁移。
+本轮升级见 [修改与验收说明](codex/本轮修改与验收.md)，已有数据库升级见 [迁移与恢复说明](codex/数据库迁移与恢复.md)。启动会检查 Alembic 版本，实际升级前先生成本地备份；也可运行 `conda run -n app_env python codex/migrate.py` 单独迁移。
+
+阶段 0 安全修复保留旧单周 `/api/plans` 接口，阻止过去时间的新安排，并在确认时重新检查约束。旧接口无法安全处理的分段、锁定及已开始记录会明确拒绝，使用现有规划工作台处理；已有正式计划不会因拒绝而改变。详见 [API 契约](docs/api-contract.md) 和 [阶段 0 验收记录](codex/阶段0开发基线与安全验收.md)。
 
 最新整理包含三页统一的聊天／结果布局、精简文字、手机切换、可访问的日程详情，以及冲突提示与确认联动修复。更新验证见 [最新版上传验收](codex/最新版上传验收.md)。公开预览使用匿名样例；个人课程、数据库和私人演示图片保留本地。
 

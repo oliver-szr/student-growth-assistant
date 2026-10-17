@@ -15,6 +15,8 @@ from app.services.constraint_parser import current_shanghai_date, validate_respo
 from .test_planning_state import revision
 from .test_plans import candidate, confirm, create_task
 
+pytestmark = pytest.mark.usefixtures("legacy_plan_clock")
+
 
 COURSE_PROPOSAL = {
     "kind": "course", "title": "Machine Learning", "recurrence": "weekly",

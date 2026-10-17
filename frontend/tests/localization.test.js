@@ -12,6 +12,19 @@ test('stale candidate shows Chinese recovery guidance without losing machine-rea
   assert.deepEqual(error.detail, detail)
 })
 
+for (const [code, guidance] of [
+  ['PAST_PLANNING_WINDOW', /所选周已经结束/],
+  ['PLAN_REQUIRES_ASSISTANT', /规划工作台.*保留原有记录/],
+]) {
+  test(`${code} gives Chinese recovery guidance and preserves the error code`, () => {
+    const detail = { code, message: 'Server explanation' }
+    const error = new ApiError(422, detail)
+    assert.match(error.message, guidance)
+    assert.equal(error.code, code)
+    assert.deepEqual(error.detail, detail)
+  })
+}
+
 test('blank title validation identifies the field and correction in Chinese', async (context) => {
   context.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({
     detail: [{ loc: ['body', 'title'], type: 'value_error', msg: 'Value error, title must not be blank' }],

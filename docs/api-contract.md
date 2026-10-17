@@ -1,8 +1,8 @@
 # Student Growth Assistant API Contract
 
-统一使用 `/api` 前缀。下表核心 API 均已实现；Task / TimeRule 请求响应保持原契约，Plan 接口按已审核的 Phase 5 要求实现。
+统一使用 `/api` 前缀。当前工作台使用两周 Assistant 流程；下表中的 `/api/plans` 是保留的单周兼容接口。二者均不能未经用户确认修改正式日程。时间语义为北京时间，任务时长和安排起点采用 **5 分钟网格**，API 时间戳输出为 UTC。
 
-Phase 6 仅新增前端接入；本文件中的 endpoint、schema、status code、revision 与事务契约均保持 Phase 5 行为。
+阶段 0 保留请求和成功响应结构，强化当前时间、锁定、历史及确认时校验。新增拒绝语义见下文，不新增业务接口或数据库字段。
 
 | 方法 | 路径 | 阶段 | 用途 |
 |---|---|---|---|
@@ -22,13 +22,25 @@ Phase 6 仅新增前端接入；本文件中的 endpoint、schema、status code�
 
 不提供硬删除接口。当前没有 `POST /api/plans/check` 或 `/api/constraints/apply`。
 
-Phase 3 浏览器界面使用上述已实现的七个接口，不改变其请求和响应。`datetime-local` 视为固定上海时间：例如 `2026-10-05T22:00` 发送为 `2026-10-05T22:00:00+08:00`；收到 `2026-10-05T14:00:00Z` 时仍显示 `22:00`。编辑保护时间从 `weekly` 切到 `once` 时明确发送 `weekday: null`，反向切换时明确发送 `date: null`。
+`datetime-local` 视为固定上海时间：例如 `2026-10-05T22:00` 发送为 `2026-10-05T22:00:00+08:00`；收到 `2026-10-05T14:00:00Z` 时仍显示 `22:00`。规则从 `weekly` 切到 `once` 时明确发送 `weekday: null`，反向切换时明确发送 `date: null`。
 
-## Phase 6：Weekly Plan 前端接入
+## 当前规划工作台与旧接口
 
-`frontend/src/api.js` 提供 `createCandidatePlan(data)`、`getPlan(id)`、`getConfirmedPlan(weekStart)`、`confirmPlan(id)`，URL 和 fetch 集中在该文件。Weekly Plan 提交纯 Date Monday `week_start` 和用户选择的非空 todo `task_ids`；任意所选日期在前端归一为该周 Monday，默认周按显式 UTC+08:00 当前日期计算。PlanItem 的 UTC datetime 复用固定上海转换后显示。
+前端请求统一经 `frontend/src/api.js`。现行三页为规划、复盘和我的档案；旧 WeeklyPlan 页面已移除，保留单周接口及 wrapper 供兼容使用。日期计算、网格与禁止过去时间均由后端负责，前端不能自行声明候选合法。
 
-前端将 Candidate 与 Confirmed 分别保存。生成成功或失败均不替换当前正式计划；Confirm 成功后使用服务端返回值并重新 GET Confirmed。生成失败保留旧候选和正式计划，读取失败保留同周已经显示的数据；换周主动清空旧周数据。完整刷新只重新加载 Confirmed，不恢复 Candidate。
+| 方法与路径 | 当前行为 |
+|---|---|
+| `POST /api/assistant/sessions` | 创建本周规划会话 |
+| `POST /api/assistant/sessions/{id}/messages` | 接收结构化手动动作，或解析自然语言；只生成草案 |
+| `POST /api/assistant/sessions/{id}/runs` | 后台 AI 运行；通过 `/runs/{id}` 查询，可取消或重试 |
+| `GET /api/assistant/sessions/{id}` | 读取正式安排、任务和最新候选 |
+| `POST /api/assistant/proposals/{id}/preview` | 编辑草案或选择现有候选，不写正式任务与日程 |
+| `POST /api/assistant/proposals/{id}/confirm` | 复验后原子保存任务及两周日程 |
+| `POST /api/assistant/proposals/{id}/discard` | 放弃草案 |
+
+Assistant 覆盖本周剩余时间及下周；默认连续，用户明确允许后才有限分段，均衡、习惯、稳定策略仍独立评分。确认时检查会话周、最新候选、全局版本、当前时间、完整剩余时长、DDL、网格、课程、保护时间和锁定。保留历史必须完整对应正式计划快照，不能引用未采用的候选来授权历史写入；重复声明已锁定也不能移动原时段。拒绝使用既有 `409 STALE_CANDIDATE` 等错误语义；重复确认已采用的 Assistant 方案幂等返回，不重复写入或增加版本。
+
+无 AI Key 时，手动结构化动作和程序排程仍可使用；AI 解析、推荐和解释不得绕过程序校验。两条确认路径均不根据日程结束或计时结束自动完成任务。
 
 `ApiError` 保留 HTTP status、detail.code 和原 detail。404 PLAN_NOT_FOUND 在 Confirmed 查询时显示正常空状态；409 STALE_CANDIDATE 保留 outdated 预览、禁用 Confirm；409 PLAN_NOT_CANDIDATE 展示后端 message、禁用 Confirm；409 UNSCHEDULABLE 展示 task_id、可映射标题和 message/reason_code。其他 422/500、网络错误和 timeout 使用共用可读错误处理，不自动重排或确认。
 
@@ -44,7 +56,7 @@ FastAPI 提供 `/docs` Swagger UI 和 `/openapi.json`。它们是开发文档入
 
 ## Phase 2：Task
 
-`POST /api/tasks` 接收 `title`、可空 `description`、`duration_minutes`、带时区偏移的 ISO 8601 `deadline`，以及可选 `priority`（`low/normal/high`，默认 `normal`）。`title` 去除首尾空格后必须非空；时长必须大于零且是 30 的倍数。创建时不接受 `status`、ID 或时间戳。成功返回 `201` 和完整 Task；`status` 默认为 `todo`。
+`POST /api/tasks` 接收 `title`、可空 `description`、`duration_minutes`、带时区偏移的 ISO 8601 `deadline`，以及可选 `priority`（`low/normal/high`，默认 `normal`）。`title` 去除首尾空格后必须非空；时长必须大于零且是 5 的倍数。创建时不接受 `status`、ID 或时间戳。成功返回 `201` 和完整 Task；`status` 默认为 `todo`。
 
 完整 Task 响应字段为 `id`、`title`、`description`、`duration_minutes`、`deadline`、`priority`、`status`（`todo/done/cancelled`）、`created_at`、`updated_at`。例如输入 `2026-10-05T22:00:00+08:00`，读回的 API deadline 为 `2026-10-05T14:00:00Z`。SQLite 保存不含偏移的 UTC 钟面值；SQLAlchemy ORM 读回为带 UTC 时区的 `datetime`。创建与修改都拒绝无时区的 deadline。
 
@@ -54,11 +66,23 @@ FastAPI 提供 `/docs` Swagger UI 和 `/openapi.json`。它们是开发文档入
 
 `POST /api/time-rules` 接收 `kind`（`course/protected`）、`title`、`recurrence`（`weekly/once`）、`weekday`、`date`、`start_time`、`end_time`、可选 `active`（默认 `true`），成功返回 `201` 和完整 TimeRule。响应还包括 `id`、`created_at`、`updated_at`。
 
-`weekly` 必须有 1–7 的 `weekday`，且 `date` 为空；`once` 必须有 `date`，且 `weekday` 为空。`course` 只允许 `weekly`。`title` 去空格后非空；`start_time < end_time`，不支持跨午夜。时间字段是上海本地钟面时间，不附带时区偏移。
+`weekly` 必须有 1–7 的 `weekday`，且 `date` 为空；`once` 必须有 `date`，且 `weekday` 为空。课程和保护时间均可按周重复或指定日期。`title` 去空格后非空；`start_time < end_time`，不支持跨午夜。时间字段是上海本地钟面时间，不附带时区偏移。
 
 `GET /api/time-rules` 按 ID 升序返回全部规则。`PATCH /api/time-rules/{id}` 可部分修改 `kind`、`title`、`recurrence`、`weekday`、`date`、`start_time`、`end_time`、`active`。后端先将 PATCH 字段与数据库现值合并，再对**最终完整规则**重新执行全部校验；非法组合返回 `422` 且不写入。资源不存在返回 `404`。停用使用 `PATCH active=false`，没有 DELETE。
 
 ## Phase 5：Candidate
+
+本节描述旧单周 `/api/plans`，使用原有连续任务算法，不提供两周分段或复杂时间资料的兼容实现。示例使用固定日期说明结构；实际请求必须选择仍有未来时间的周。
+
+生成时用临时保护区间屏蔽已过去的工作时间；当前时刻不在网格上时，选择之后的合法 5 分钟起点。这些临时区间不写入用户的 TimeRule，不修改任务 DDL。
+
+| 情况 | HTTP / detail.code |
+|---|---|
+| 所选周已结束 | `422 PAST_PLANNING_WINDOW` |
+| 选中任务或现有正式任务包含锁定、允许分段、固定开始、限定时段 | `422 PLAN_REQUIRES_ASSISTANT` |
+| 同周正式计划含已开始、已结束或多片段任务，旧算法无法保证保留 | `422 PLAN_REQUIRES_ASSISTANT` |
+
+上述拒绝不删除历史、不修改正式计划、不推进版本。用户可使用现有规划工作台处理这些场景；软偏好不会被当成解除硬约束的许可。
 
 生成候选的请求：
 
@@ -121,6 +145,7 @@ FastAPI 提供 `/docs` Swagger UI 和 `/openapi.json`。它们是开发文档入
 | Plan 不存在 | 404 / PLAN_NOT_FOUND |
 | status 不是 candidate，包括重复 Confirm | 409 / PLAN_NOT_CANDIDATE |
 | source_revision 与当前 revision 不相等 | 409 / STALE_CANDIDATE |
+| 时间推进使新安排进入过去，或当前约束复验失败 | 409 / STALE_CANDIDATE，附 `reason_code` |
 
 stale 响应示例：
 
@@ -135,7 +160,9 @@ stale 响应示例：
 
 检查通过后，同周旧 confirmed 变为 superseded，候选变为 confirmed，写入 confirmed_at，revision +1，最终一次 commit；任一步失败全部 rollback。成功为 HTTP 200，直接返回 Plan 响应。其他周正式计划不变。partial unique index 保护同周最多一个 confirmed；其他旧 revision 候选保持 candidate，但后续 Confirm 会返回 STALE_CANDIDATE。
 
-Confirm 不重新排程或再运行 Validator，使用生成时已独立校验的持久化快照和 revision 检查。拒绝时不修改任何 Plan 或 revision，也不自动生成新候选。
+Confirm 不重新排程；它重新读取任务、硬时间资料、同周正式记录和课程规则，对持久化任务片段再次运行独立 Validator，检查完整性、唯一性、时长、网格、DDL、课程、保护时间及当前时间；另核对保存的课程片段与实际课程一致。无法安全兼容的历史或锁定场景也拒绝。约束失败仍用 `409 STALE_CANDIDATE`，可附 `reason_code`（如 `TASK_PROTECTED_OVERLAP`、`COURSE_SNAPSHOT_CHANGED` 等）说明具体原因。即使 revision 相等也必须通过本次检查。
+
+所有检查先于正式计划替换和版本递增。拒绝时保留原正式计划、候选快照及 revision，不自动重排。异常由 `planning_transaction` 回滚，仍保留同周唯一正式计划约束。旧接口重复确认返回 `PLAN_NOT_CANDIDATE`，与 Assistant 的幂等确认语义不同。
 
 ## Phase 5：revision 与事务
 
@@ -180,7 +207,7 @@ HTTP 200 结果严格为以下三种之一，没有额外字段：
 
 clarification/unsupported 是正常 classification，不是服务故障。proposal 八字段必须齐全，nullable 字段必须显式为 null；拒绝 ID、active、时间戳等额外字段。kind 仅 course/protected，recurrence 仅 weekly/once，weekday 严格 integer 1–7，拒绝 bool/string；date 为 YYYY-MM-DD，time 为 HH:MM。之后完整复用既有 TimeRuleCreate 校验，不复制业务规则。字符串 title 去除首尾空格，必须非空。
 
-仅支持 weekly course、weekly protected、once protected。weekly 的 date=null，once 的 weekday=null，course 必须 weekly；开始必须早于结束，真实日期与时钟有效。日期/时间使用上海语义，backend 明确给 provider 当前上海日期。不允许猜缺失时间或把 Task/Plan 命令转换为保护时间。
+支持按周或指定日期的课程与保护时间。weekly 的 date=null，once 的 weekday=null；开始必须早于结束，真实日期与时钟有效。日期/时间使用上海语义，backend 明确给 provider 当前上海日期。不允许猜缺失时间或把 Task/Plan 命令转换为保护时间。
 
 | HTTP | detail.code | 安全的 detail.message |
 |---|---|---|
@@ -195,7 +222,7 @@ clarification/unsupported 是正常 classification，不是服务故障。propos
 {"detail":{"code":"AI_UNAVAILABLE","message":"The AI parsing service is temporarily unavailable."}}
 ```
 
-401/403/429/5xx、HTTP/network failure 和 timeout 统一 AI_UNAVAILABLE；无 text block、空 content、异常 response、非法 JSON/schema/TimeRule 为 AI_RESPONSE_INVALID。客户端不会暴露 provider token、headers、raw body 或 traceback。Anthropic Messages-compatible API via configurable New API gateway 使用 `/v1/messages`、顶层 system 和 x-api-key/anthropic-version；不是 Chat Completions。
+401/403/429/5xx、HTTP/network failure 和 timeout 统一 AI_UNAVAILABLE；无 text block、空 content、异常 response、非法 JSON/schema/TimeRule 为 AI_RESPONSE_INVALID。客户端不会暴露 provider token、headers、raw body 或 traceback。现有 Provider 根据 `AI_API_FORMAT` 分别使用 Anthropic Messages 或 OpenAI Chat Completions 兼容协议及其对应配置。
 
 Parse 不创建/更新任何数据库对象，不访问 Session、不调 Scheduler、不 bump revision。用户编辑并点击 Apply 后，frontend 只向现有 `POST /api/time-rules` 发送 proposal 字段；正常的创建默认 active=true，revision 同事务 +1，旧 Candidate 使用原有 STALE_CANDIDATE 检查。Discard 不发送写请求。不存在 AI 专属 Apply endpoint。
 
@@ -234,6 +261,10 @@ baseline 始终读取 candidate.based_on_plan_id，即使它后来 superseded；
 | stale candidate | 200，仍按保存的历史 snapshot 比较；不授权 Confirm |
 | 缺配置、timeout、HTTP/network failure、非法 provider/text response | 200，完整 diff + explanation=null + explanation_status=unavailable |
 
-explanation 是 1–3000 字符的纯文本，独立于确定性事实。模型仅消费 structured diff；不返回 raw response/usage/headers/model metadata。明确的最优性/因果措辞被保守拒绝，但不能把该检查理解为语义真实性证明。输出不保存数据库，Task、TimeRule、Plan、PlanItem、PlanningState 和 revision 全部不变。没有 Scheduler/Confirm/tool/SQL-from-AI 调用，读事务在等待 provider 前释放。请求仅在用户主动点击 Explain 时发出，20 秒 provider / 25 秒 frontend，无自动重试。
+explanation 是 1–3000 字符的纯文本，独立于确定性事实。模型仅消费 structured diff；不返回 raw response/usage/headers/model metadata。明确的最优性/因果措辞被保守拒绝，但不能把该检查理解为语义真实性证明。输出不保存数据库，Task、TimeRule、Plan、PlanItem、PlanningState 和 revision 全部不变。没有 Scheduler/Confirm/tool/SQL-from-AI 调用，读事务在等待 provider 前释放。请求仅在用户主动点击 Explain 时发出；Provider 超时上限 120 秒，前端请求期限 125 秒，无自动重试。
+
+## 已知边界
+
+旧入口继续使用单周连续任务启发式；Assistant 继续使用有界两周搜索，均不保证全局最优，未找到方案不等于数学上无解。本阶段不新增局部重规划算法、任务层级、统计图表或数据库迁移。版本检查为单用户全局版本；无关资料变更仍可能令旧候选失效。可重复测试和 Conda 开发命令见 README。
 
 独立审核补充：provider BASE_URL 支持 gateway origin 或 `/v1` base（去尾斜杠后规范化），不会重复拼接版本；不传完整 `/messages` endpoint。解释 prompt 要求引用的钟点保持 UTC；AI Explanation 区显式标注 UTC，deterministic Changes 使用上海 UTC+08。明确确认压力及肯定式删除断言也会安全降级，但词法检查不是完整语义验证。

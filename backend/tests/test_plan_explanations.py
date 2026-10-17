@@ -16,6 +16,8 @@ from .test_plans import candidate, confirm, create_task
 from .test_plan_diff import item, snapshot
 from .test_claude_client import mock_http
 
+pytestmark = pytest.mark.usefixtures("legacy_plan_clock")
+
 
 def db_snapshot(engine):
     with engine.connect() as connection:

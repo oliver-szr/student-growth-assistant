@@ -4,10 +4,12 @@ export const PRIORITY_LABELS = { low: '低', normal: '普通', high: '高' }
 export const RECURRENCE_LABELS = { weekly: '每周', once: '仅一次' }
 
 const CODE_MESSAGES = {
-  STALE_CANDIDATE: '候选计划已过期：任务、时间规则或正式计划发生了变化。请重新生成后再确认。',
+  STALE_CANDIDATE: '候选计划已过期：当前时间、任务、时间规则或正式计划发生了变化。请重新生成后再确认。',
   PLAN_NOT_CANDIDATE: '此计划已不是待确认的候选计划，请重新加载并生成新方案。',
   PLAN_NOT_FOUND: '未找到计划，请重新加载。',
   PLAN_BASELINE_INVALID: '该候选计划的对比基准不可用，请重新生成。',
+  PAST_PLANNING_WINDOW: '所选周已经结束，请选择仍有未来时间的周。',
+  PLAN_REQUIRES_ASSISTANT: '当前安排包含分段、锁定、指定时段或已开始的记录，请在规划工作台调整，以保留原有记录。',
   TASK_NOT_FOUND: '部分所选任务已不存在，请重新加载任务列表。',
   TASK_NOT_TODO: '只能安排待完成任务，请重新加载后选择。',
   UNSCHEDULABLE: '当前排程规则未找到完整方案。请减少任务、调整截止时间或保护时间后重试。',

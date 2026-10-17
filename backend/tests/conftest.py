@@ -1,6 +1,7 @@
 """Each API test uses its own temporary SQLite database."""
 
 from collections.abc import Generator
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -11,6 +12,14 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import create_sqlite_engine, get_db
 from app.main import app
+
+
+@pytest.fixture
+def legacy_plan_clock(monkeypatch):
+    """Keep the dated compatibility fixtures in their explicit future scenario."""
+    from app.services import assistant_clock
+
+    monkeypatch.setattr(assistant_clock, "assistant_now", lambda: datetime.fromisoformat("2026-10-04T12:00:00+08:00"))
 
 
 @pytest.fixture(autouse=True)

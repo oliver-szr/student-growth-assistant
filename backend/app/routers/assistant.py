@@ -13,6 +13,8 @@ from ..services import assistant_clock, assistant_ai
 from ..services.assistant_state import task_library, baseline, time_rules, world_rules, merge_actions, build_proposal, proposed_world, preference_settings, merge_preference_patch
 from ..services.assistant_scheduler import validate_assistant, dt
 from ..services.planning_state import begin_planning_transaction, get_or_create_planning_state, bump_revision
+from ..services.plan_safety import validate_retained_history
+from ..services.scheduling_types import SchedulingInputError
 from ..services.growth_profile import record_profile_revision
 from ..services.growth_tracking import ensure_task_context, record_unknown_completion, retract_latest_completion
 from ..services.validator import expand_time_rules
@@ -618,9 +620,16 @@ def confirm(id:int,db:Session=Depends(get_db)):
         if world['questions']: fail('STALE_CANDIDATE','时间或任务状态已变化，请重新生成。')
         blocks=(p.payload.get('temporary_preferences') or {}).get('blocked_windows',[])
         _,validation_previous=baseline(db,s.week_start)
+        try:
+            validate_retained_history(validation_previous,world['retained'],world['now'])
+        except SchedulingInputError as error:
+            fail('STALE_CANDIDATE',str(error))
         # A user may explicitly lock a pending future slot. Such a lock never
         # grants the "already started formal task" exception to a past draft.
         staged_locks={a['target'] for a in p.payload['actions'] if a.get('fields',{}).get('profile',{}).get('locked') is True}
+        # Reasserting a formal lock cannot authorize moving its existing slots.
+        formal_locks={f'task:{profile.task_id}' for profile in db.scalars(select(TaskSchedulingProfile)).all() if (profile.settings or {}).get('locked')}
+        staged_locks-=formal_locks
         for ref in staged_locks:
             segments=[x for x in p.payload['items'] if x['ref']==ref]
             if segments and all(dt(x['start_at'])>=world['now'] for x in segments):

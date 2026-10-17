@@ -38,6 +38,7 @@ student-growth-assistant/
 │   │       ├── scheduler.py        # 确定性基础排程
 │   │       ├── validator.py        # 独立日程约束校验
 │   │       ├── planning_state.py   # 写事务和全局计划版本
+│   │       ├── plan_safety.py      # 旧入口时间约束、确认复验与正式历史核对
 │   │       ├── growth_tracking.py  # 执行记录与计时规则
 │   │       ├── growth_insights.py # 行为证据统计与建议
 │   │       ├── growth_profile.py  # 个人资料版本
@@ -92,7 +93,7 @@ React 页面 → api.js / 纯前端工具 → FastAPI routers → services → m
 
 ## 验证入口
 
-- 后端：在 `backend/` 运行 `..\.venv\Scripts\python.exe -m pytest -p no:cacheprovider`。
+- 后端：在 `backend/` 运行 `conda run -n app_env python -m pytest -p no:cacheprovider --basetemp=../codex/.local/pytest-public`；复用已有环境，不创建 `.venv`。
 - 前端：在 `frontend/` 运行 `npm test` 与 `npm run build`。
 - 演示：在仓库根目录运行 `pwsh -NoProfile -ExecutionPolicy Bypass -File .\codex\启动演示版.ps1`；演示数据与正常数据库隔离。
 - 更细的接口边界见 `docs/api-contract.md`；早期阶段实现和证据见 `docs/architecture.md` 及 `docs/phase*-verification.md`。
