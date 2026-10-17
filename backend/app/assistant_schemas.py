@@ -152,11 +152,13 @@ class GrowthReviewSelection(StrictModel):
 
 
 class MessageRequest(ParsedCommand):
+    replan: bool = False
     client_message_id: str = Field(min_length=1,max_length=100)
     text: str = Field(min_length=1,max_length=2000)
 
 
 class PreviewRequest(ParsedCommand):
+    expand_scope: bool = False
     client_message_id: str | None = Field(default=None,min_length=1,max_length=100)
     alternative_index: int | None = Field(default=None,ge=0,le=1)
     candidate_id: str | None = Field(default=None,min_length=1,max_length=80)

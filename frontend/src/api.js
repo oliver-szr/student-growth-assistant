@@ -93,6 +93,8 @@ export const discardGrowthDraft=id=>request(`/api/assistant/drafts/${id}/discard
 export const getAssistantSession=id=>request(`/api/assistant/sessions/${id}`)
 export const sendAssistantMessage=(id,data)=>request(`/api/assistant/sessions/${id}/messages`,{method:'POST',body:JSON.stringify(data)},125000)
 export const previewAssistant=(id,data)=>request(`/api/assistant/proposals/${id}/preview`,{method:'POST',body:JSON.stringify(data)})
+export const replanAssistant=(id,target)=>sendAssistantMessage(id,{client_message_id:crypto.randomUUID(),text:target?'重新安排所选任务，尽量保留其他安排':'局部重规划，尽量保留其他安排',replan:true,...(target?{actions:[{op:'update',target,fields:{}}]}:{})})
+export const expandAssistantScope=id=>previewAssistant(id,{client_message_id:crypto.randomUUID(),expand_scope:true})
 export const confirmAssistant=id=>request(`/api/assistant/proposals/${id}/confirm`,{method:'POST'})
 export const discardAssistant=id=>request(`/api/assistant/proposals/${id}/discard`,{method:'POST'})
 export const explainAssistant=id=>request(`/api/assistant/proposals/${id}/explanation`,{method:'POST'},125000)

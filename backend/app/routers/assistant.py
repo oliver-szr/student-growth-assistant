@@ -14,6 +14,7 @@ from ..services.assistant_state import task_library, baseline, time_rules, world
 from ..services.assistant_scheduler import validate_assistant, dt
 from ..services.planning_state import begin_planning_transaction, get_or_create_planning_state, bump_revision
 from ..services.plan_safety import validate_retained_history
+from ..services.scoped_replanning import guard_content, validate_scope
 from ..services.scheduling_types import SchedulingInputError
 from ..services.growth_profile import record_profile_revision
 from ..services.growth_tracking import ensure_task_context, record_unknown_completion, retract_latest_completion
@@ -88,8 +89,34 @@ def base_actions(db,s,revision):
     return p.payload['actions'] if p and p.status not in ('applied','discarded','superseded') and p.source_revision==revision else []
 
 
-def proposal_payload(db,s,actions,questions=None,ai_error=None,preferences=None,preference_updates=None,allow_replan=False):
+def _verified_scope(db,p):
+    markers=[m.content for m in db.scalars(select(AssistantMessage).where(AssistantMessage.proposal_id==p.id,AssistantMessage.role=='assistant')).all() if (m.content or {}).get('replanning_guard')]
+    scope=p.payload.get('replanning')
+    if markers or scope:
+        if not scope or not markers or any(marker!=guard_content(p.payload) for marker in markers):
+            fail('STALE_CANDIDATE','候选调整范围记录已变化，请重新生成。')
+        if scope['mode']=='expanded':
+            source=db.get(AssistantProposal,scope.get('expansion_from'))
+            if not source or source.session_id!=p.session_id or source.source_revision!=p.source_revision:
+                fail('STALE_CANDIDATE','扩大范围授权已失效，请重新生成。')
+            original=_verified_scope(db,source)
+            if not original or original['mode']!='local' or not original['requires_expansion'] or original['formal_snapshot_signature']!=scope['formal_snapshot_signature']:
+                fail('STALE_CANDIDATE','缺少明确的扩大范围授权。')
+    return scope
+
+
+def _scope_context(db,s):
+    previous=db.get(AssistantProposal,s.latest_proposal_id) if s.latest_proposal_id else None
+    if previous and previous.source_revision==_revision(db) and previous.status not in ('applied','discarded','superseded'):
+        return _verified_scope(db,previous)
+    return None
+
+
+def proposal_payload(db,s,actions,questions=None,ai_error=None,preferences=None,preference_updates=None,allow_replan=False,expand_scope=False):
     previous=_active_candidate(db,s)
+    pending=db.get(AssistantProposal,s.latest_proposal_id) if s.latest_proposal_id else None
+    if pending and pending.source_revision==_revision(db) and pending.status not in ('applied','discarded','superseded'):
+        previous=pending
     temporary_preferences=None
     if previous:
         inherited=previous.payload
@@ -99,7 +126,8 @@ def proposal_payload(db,s,actions,questions=None,ai_error=None,preferences=None,
             preferences={k:v for k,v in inherited['personal_preferences'].items() if k!='temporary_avoid_windows'}
         temporary_preferences=inherited.get('temporary_preferences')
         allow_replan=allow_replan or bool(preference_updates or temporary_preferences)
-    payload=build_proposal(db,s.week_start,actions,questions,preferences=preferences,preference_updates=preference_updates,allow_replan=allow_replan,temporary_preferences=temporary_preferences,previous_override=_previous_candidate(db,s))
+    scope=_scope_context(db,s) or {}
+    payload=build_proposal(db,s.week_start,actions,questions,preferences=preferences,preference_updates=preference_updates,allow_replan=allow_replan or expand_scope,temporary_preferences=temporary_preferences,previous_override=_previous_candidate(db,s),expanded=expand_scope or scope.get('mode')=='expanded',expansion_from=s.latest_proposal_id if expand_scope else scope.get('expansion_from'))
     payload['ai_error']=ai_error
     return payload
 
@@ -227,6 +255,7 @@ def _apply_option(proposal,option,source,reasons,error=None):
     valid=_reason_codes(reasons,option,options,proposal.payload)
     labels={'follows_task_window':'更符合你设置的任务时段偏好','avoids_unwanted_window':'避开了你不想安排任务的时段','reduces_task_moves':'减少了对原有任务安排的移动','more_deadline_buffer':'为重要任务留出了更多截止缓冲','balanced_tradeoff':'在个人偏好、任务移动和截止风险之间作了平衡'}
     proposal.payload={**proposal.payload,'items':option['items'],'changes':option['changes'],'summary':option['summary']+'\n所有本轮任务都通过课程、截止时间和锁定校验。','selected_candidate_id':option['candidate_id'],'selected_strategy':option['strategy'],'selected_metrics':option['metrics'],'alternatives':[x['items'] for x in options if x['candidate_id']!=option['candidate_id']][:2],'recommendation':{'source':source,'candidate_id':option['candidate_id'],'reason_codes':valid,'reason_text':[labels[x] for x in valid]},'recommendation_error':error}
+    if 'change_groups' in option: proposal.payload={**proposal.payload,'change_groups':option['change_groups']}
 
 
 def _set_run(engine,run_id,status=None,phase=None,error=None,proposal_id=None):
@@ -261,7 +290,8 @@ def _create_run_proposal(engine,run_id,actions,questions,context,preference_upda
         if temporary_preferences.get('avoid_windows'):effective['temporary_avoid_windows']=temporary_preferences['avoid_windows']
         if strategy:effective['adjustment_mode']=strategy
         week=session.week_start; revision=run.source_revision
-        payload=build_proposal(db,week,merged,questions,preferences=effective,preference_updates=preference_updates,allow_replan=bool(preference_updates or temporary_preferences or strategy),temporary_preferences=temporary_preferences,previous_override=_previous_candidate(db,session))
+        scope=_scope_context(db,session) or {}
+        payload=build_proposal(db,week,merged,questions,preferences=effective,strategy=strategy or 'balanced',preference_updates=preference_updates,allow_replan=bool(preference_updates or temporary_preferences or strategy),temporary_preferences=temporary_preferences,previous_override=_previous_candidate(db,session),expanded=scope.get('mode')=='expanded',expansion_from=scope.get('expansion_from'))
         payload.update(ai_error=None,requested_strategy=strategy,temporary_preferences=temporary_preferences or {},recommendation=None)
         db.rollback()
         begin_planning_transaction(db)
@@ -272,7 +302,7 @@ def _create_run_proposal(engine,run_id,actions,questions,context,preference_upda
         if latest and latest.status not in ('applied','discarded'):latest.status='superseded'
         proposal=AssistantProposal(session_id=session.id,source_revision=revision,status=payload['status'],payload=payload)
         db.add(proposal); db.flush(); session.latest_proposal_id=proposal.id
-        db.add(AssistantMessage(session_id=session.id,role='assistant',text='\n'.join(proposal.payload['questions']) or proposal.payload['summary'],proposal_id=proposal.id))
+        db.add(AssistantMessage(session_id=session.id,role='assistant',text='\n'.join(proposal.payload['questions']) or proposal.payload['summary'],proposal_id=proposal.id,content=guard_content(proposal.payload)))
         run.phase='recommending' if proposal.status=='ready' else 'finished'; run.payload={**run.payload,'proposal_id':proposal.id}
         db.commit(); return proposal.id
 
@@ -531,7 +561,7 @@ async def message(id:int,payload:MessageRequest,db:Session=Depends(get_db)):
     latest=db.get(AssistantProposal,latest_id) if latest_id else None
     latest_status=latest.status if latest else None
     actions=[a.model_dump(mode='json',exclude_unset=True) for a in payload.actions]; questions=payload.questions; error=None
-    if not actions:
+    if not actions and not payload.replan:
         tasks=latest.payload['tasks'] if latest and latest.status not in ('applied','discarded','superseded') and latest.source_revision==revision else task_library(db)
         history=[m.text for m in db.scalars(select(AssistantMessage).where(AssistantMessage.session_id==id).order_by(AssistantMessage.id.desc()).limit(10)).all()][::-1]
         context=dict(now=assistant_clock.assistant_now().isoformat(),week_start=s.week_start.isoformat(),tasks=tasks,history=history)
@@ -543,7 +573,7 @@ async def message(id:int,payload:MessageRequest,db:Session=Depends(get_db)):
             error=exc.code; questions=['AI暂不可用，输入已保留。请重试或填写手动任务卡片。']
     merged=merge_actions(base,actions)
     db.rollback()
-    prepared=await asyncio.to_thread(proposal_payload,db,s,merged,questions,error)
+    prepared=await asyncio.to_thread(proposal_payload,db,s,merged,questions,error,allow_replan=payload.replan)
     db.rollback()
     try:
         begin_planning_transaction(db)
@@ -555,7 +585,7 @@ async def message(id:int,payload:MessageRequest,db:Session=Depends(get_db)):
         if get_or_create_planning_state(db).revision!=revision or s.latest_proposal_id!=latest_id or current_status!=latest_status:
             fail('STALE_CANDIDATE','资料或会话已变化，请重新发送；输入不会自动应用。')
         p=save_proposal(db,s,merged,questions,error,prepared_payload=prepared)
-        db.add_all([AssistantMessage(session_id=id,client_message_id=payload.client_message_id,role='user',text=payload.text,proposal_id=p.id),AssistantMessage(session_id=id,role='assistant',text='\n'.join(p.payload['questions']) or p.payload['summary'],proposal_id=p.id)])
+        db.add_all([AssistantMessage(session_id=id,client_message_id=payload.client_message_id,role='user',text=payload.text,proposal_id=p.id),AssistantMessage(session_id=id,role='assistant',text='\n'.join(p.payload['questions']) or p.payload['summary'],proposal_id=p.id,content=guard_content(p.payload))])
         r=response(p); db.commit(); return r
     except Exception: db.rollback(); raise
 
@@ -571,10 +601,19 @@ def preview(id:int,payload:PreviewRequest,db:Session=Depends(get_db)):
         if s.latest_proposal_id!=old.id or old.source_revision!=get_or_create_planning_state(db).revision:
             fail('STALE_CANDIDATE','资料或候选已变化，请重新生成；不会覆盖最新任务修改。')
         if old.status in ('applied','discarded','superseded'): fail('PROPOSAL_INACTIVE','请修改最新候选。')
+        scope=_verified_scope(db,old) or {}
+        if payload.expand_scope:
+            if payload.actions or payload.questions or payload.preference_updates or payload.temporary_preferences or payload.strategy or payload.clear_temporary_preferences or payload.candidate_id or payload.alternative_index is not None or scope.get('mode')!='local' or not scope.get('requires_expansion'):
+                fail('INVALID_SCOPE_EXPANSION','仅可对当前需要扩大范围的局部候选单独确认。',422)
+            prepared=proposal_payload(db,s,old.payload['actions'],expand_scope=True)
+            p=save_proposal(db,s,old.payload['actions'],prepared_payload=prepared)
+            db.add(AssistantMessage(session_id=s.id,client_message_id=payload.client_message_id,role='assistant',text=p.payload['summary'],proposal_id=p.id,content=guard_content(p.payload)))
+            r=response(p); db.commit(); return r
         if payload.candidate_id:
             option=next((x for x in old.payload.get('candidate_options',[]) if x['candidate_id']==payload.candidate_id),None)
             if option is None: fail('INVALID_CANDIDATE','这个备选方案不存在，请重新计算。',422)
             old.payload={**old.payload,'items':option['items'],'changes':option['changes'],'summary':option['summary'],'selected_candidate_id':option['candidate_id'],'selected_strategy':option['strategy'],'selected_metrics':option['metrics'],'recommendation':{'source':'user_selected','candidate_id':option['candidate_id'],'reason_codes':[],'reason_text':[]}}
+            if 'change_groups' in option: old.payload={**old.payload,'change_groups':option['change_groups']}
             r=response(old); db.commit(); return r
         actions=[a.model_dump(mode='json',exclude_unset=True) for a in payload.actions]
         if payload.alternative_index is not None:
@@ -584,7 +623,7 @@ def preview(id:int,payload:PreviewRequest,db:Session=Depends(get_db)):
             if not isinstance(alt,dict): fail('INVALID_ALTERNATIVE','请通过聊天指定要修改的任务时间。',422)
             actions.append(dict(op='update',target=alt['ref'],fields={'profile':{'fixed_start':alt['start_at']}}))
         p=save_proposal(db,s,merge_actions(old.payload['actions'],actions),payload.questions)
-        db.add(AssistantMessage(session_id=s.id,client_message_id=payload.client_message_id,role='assistant',text='\n'.join(p.payload['questions']) or p.payload['summary'],proposal_id=p.id))
+        db.add(AssistantMessage(session_id=s.id,client_message_id=payload.client_message_id,role='assistant',text='\n'.join(p.payload['questions']) or p.payload['summary'],proposal_id=p.id,content=guard_content(p.payload)))
         r=response(p); db.commit(); return r
     except Exception: db.rollback(); raise
 
@@ -617,6 +656,11 @@ def confirm(id:int,db:Session=Depends(get_db)):
         if s.latest_proposal_id!=p.id or p.source_revision!=get_or_create_planning_state(db).revision:
             fail('STALE_CANDIDATE','候选依据的资料已变化，请重新生成。')
         world=proposed_world(db,s.week_start,p.payload['actions'],_previous_candidate(db,s))
+        _verified_scope(db,p)
+        try:
+            validate_scope(p.payload,world,world_rules(db,world,(p.payload.get('temporary_preferences') or {}).get('blocked_windows',[])))
+        except ValueError as error:
+            fail('STALE_CANDIDATE',str(error))
         if world['questions']: fail('STALE_CANDIDATE','时间或任务状态已变化，请重新生成。')
         blocks=(p.payload.get('temporary_preferences') or {}).get('blocked_windows',[])
         _,validation_previous=baseline(db,s.week_start)

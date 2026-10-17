@@ -31,6 +31,7 @@ student-growth-assistant/
 │   │       ├── assistant_ai.py     # AI 解析、比较和解释编排
 │   │       ├── assistant_scheduler.py
 │   │       ├── assistant_state.py  # 助手上下文、偏好和任务状态
+│   │       ├── scoped_replanning.py # 正式快照范围识别、变化分组、事实诊断与范围复验
 │   │       ├── grid.py             # 5 分钟网格与 14 天窗口常量
 │   │       ├── planning_window.py  # 两周课程和保护时段展开
 │   │       ├── schema_migrations.py # Alembic 版本检查与升级入口

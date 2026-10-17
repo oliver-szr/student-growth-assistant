@@ -11,6 +11,7 @@ from .assistant_scheduler import arrange, dt, interval, old_segments
 from .planning_window import GRID_MINUTES, WINDOW_DAYS
 from . import assistant_clock
 from .taxonomy import compile_preferences, category_rows, validate_category
+from .scoped_replanning import identify_scope, constrained_tasks, planning_previous, finish_scope
 
 SAMPLE_PREFERENCES={'task_windows':{'writing':[{'start':'08:00','end':'12:00'}],'reading':[{'start':'19:00','end':'22:00'}]},'avoid_windows':[],'deadline_buffer_hours':24,'adjustment_mode':'balanced'}
 
@@ -99,6 +100,7 @@ def proposed_world(db,week,actions,previous_override=None):
         t['goal']=dict(id=goal.id,title=goal.title,priority=goal.priority) if goal else None
     now=assistant_clock.assistant_now()
     current,previous=baseline(db,week)
+    formal_previous=deepcopy(previous)
     if previous_override is not None:
         previous=previous_override
     byold=old_segments(previous)
@@ -108,7 +110,7 @@ def proposed_world(db,week,actions,previous_override=None):
     for task_id,end in historical: past_ends[task_id]=max(end,past_ends.get(task_id,end))
     feedbacks={}
     for f in db.scalars(select(TaskFeedback).where(TaskFeedback.retracted_at.is_(None)).order_by(TaskFeedback.id)).all():feedbacks[f.task_id]=f
-    relevant=[]; retained=[]; notices=[]
+    relevant=[]; retained=[]; notices=[]; pending_work=[]
     for ref,t in tasks.items():
         segments=byold.get(ref,[])
         old=next((x for x in segments if interval(x)[1]>now),None)
@@ -119,6 +121,7 @@ def proposed_world(db,week,actions,previous_override=None):
         if past_end and t['status']=='todo' and ref not in confirmed_remaining and (not feedback or feedback.outcome!='partial' or feedback.occurred_at<past_end):
             if ref in focus:questions.append(f"{t['title']}：请确认预计剩余分钟，再重新安排。")
             notices.append(f"{t['title']}：旧安排已结束，需要确认预计剩余时长；保留原任务与DDL，未自动安排。")
+            pending_work.append(dict(ref=ref,title=t['title'],remaining_minutes=None,needs_remaining_confirmation=True,code='REMAINING_WORK_REQUIRED',message='原安排已结束；请核对预计剩余分钟，系统未自动认定完成。'))
             if old:
                 # Keep existing future segments rather than silently deleting them.
                 retained.extend(x for x in segments if x not in elapsed)
@@ -139,12 +142,15 @@ def proposed_world(db,week,actions,previous_override=None):
         if dt(t['deadline'])<=now:
             retained.extend(x for x in segments if x not in elapsed)
             notices.append(f"{t['title']}：已逾期，需要处理，未自动修改DDL。")
+            pending_work.append(dict(ref=ref,title=t['title'],remaining_minutes=t['duration_minutes'],code='DEADLINE_VIOLATION',message='当前截止时间已过，需要手动核对；未修改DDL。'))
             if ref in focus: questions.append(f"{t['title']}：请明确新的有效截止时间或标记完成/取消。")
             continue
         if (old and interval(old)[1]>now) or dt(t['deadline']).date()<week+timedelta(days=WINDOW_DAYS) or ref in focus:
             relevant.append(t)
-        else: notices.append(f"{t['title']}：后续待安排，超出两周规划范围，尚未保证DDL。")
-    return dict(tasks=list(tasks.values()),selected=relevant,previous=previous,retained=retained,current_plan_id=current,questions=questions,notices=notices,now=now,week=week)
+        else:
+            notices.append(f"{t['title']}：后续待安排，超出两周规划范围，尚未保证DDL。")
+            pending_work.append(dict(ref=ref,title=t['title'],remaining_minutes=t['duration_minutes'],code='OUTSIDE_PLANNING_WINDOW',message='超出两周规划范围，后续仍需安排。'))
+    return dict(tasks=list(tasks.values()),selected=relevant,previous=previous,formal_previous=formal_previous,retained=retained,pending_work=pending_work,current_plan_id=current,questions=questions,notices=notices,now=now,week=week)
 
 
 def world_rules(db,world,blocked_windows=None):
@@ -164,7 +170,7 @@ def world_rules(db,world,blocked_windows=None):
     return rules
 
 
-def build_proposal(db,week,actions,questions=None,preferences=None,strategy='balanced',preference_updates=None,allow_replan=False,temporary_preferences=None,previous_override=None):
+def build_proposal(db,week,actions,questions=None,preferences=None,strategy='balanced',preference_updates=None,allow_replan=False,temporary_preferences=None,previous_override=None,expanded=False,expansion_from=None):
     for action in actions:
         key=(action.get('fields') or {}).get('task_type')
         if key:
@@ -184,13 +190,24 @@ def build_proposal(db,week,actions,questions=None,preferences=None,strategy='bal
     preferences=preferences or persistent
     legacy_persistent={key:persistent[key] for key in ('task_windows','avoid_windows','deadline_buffer_hours','adjustment_mode')}
     payload=dict(window_start=week.isoformat(),window_end_exclusive=(week+timedelta(days=WINDOW_DAYS)).isoformat(),actions=actions,tasks=world['tasks'],questions=qs,notices=world['notices'],items=[],alternatives=[],candidate_options=[],selected_candidate_id=None,selected_strategy='balanced',selected_metrics={},personal_preferences=preferences,preference_is_sample=saved['is_sample'] and not bool(preference_updates),preference_updates={'settings':legacy_persistent} if preference_updates else None,temporary_preferences=temporary_preferences,diagnostics=[],changes=[],summary='',selected_refs=[t['ref'] for t in world['selected']],retained=world['retained'],removed_refs=[],unmet_preferences=[])
+    rules=world_rules(db,world,temporary_preferences.get('blocked_windows'))
+    # AI strategy/preference output never grants permission to move unrelated
+    # formal tasks. Strategies rank candidates only inside the authorized scope.
+    scope,facts=identify_scope(week,world['now'],world['selected'],rules,world['formal_previous'],actions,expanded,expansion_from)
+    persisted_rule_ids={r.id for r in time_rules(db)}
+    for fact in facts:
+        if fact.get('time_rule_id') is not None:
+            fact['rule_source']='time_rule' if fact['time_rule_id'] in persisted_rule_ids else 'in_memory_constraint'
+            if fact['rule_source']=='in_memory_constraint':
+                fact['blocking_ref']=f"constraint:{fact.pop('time_rule_id')}"
+    payload['replanning']=scope
     if qs or (not actions and not allow_replan):
         payload['status']='needs_input'
         if not qs: payload['questions']=['请输入任务，或使用手动任务卡片。']
-        return payload
+        return finish_scope(payload,world,rules,facts)
     if temporary_preferences.get('avoid_windows'):
         preferences={**preferences,'temporary_avoid_windows':temporary_preferences['avoid_windows']}
-    result=arrange(week,world['now'],world['selected'],world_rules(db,world,temporary_preferences.get('blocked_windows')),world['previous'],preferences=preferences,include_strategies=True)
+    result=arrange(week,world['now'],constrained_tasks(world['selected'],scope),rules,planning_previous(world),preferences=preferences,include_strategies=True)
     payload.update(result)
     selected=next((x for x in result.get('candidate_options',[]) if x['items']==result['items']),None)
     if selected:
@@ -219,11 +236,11 @@ def build_proposal(db,week,actions,questions=None,preferences=None,strategy='bal
     if result['status']=='ready':
         payload['summary']=_summary(payload['changes'])+'\n所有本轮任务都通过课程、截止时间和锁定校验。'
     else: payload['summary']='\n'.join(x['message'] for x in result['diagnostics'])
-    return payload
+    return finish_scope(payload,world,rules,facts)
 
 
 def _changes_for(items,world):
-    old=old_segments(world['previous']); new=old_segments(items)
+    old=old_segments(world['formal_previous']); new=old_segments(items)
     selected={t['ref']:t for t in world['selected']}; changes=[]
     for ref,segments in new.items():
         before=[x for x in old.get(ref,[]) if interval(x)[1]>world['now']]

@@ -207,3 +207,10 @@
   .calendar-block strong { font-size:10px; }
   .calendar-block small { font-size:8px; }
 }
+.scoped-changes { margin: 12px 0; overflow-wrap: anywhere; }
+.scope-counts { font-weight: 650; }
+.scoped-changes details { margin: 10px 0; }
+.scope-expansion { padding: 12px; border: 1px solid var(--border, #d5dce5); border-radius: 10px; }
+.scope-expansion .button-row { flex-wrap: wrap; }
+.chat-panel > .panel-heading { flex-wrap: wrap; gap: 8px; }
+@media (max-width: 640px) { .scope-expansion .button-row > button { width: 100%; white-space: normal; } }

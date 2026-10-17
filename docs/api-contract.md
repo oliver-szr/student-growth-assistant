@@ -44,6 +44,39 @@ Assistant 覆盖本周剩余时间及下周；默认连续，用户明确允许�
 
 `ApiError` 保留 HTTP status、detail.code 和原 detail。404 PLAN_NOT_FOUND 在 Confirmed 查询时显示正常空状态；409 STALE_CANDIDATE 保留 outdated 预览、禁用 Confirm；409 PLAN_NOT_CANDIDATE 展示后端 message、禁用 Confirm；409 UNSCHEDULABLE 展示 task_id、可映射标题和 message/reason_code。其他 422/500、网络错误和 timeout 使用共用可读错误处理，不自动重排或确认。
 
+## 局部重规划扩展（开发阶段 1）
+
+不新增路由。旧请求字段与 `changes`、`items`、候选比较结构继续保留；老客户端不传新字段仍可生成草案，新生成的草案默认使用局部范围。
+
+| 请求字段 | 含义与默认值 |
+|---|---|
+| messages 的 `replan: boolean = false` | 为 true 时允许无 actions 的手动程序重规划，跳过 AI 解析；按任务重规划可传已有 update 动作且 fields 为 `{}` |
+| preview 的 `expand_scope: boolean = false` | 只能单独用于最新、同版本、需要扩大范围的局部失败候选；显式扩大后创建新候选，仍不写正式计划 |
+
+这两个字段只属于 HTTP 请求，不属于 AI 的 ParsedCommand。扩大范围不能与任务编辑、策略选择、偏好修改等混用；非法扩大请求返回 `422 INVALID_SCOPE_EXPANSION`，资料、快照、范围记录或授权失效返回既有 `409 STALE_CANDIDATE`。候选仍须通过 confirm，失败不推进正式版本。带 client_message_id 的扩大请求可按现有消息语义幂等重试。
+
+```json
+{"client_message_id":"local-1","text":"局部重规划","replan":true}
+```
+
+```json
+{"client_message_id":"expand-1","expand_scope":true}
+```
+
+新增响应字段：
+
+- `replanning`：`mode` 为 local/expanded，含 affected_refs、preserved_refs、protected_refs、formal_snapshot_signature、expansion_from、requires_expansion。扩大授权仅在同版本有效草案链中继承；正式采用、放弃或版本变化后失效。
+- `change_groups`：preserved/moved/added/pending/removed 数组及 counts（前四组按 task ref 去重）；各任务携带完整 before_segments、after_segments 与程序 reasons。缺少剩余工作证据时 remaining_minutes 为 null，不把原预计时长冒充剩余量。此类任务集中显示为 pending，历史仍完整保留。
+- `formal_plan_needs_review`：原正式片段不满足新增规则、DDL 或工作要求，或尚需核对剩余工作；为 true 时提醒旧计划需要重新核对，不代表已更新正式计划。
+- `selected_metrics` 和 candidate_options 的 metrics 增加 moved_task_count、moved_segment_count、total_shift_minutes、overlap_minutes、overlap_ratio。位移按各任务排序后的旧/新片段配对计算，未配对片段由片段数体现；重叠比仅针对原/新都有安排的任务，无比较基线时为 null。这些观测值不改变策略评分。
+- 每个 candidate_option 同步提供 change_groups，切换候选时明细与选中指标一起变化。
+
+diagnostics 保留 code/message 并按事实附加 ref/task_id、constraint、original_interval(s)、conflict_interval、time_rule_id、blocking_ref、options。真实 TimeRule 引用标记 `rule_source=time_rule`；本轮临时约束或保留片段占用标记 in_memory_constraint，使用 constraint 引用，不冒充数据库规则 ID。options 仅为建议，不能直接修改 DDL、时长或时间规则。
+
+主要原因代码为 TIME_RULE_CONFLICT、DEADLINE_VIOLATION、LOCKED_SEGMENT、CURRENT_TIME_ADVANCED、WORK_REQUIREMENTS_CHANGED、NEW_TASK、TASK_UPDATED、EXPLICIT_REPLAN、SCOPE_EXPANDED、LOCAL_SCOPE_LIMIT，并保留引擎 NO_PLAN_FOUND/SEARCH_LIMIT。缺少剩余证据和窗口外任务的 pending reasons 使用 REMAINING_WORK_REQUIRED/OUTSIDE_PLANNING_WINDOW。范围和搜索失败均不能表述为数学上无解。
+
+没有新增数据库结构，历史无范围字段的候选继续走阶段 0 校验；新候选若范围字段损坏、丢失或与已有消息标记不一致则拒绝。备份恢复仍使所有待确认候选失效。
+
 ## Phase 1：健康检查
 
 `GET /api/health` 无请求体、无认证。成功返回 HTTP `200`：
@@ -265,6 +298,6 @@ explanation 是 1–3000 字符的纯文本，独立于确定性事实。模型�
 
 ## 已知边界
 
-旧入口继续使用单周连续任务启发式；Assistant 继续使用有界两周搜索，均不保证全局最优，未找到方案不等于数学上无解。本阶段不新增局部重规划算法、任务层级、统计图表或数据库迁移。版本检查为单用户全局版本；无关资料变更仍可能令旧候选失效。可重复测试和 Conda 开发命令见 README。
+旧入口继续使用单周连续任务启发式；Assistant 在原有界两周搜索外增加局部范围约束，均不保证全局最优，未找到方案不等于数学上无解。本阶段未新增任务层级、统计图表或数据库迁移。版本检查为单用户全局版本；无关资料变更仍可能令旧候选失效。可重复测试和 Conda 开发命令见 README。
 
 独立审核补充：provider BASE_URL 支持 gateway origin 或 `/v1` base（去尾斜杠后规范化），不会重复拼接版本；不传完整 `/messages` endpoint。解释 prompt 要求引用的钟点保持 UTC；AI Explanation 区显式标注 UTC，deterministic Changes 使用上海 UTC+08。明确确认压力及肯定式删除断言也会安全降级，但词法检查不是完整语义验证。

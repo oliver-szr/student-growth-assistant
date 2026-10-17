@@ -7,7 +7,8 @@ export function calendarPosition(item){
 }
 export function visibleSchedule(confirmed,proposal){
   if(proposal?.status!=='ready')return confirmed
-  const items=[...confirmed.filter(x=>!proposal.selected_refs.includes(x.ref)&&!(proposal.removed_refs||[]).includes(x.ref)),...(proposal.retained||[]),...proposal.items.map(x=>({...x,candidate:true}))]
+  const preserved=new Set(proposal.change_groups?.preserved?.map(x=>x.ref)||[])
+  const items=[...confirmed.filter(x=>!proposal.selected_refs.includes(x.ref)&&!(proposal.removed_refs||[]).includes(x.ref)),...(proposal.retained||[]),...proposal.items.map(x=>({...x,candidate:!preserved.has(x.ref)}))]
   return [...new Map(items.map(x=>[`${x.ref}:${x.start_at}:${x.end_at}`,x])).values()]
 }
 export function manualAction(form){
