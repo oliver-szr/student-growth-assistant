@@ -15,11 +15,11 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from ..database import UTCDateTime
-from ..models import AssistantProposal, AssistantRun, Base, PlanningState, utc_now
+from ..models import AssistantProposal, AssistantRun, Base, GrowthChangeDraft, PlanningState, utc_now
 from .planning_state import begin_planning_transaction, get_or_create_planning_state
 
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 MAX_SNAPSHOT_BYTES = 25 * 1024 * 1024
 RETAIN_BACKUPS = 5
 
@@ -154,6 +154,27 @@ def build_snapshot(db: Session) -> dict:
     }
 
 
+def _convert_legacy_v1(snapshot):
+    """Validate exactly against the immutable v1 model before adding defaults."""
+    import importlib.util
+    from copy import deepcopy
+    spec = importlib.util.spec_from_file_location("sga_backup_v1", Path(__file__).resolve().parents[2] / "alembic" / "baseline_models.py")
+    baseline = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(baseline)
+    expected = baseline.Base.metadata.tables
+    tables = snapshot["tables"]
+    if set(tables) != set(expected):
+        raise HTTPException(422, detail="旧v1备份的数据表与冻结版本不匹配")
+    for name, table in expected.items():
+        if not isinstance(tables[name], list) or any(not isinstance(row, dict) or set(row) != set(table.columns.keys()) for row in tables[name]):
+            raise HTTPException(422, detail=f"旧v1备份数据表 {name} 的字段不匹配")
+    converted = deepcopy(snapshot)
+    converted["format_version"] = FORMAT_VERSION
+    for row in converted["tables"]["tasks"]:
+        row.update(parent_task_id=None, task_kind="executable", sort_order=0)
+    return converted
+
+
 def _prepare_snapshot(snapshot: dict) -> tuple[list[tuple[Table, list[dict]]], int]:
     if not isinstance(snapshot, dict) or set(snapshot) != {"format_version", "exported_at", "timezone", "revision", "tables"}:
         raise HTTPException(status_code=422, detail="备份文件结构不正确")
@@ -163,12 +184,14 @@ def _prepare_snapshot(snapshot: dict) -> tuple[list[tuple[Table, list[dict]]], i
         raise HTTPException(status_code=422, detail="备份文件包含无法读取的数据")
     if size > MAX_SNAPSHOT_BYTES:
         raise HTTPException(status_code=413, detail="备份文件超过 25 MB 限制")
-    if snapshot["format_version"] != FORMAT_VERSION:
+    if type(snapshot["format_version"]) is not int or snapshot["format_version"] not in (1, FORMAT_VERSION):
         raise HTTPException(status_code=422, detail="不支持此备份版本")
     if snapshot["timezone"] != "UTC" or not isinstance(snapshot["tables"], dict):
         raise HTTPException(status_code=422, detail="备份时区或数据表结构无效")
-    if not isinstance(snapshot["revision"], int) or snapshot["revision"] < 0:
+    if type(snapshot["revision"]) is not int or snapshot["revision"] < 0:
         raise HTTPException(status_code=422, detail="备份版本号无效")
+    if snapshot["format_version"] == 1:
+        snapshot = _convert_legacy_v1(snapshot)
 
     metadata = Base.metadata
     expected = set(metadata.tables)
@@ -207,6 +230,8 @@ def _prepare_snapshot(snapshot: dict) -> tuple[list[tuple[Table, list[dict]]], i
                 except Exception:raise HTTPException(status_code=422,detail='备份中有非法任务分段或时间约束') from None
         if table.name=='tasks':
             if any(row['duration_minutes']<=0 or row['duration_minutes']%GRID_MINUTES for row in rows):raise HTTPException(status_code=422,detail='备份任务时长不符合5分钟粒度')
+    from .task_hierarchy import validate_backup_hierarchy
+    validate_backup_hierarchy({table.name: rows for table, rows in prepared})
     return prepared, snapshot["revision"]
 
 
@@ -233,6 +258,9 @@ def restore_snapshot(db: Session, snapshot: dict) -> int:
         db.query(AssistantRun).filter(AssistantRun.status == "running").update(
             {AssistantRun.status: "interrupted", AssistantRun.phase: "interrupted"},
             synchronize_session=False,
+        )
+        db.query(GrowthChangeDraft).filter(GrowthChangeDraft.status == "ready").update(
+            {GrowthChangeDraft.status: "stale"}, synchronize_session=False
         )
         db.commit()
         return next_revision

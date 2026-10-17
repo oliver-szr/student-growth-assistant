@@ -35,7 +35,7 @@ export default function TaskForm({ task, pending, disabled = false, onSubmit, on
         <label className="span-two">说明 <span className="optional">选填</span>
           <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows="2" disabled={pending || disabled} />
         </label>
-        <label>剩余时长（分钟）
+        <label>{task?.task_kind === 'container' ? '原始预期（分钟，仅用于比较）' : '剩余时长（分钟）'}
           <input type="number" min="5" step="5" value={duration} onChange={(event) => setDuration(event.target.value)} required disabled={pending || disabled} />
         </label>
         <label>截止时间

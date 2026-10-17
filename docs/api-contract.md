@@ -22,6 +22,8 @@
 
 不提供硬删除接口。当前没有 `POST /api/plans/check` 或 `/api/constraints/apply`。
 
+阶段 2 继续无硬删除 API（DELETE 返回405）；不能用取消父容器来静默取消子任务。
+
 `datetime-local` 视为固定上海时间：例如 `2026-10-05T22:00` 发送为 `2026-10-05T22:00:00+08:00`；收到 `2026-10-05T14:00:00Z` 时仍显示 `22:00`。规则从 `weekly` 切到 `once` 时明确发送 `weekday: null`，反向切换时明确发送 `date: null`。
 
 ## 当前规划工作台与旧接口
@@ -94,6 +96,41 @@ FastAPI 提供 `/docs` Swagger UI 和 `/openapi.json`。它们是开发文档入
 完整 Task 响应字段为 `id`、`title`、`description`、`duration_minutes`、`deadline`、`priority`、`status`（`todo/done/cancelled`）、`created_at`、`updated_at`。例如输入 `2026-10-05T22:00:00+08:00`，读回的 API deadline 为 `2026-10-05T14:00:00Z`。SQLite 保存不含偏移的 UTC 钟面值；SQLAlchemy ORM 读回为带 UTC 时区的 `datetime`。创建与修改都拒绝无时区的 deadline。
 
 `GET /api/tasks` 按 ID 升序返回列表，可选 `status=todo|done|cancelled`。`PATCH /api/tasks/{id}` 可部分修改 `title`、`description`、`duration_minutes`、`deadline`、`priority`、`status`；未提供字段保持原值，明确传入 `description: null` 可清空备注。更新会刷新 `updated_at`。资源不存在返回 `404`；非法字段或取值返回 `422`。取消使用 `PATCH status=cancelled`，没有 DELETE。
+
+### 阶段 2 Task 扩展
+
+旧字段保留。POST/PATCH 新增可选 `parent_task_id`（正整数或null）、`task_kind`（executable/container）和 `sort_order`（非负整数）；未提供时仍为普通可执行任务。PATCH parent_task_id=null 可解除关联。父任务必须为顶层容器，最多20个子任务；子 DDL 不得晚于父 DDL，收紧父 DDL 也要检查已有子任务。父容器保持 todo，完成/取消需分别处理子任务。已有计划引用、反馈、计时或锁定时拒绝类型转换，返回409 TASK_HAS_EXECUTION_FACTS。
+
+GET tasks/dashboard 附加同名层级字段；父任务还提供 `progress`，含 total_children、completed_children、cancelled_children、partial_children、scheduled_children、executed_children、total_estimate_minutes、remaining_minutes、actual_minutes。GET /tasks 的 status 筛选不改变父任务的完整汇总；普通任务的 progress 为 null。POST/PATCH 的即时响应可不含汇总（null），随后读取列表。
+
+父容器在反馈、计时和两条日程入口返回422 CONTAINER_NOT_EXECUTABLE。Assistant 任务库只含可执行任务；父子不会重复排程。没有强制依赖，sort_order 仅为建议顺序。创建子任务时复制父 TaskGrowthContext 的目标/分类；拆解确认将所选目标同时写入父子上下文，之后不自动同步目标修改。
+
+### 任务拆解草案 API
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| POST | `/api/tasks/breakdown-drafts` | AI 或手动生成草案，201；只写既有草案/消息表 |
+| GET | `/api/tasks/breakdown-drafts` | 列出待处理 ready/stale 草案，供刷新恢复 |
+| GET | `/api/tasks/breakdown-drafts/{id}` | 读取指定草案，含确认结果 |
+| PATCH | `/api/tasks/breakdown-drafts/{id}` | `{version, content}` 全量替换草案内容，编辑版本加1 |
+| POST | `/api/tasks/breakdown-drafts/{id}/confirm` | `{version}` 重新校验并原子创建父子任务 |
+| POST | `/api/tasks/breakdown-drafts/{id}/discard` | `{version}` 取消草案，不创建任务 |
+
+生成请求：
+
+```json
+{"client_request_id":"unique-client-id","source":"ai","text":"拆解软件工程课程项目","title":"Software Engineering Project","deadline":"2026-10-25T20:00:00+08:00","expected_duration_minutes":780,"goal_id":null}
+```
+
+source=manual 不调用 Provider，初始 children=[]；确认前须至少1项。text/title 非空，日期带时区且晚于当前时间，预期分钟为5到10080的5分钟整数倍。原始 input 保留用于总量比较。相同请求ID/输入返回原草案；输入不一致409 IDEMPOTENCY_CONFLICT。
+
+content 为 `{parent:{title,description,deadline},children:[{title,description,duration_minutes,deadline,sort_order}]}`。children 最多20项，确认/AI输出至少1项；标题非空且≤200字，描述≤4000字，时长为5到10080的5分钟整数倍，顺序0到19且不重复，子DDL在未来并不晚于父DDL。AI不能变更输入父DDL；用户可显式编辑父DDL。编辑期间允许空children以便删除/重建。
+
+响应包含 id、status、source、source_revision、version、input、content、total_minutes、difference_minutes、created_task_ids、tasks。状态为 ready/applied/discarded/stale。原始预期不会被建议总量覆盖；确认后 created_task_ids 为父ID与按建议顺序创建的子ID。
+
+编辑和确认检查全局资料版本与草案编辑版本，分别409 STALE_DRAFT/DRAFT_VERSION_CONFLICT；状态不允许409 DRAFT_NOT_READY，缺失404 DRAFT_NOT_FOUND，空或损坏内容422 INVALID_BREAKDOWN，过期日期422 BREAKDOWN_DEADLINE_INVALID。日期过期的草案读取时显示 stale。AI缺失配置503 AI_NOT_CONFIGURED，Provider失败503 AI_UNAVAILABLE，结构或日期不合法502 AI_RESPONSE_INVALID，均不创建正式任务。
+
+确认以 SQLite BEGIN IMMEDIATE 串行化，整树、目标上下文、applied 状态和全局版本一次提交；已applied再次confirm返回相同ID，不再推进版本。创建不改日历，现有候选因版本变化失效，后续须单独生成/采用。恢复备份也使待确认草案过期。旧 profile/review 草案入口拒绝 task_breakdown，不能绕过编辑版本检查。
 
 ## Phase 2：TimeRule
 

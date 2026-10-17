@@ -17,9 +17,25 @@ const CODE_MESSAGES = {
   INVALID_WEEK: '请选择有效的周日期（以周一为起点）。',
   INVALID_TASKS: '所选任务信息无效，请检查任务时长、截止时间和状态。',
   INVALID_TIME_RULES: '时间规则无效，请检查课程是否重叠，以及日期和起止时间是否正确。',
-  AI_NOT_CONFIGURED: '尚未配置 AI，仍可手动添加课程和保护时间。',
+  AI_NOT_CONFIGURED: '尚未配置 AI，仍可手动拆解任务、添加任务、课程和保护时间。',
   AI_UNAVAILABLE: 'AI 暂时不可用，仍可手动操作。',
   AI_RESPONSE_INVALID: 'AI 返回的内容未通过校验，请补充描述后重试或手动添加。',
+  STALE_DRAFT: '任务、目标或计划已变化，请取消旧草案并按最新资料重新生成。',
+  DRAFT_VERSION_CONFLICT: '草案已被其他页面修改，请重新加载草案后继续。',
+  DRAFT_NOT_READY: '草案已确认或取消，请重新加载最新状态。',
+  DRAFT_APPLIED: '草案已经确认，不能通过取消草案撤销任务。',
+  DRAFT_NOT_FOUND: '未找到任务拆解草案，请重新加载。',
+  INVALID_BREAKDOWN: '请保留至少一个合法子任务，检查标题、5分钟整数倍时长和截止时间。',
+  BREAKDOWN_DEADLINE_INVALID: '父子任务截止时间必须在未来，请修改草案。',
+  CHILD_DEADLINE_INVALID: '子任务截止时间不能晚于父任务，请先核对子任务。',
+  CONTAINER_NOT_EXECUTABLE: '父任务是汇总容器，请选择具体子任务执行或排程。',
+  CONTAINER_STATUS_DERIVED: '父任务进度由子任务汇总，请分别处理子任务。',
+  INVALID_TASK_HIERARCHY: '仅支持父容器与子任务两级结构，不能引用自身或循环嵌套。',
+  PARENT_NOT_FOUND: '父任务不存在，请重新加载任务列表。',
+  TASK_HAS_EXECUTION_FACTS: '任务已有计划、执行记录或锁定，不能直接转换类型，请另建父容器。',
+  TOO_MANY_CHILDREN: '每个父任务最多20个子任务。',
+  INVALID_GOAL: '关联目标不存在或已停用，请重新选择。',
+  IDEMPOTENCY_CONFLICT: '此请求标识已用于另一份输入，请重新开始。',
 }
 
 const FIELD_LABELS = {
@@ -27,6 +43,8 @@ const FIELD_LABELS = {
   priority: '优先级', status: '状态', kind: '类型', recurrence: '重复方式', weekday: '星期',
   date: '日期', start_time: '开始时间', end_time: '结束时间', week_start: '周日期',
   task_ids: '所选任务', active: '启用状态', text: '时间描述', language: '语言',
+  parent: '父任务', children: '子任务', content: '草案', version: '草案版本',
+  expected_duration_minutes: '原始预期时长', sort_order: '建议顺序', parent_task_id: '父任务', task_kind: '任务类型',
 }
 
 function validationMessage(item) {
@@ -35,6 +53,9 @@ function validationMessage(item) {
   let correction = '内容无效，请检查后重试。'
   if (/title must not be blank|title cannot be null|Field required|field cannot be null/.test(message)) correction = '不能为空，请填写。'
   else if (/multiple of 5/.test(message)) correction = '必须是大于零的 5 分钟整数倍。'
+  else if (/5分钟/.test(message)) correction = '必须为5分钟的整数倍。'
+  else if (/子任务截止时间/.test(message)) correction = '子任务截止时间不能晚于父任务。'
+  else if (/建议顺序/.test(message)) correction = '建议顺序不能重复。'
   else if (/start_time must be before end_time/.test(message)) correction = '开始时间必须早于结束时间，暂不支持跨夜。'
   else if (/weekly requires/.test(message)) correction = '每周重复时请选择星期，不要填写具体日期。'
   else if (/once requires/.test(message)) correction = '仅一次时请填写日期，不要选择星期。'

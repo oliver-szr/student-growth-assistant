@@ -41,7 +41,7 @@ def task_library(db):
     goals={x.id:x for x in db.scalars(select(GrowthGoal)).all() if x.status=='active'}
     category_names={x.key:x.name for x in category_rows(db)}
     tasks=[]
-    for t in db.scalars(select(Task).order_by(Task.id)).all():
+    for t in db.scalars(select(Task).where(Task.task_kind == 'executable').order_by(Task.id)).all():
         data=TaskResponse.model_validate(t).model_dump(mode='json')
         data['deadline']=t.deadline.astimezone(assistant_clock.SHANGHAI).isoformat()
         profile=profiles.get(t.id,{})
@@ -86,6 +86,15 @@ def proposed_world(db,week,actions,previous_override=None):
     confirmed_remaining={a.get('target') for a in actions if 'duration_minutes' in a.get('fields',{})}
     for a in actions:
         ref=a.get('target'); focus.add(ref)
+        if ref and ref.startswith('task:'):
+            from .task_hierarchy import require_executable, validate_task_change
+            existing = db.get(Task, int(ref.split(':')[1]))
+            if existing:
+                require_executable(existing)
+                changes = dict(a['fields'])
+                if 'deadline' in changes:
+                    changes['deadline'] = dt(changes['deadline'])
+                validate_task_change(db, changes, existing)
         if a['op']=='add':
             t=tasks.setdefault(ref,dict(ref=ref,title='',duration_minutes=None,deadline=None,priority='normal',status='todo',profile={},task_type='other'))
         elif ref not in tasks:

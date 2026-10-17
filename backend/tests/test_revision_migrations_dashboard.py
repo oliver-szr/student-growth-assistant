@@ -6,7 +6,7 @@ def test_empty_upgrade_and_repeat(tmp_path):
     engine=create_sqlite_engine(f'sqlite:///{tmp_path / "empty.db"}')
     upgrade_database(engine);upgrade_database(engine)
     assert set(Base.metadata.tables)<=set(inspect(engine).get_table_names())
-    with engine.connect() as c:assert c.execute(text('SELECT version_num FROM alembic_version')).scalar()=='0001_baseline'
+    with engine.connect() as c:assert c.execute(text('SELECT version_num FROM alembic_version')).scalar()=='0002_task_hierarchy'
     engine.dispose()
 
 def test_recognized_legacy_columns_retained(tmp_path,monkeypatch):

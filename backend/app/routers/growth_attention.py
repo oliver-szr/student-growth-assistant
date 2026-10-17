@@ -143,7 +143,7 @@ def attention_items(db: Session = Depends(get_db)) -> dict:
     contexts = {item.task_id: item for item in db.scalars(select(TaskGrowthContext)).all()}
     goals = {item.id: item for item in db.scalars(select(GrowthGoal)).all() if item.status == "active"}
     items = []
-    for task in db.scalars(select(Task).where(Task.status == TaskStatus.todo)).all():
+    for task in db.scalars(select(Task).where(Task.status == TaskStatus.todo, Task.task_kind == 'executable')).all():
         deadline = task.deadline.astimezone(SHANGHAI)
         hours_left = (deadline - now).total_seconds() / 3600
         slots = _possible_starts(task, now, week_start, fixed_busy, assigned)
@@ -212,6 +212,8 @@ def duration_advice(task_id: int, db: Session = Depends(get_db)) -> dict:
     if task is None:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="任务不存在")
+    from ..services.task_hierarchy import require_executable
+    require_executable(task)
     context = db.get(TaskGrowthContext, task_id)
     if context is None:
         context = TaskGrowthContext(task_id=task_id, initial_estimate_minutes=task.duration_minutes)

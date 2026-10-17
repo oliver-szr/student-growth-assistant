@@ -6,6 +6,7 @@ import WorkbenchLayout from '../components/WorkbenchLayout.jsx'
 import ChatMessages from '../components/ChatMessages.jsx'
 import SafeMessage from '../components/SafeMessage.jsx'
 import ScopedChanges from '../components/ScopedChanges.jsx'
+import TaskBreakdown from '../components/TaskBreakdown.jsx'
 import '../assistant.css'
 
 const STATUS={ready:'待确认',needs_input:'需要补充信息',conflict:'时间冲突',no_plan:'未找到完整方案',stale:'资料已变化，请重新生成',applied:'已采用方案',discarded:'已放弃方案',superseded:'已有更新方案'}
@@ -92,6 +93,7 @@ export default function AssistantPage({active, requestedAction, onActionHandled,
   const categoryName=(key)=>data.task_categories?.find((item)=>item.key===key)?.name||key||'其他'
   return <section className="assistant-workspace" aria-labelledby="planning-heading">
     <div className="growth-page-heading planning-page-heading"><div><h2 id="planning-heading">规划</h2></div></div>
+    <TaskBreakdown onCreated={()=>{load(data.id).catch(e=>setError(e.message));onPlanConfirmed?.()}} />
     <section className="today-focus" aria-labelledby="today-focus-heading"><div className="today-focus-intro"><h3 id="today-focus-heading">优先处理</h3></div>{attention===undefined?<p className="today-focus-empty" role="status">正在整理任务轻重缓急…</p>:attention===null?<p className="today-focus-empty" role="status">动态优先级暂时不可用；可以继续查看下面的课程和任务安排。</p>:focusedTasks.length?<ol>{focusedTasks.map(item=><li key={item.task_id} className={`today-focus-item urgency-${item.urgency}`}><div><strong>{item.title}</strong><span className="today-urgency">{item.urgency_label}</span></div><p>截止 {stamp(item.deadline)}</p>{item.available_start_count===0 && <p className="risk-label">无法安排</p>}<p>剩余 {item.remaining_minutes ?? item.duration_minutes ?? data.tasks.find(t=>t.ref===`task:${item.task_id}`)?.duration_minutes ?? '待核对'} 分钟 · {item.importance_label}</p><details><summary>详情</summary><p>{item.reason}</p><small>{item.goal?.title}</small></details></li>)}</ol>:<p className="today-focus-empty">目前没有待处理任务。</p>}</section>
     <WorkbenchLayout view={view} onViewChange={setView} resultLabel="日程" chat={
       <aside className="chat-panel"><div className="panel-heading"><h3>规划助手</h3><button type="button" className="manual-link" disabled={pending} onClick={()=>act(()=>replanAssistant(data.id))}>局部重规划</button><button type="button" className="manual-link preference-entry" onClick={onManagePreferences}>安排偏好</button>{live&&<button type="button" className="manual-link" onClick={()=>{setView('result');requestAnimationFrame(()=>document.getElementById('planning-proposal')?.scrollIntoView({block:'start'}))}}>查看调整</button>}</div>

@@ -456,6 +456,7 @@ def open_workspace_session(payload:WorkspaceOpenRequest,db:Session=Depends(get_d
 @router.post('/sessions/{id}/runs',status_code=202)
 async def create_run(id:int,payload:RunRequest,db:Session=Depends(get_db)):
     s=require(db,AssistantSession,id)
+    if s.scope not in ('planning','profile','review'): fail('INVALID_DRAFT','请使用任务拆解专用入口。',422)
     if s.scope=='planning': require_current(s)
     existing=db.scalar(select(AssistantRun).where(AssistantRun.session_id==id,AssistantRun.client_message_id==payload.client_message_id))
     if existing:return _run_response(existing)
@@ -463,7 +464,7 @@ async def create_run(id:int,payload:RunRequest,db:Session=Depends(get_db)):
     if active:fail('RUN_IN_PROGRESS','当前对话正在处理上一条消息，请稍候或取消后再试。')
     if s.scope=='planning': snapshot=_run_snapshot(db,s)
     else:
-        tasks=[{'id':t.id,'title':t.title,'status':t.status.value,'duration_minutes':t.duration_minutes,'deadline':t.deadline.isoformat(),'priority':t.priority.value} for t in db.scalars(select(Task).where(Task.status.in_([TaskStatus.todo,TaskStatus.done])).order_by(Task.id)).all()]
+        tasks=[{'id':t.id,'title':t.title,'status':t.status.value,'duration_minutes':t.duration_minutes,'deadline':t.deadline.isoformat(),'priority':t.priority.value} for t in db.scalars(select(Task).where(Task.status.in_([TaskStatus.todo,TaskStatus.done]),Task.task_kind=='executable').order_by(Task.id)).all()]
         profile=db.get(GrowthUserProfile,1)
         active_draft=db.scalar(select(GrowthChangeDraft).where(GrowthChangeDraft.session_id==id,GrowthChangeDraft.status=='ready').order_by(GrowthChangeDraft.id.desc()))
         history=[m.text for m in db.scalars(select(AssistantMessage).where(AssistantMessage.session_id==id).order_by(AssistantMessage.id.desc()).limit(8)).all()][::-1]
@@ -530,7 +531,7 @@ def get_session(id:int,db:Session=Depends(get_db)):
         messages=[dict(id=m.id,role=m.role,text=m.text,content=m.content) for m in db.scalars(select(AssistantMessage).where(AssistantMessage.session_id==s.id).order_by(AssistantMessage.id)).all()]
         draft=db.scalar(select(GrowthChangeDraft).where(GrowthChangeDraft.session_id==s.id,GrowthChangeDraft.status=='ready').order_by(GrowthChangeDraft.id.desc()))
         runs=[dict(id=r.id,status=r.status,phase=r.phase,error_code=r.error_code,created_at=r.created_at.isoformat()) for r in db.scalars(select(AssistantRun).where(AssistantRun.session_id==s.id).order_by(AssistantRun.id.desc()).limit(5)).all()]
-        tasks=[{'id':t.id,'title':t.title,'status':t.status.value} for t in db.scalars(select(Task).order_by(Task.id)).all()]
+        tasks=[{'id':t.id,'title':t.title,'status':t.status.value} for t in db.scalars(select(Task).where(Task.task_kind=='executable').order_by(Task.id)).all()]
         goals=[{'id':g.id,'title':g.title,'status':g.status} for g in db.scalars(select(GrowthGoal).order_by(GrowthGoal.id)).all()]
         return {'id':s.id,'scope':s.scope,'week_start':s.week_start.isoformat(),'messages':messages,'draft':({'id':draft.id,**draft.payload} if draft else None),'runs':runs,'tasks':tasks,'goals':goals,'categories':categories_payload(db,True),'preference_rules':rules_payload(db)}
     p=db.get(AssistantProposal,s.latest_proposal_id) if s.latest_proposal_id else None
@@ -550,6 +551,7 @@ def get_session(id:int,db:Session=Depends(get_db)):
 @router.post('/sessions/{id}/messages')
 async def message(id:int,payload:MessageRequest,db:Session=Depends(get_db)):
     s=require(db,AssistantSession,id); require_current(s)
+    if s.scope!='planning': fail('INVALID_DRAFT','请使用对应工作台的专用入口。',422)
     duplicate=db.scalar(select(AssistantMessage).where(AssistantMessage.session_id==id,AssistantMessage.client_message_id==payload.client_message_id))
     if duplicate:
         if duplicate.proposal_id:return response(require(db,AssistantProposal,duplicate.proposal_id))
@@ -741,6 +743,7 @@ def confirm_growth_draft(id:int,db:Session=Depends(get_db)):
     try:
         begin_planning_transaction(db)
         draft=require(db,GrowthChangeDraft,id)
+        if draft.scope not in ('profile','review'): fail('INVALID_DRAFT','请使用任务拆解专用确认入口。',422)
         if draft.status=='applied': return {'id':draft.id,'status':'applied'}
         if draft.status!='ready' or draft.source_revision!=_revision(db): fail('STALE_DRAFT','资料已变化，请重新生成草案。')
         session=require(db,AssistantSession,draft.session_id)
@@ -823,6 +826,7 @@ def confirm_growth_draft(id:int,db:Session=Depends(get_db)):
 @router.post('/drafts/{id}/preview')
 def preview_growth_draft(id:int,payload:GrowthDraftPreviewRequest,db:Session=Depends(get_db)):
     draft=require(db,GrowthChangeDraft,id)
+    if draft.scope not in ('profile','review'): fail('INVALID_DRAFT','请使用任务拆解专用编辑入口。',422)
     if draft.status!='ready' or draft.source_revision!=_revision(db): fail('STALE_DRAFT','资料已变化，请重新生成草案。')
     if not payload.operations: fail('EMPTY_DRAFT','请保留至少一项要确认的修改。',422)
     categories={row['key'] for row in categories_payload(db)}
@@ -845,6 +849,7 @@ def preview_growth_draft(id:int,payload:GrowthDraftPreviewRequest,db:Session=Dep
 @router.post('/drafts/{id}/discard')
 def discard_growth_draft(id:int,db:Session=Depends(get_db)):
     draft=require(db,GrowthChangeDraft,id)
+    if draft.scope not in ('profile','review'): fail('INVALID_DRAFT','请使用任务拆解专用取消入口。',422)
     if draft.status=='applied': fail('DRAFT_APPLIED','已保存的修改不能放弃。')
     draft.status='discarded'; db.commit()
     return {'id':draft.id,'status':draft.status}

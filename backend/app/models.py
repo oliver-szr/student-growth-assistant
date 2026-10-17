@@ -52,8 +52,16 @@ class PlanItemKind(str, Enum):
 
 class Task(Base):
     __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint("task_kind IN ('executable', 'container')", name="task_kind_valid"),
+        CheckConstraint("sort_order >= 0", name="task_order_nonnegative"),
+        CheckConstraint("parent_task_id IS NULL OR (parent_task_id != id AND task_kind = 'executable')", name="task_parent_not_self"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    parent_task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="RESTRICT"), nullable=True, index=True)
+    task_kind: Mapped[str] = mapped_column(String(20), nullable=False, default="executable", server_default="executable")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)

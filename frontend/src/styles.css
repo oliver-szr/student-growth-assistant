@@ -318,3 +318,24 @@ input:focus, select:focus, textarea:focus { border-color: #3b9b86; }
 .workspace-chat-input { display: flex; align-items: end; gap: 12px; }
 .workspace-chat-input textarea { flex: 1; min-width: 0; resize: vertical; padding: 12px; border: 1px solid #cbd8e1; border-radius: 12px; font: inherit; }
 @media (max-width: 640px) { .workspace-chat { padding: 16px; } .workspace-chat-input { align-items: stretch; flex-direction: column; } .workspace-message { max-width: 96%; } }
+
+.task-breakdown { margin: 0 0 20px; min-width: 0; }
+.task-breakdown .section-heading { gap: 12px; flex-wrap: wrap; }
+.breakdown-fields { border: 0; padding: 0; margin: 14px 0; min-width: 0; }
+.breakdown-fields legend { font-weight: 600; margin-bottom: 12px; }
+.breakdown-fields input, .breakdown-fields select, .breakdown-fields textarea { width: 100%; min-width: 0; box-sizing: border-box; }
+.breakdown-fields label { display: grid; gap: 6px; }
+.breakdown-children { display: grid; gap: 12px; list-style: none; padding: 0; }
+.breakdown-total { background: #edf6f3; padding: 12px; border-radius: 10px; }
+.breakdown-pending { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.task-hierarchy { display: grid; gap: 16px; min-width: 0; }
+.task-container { border-left: 4px solid #398873; }
+.hierarchy-children { margin: 12px 0 0 12px; padding-left: 12px; border-left: 2px solid #cee3dc; display: grid; gap: 12px; }
+.hierarchy-progress { font-weight: 600; }
+@media (max-width: 640px) {
+  .task-breakdown .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .task-breakdown .span-two { grid-column: auto; }
+  .hierarchy-children { margin-left: 0; padding-left: 8px; }
+  .task-container .item-top { flex-wrap: wrap; gap: 8px; }
+  .task-container, .breakdown-children .item-card { min-width: 0; overflow-wrap: anywhere; }
+}

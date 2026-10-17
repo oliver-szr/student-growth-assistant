@@ -130,6 +130,8 @@ def start_work_session(payload: WorkSessionStart, db: Session = Depends(get_db))
             task = db.get(Task, payload.task_id)
             if task is None:
                 raise HTTPException(status_code=404, detail="任务不存在")
+            from ..services.task_hierarchy import require_executable
+            require_executable(task)
             if task.status.value != "todo":
                 raise HTTPException(status_code=409, detail="只有待完成任务可以开始计时")
             existing = db.scalar(

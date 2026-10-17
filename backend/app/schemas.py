@@ -28,6 +28,9 @@ class TaskCreate(BaseModel):
     duration_minutes: Duration
     deadline: AwareDatetime
     priority: TaskPriority = TaskPriority.normal
+    parent_task_id: Annotated[int, Field(strict=True, gt=0)] | None = None
+    task_kind: Literal["executable", "container"] = "executable"
+    sort_order: Annotated[int, Field(strict=True, ge=0, le=10000)] = 0
 
     @field_validator("title")
     @classmethod
@@ -51,6 +54,9 @@ class TaskUpdate(BaseModel):
     deadline: AwareDatetime | None = None
     priority: TaskPriority | None = None
     status: TaskStatus | None = None
+    parent_task_id: Annotated[int, Field(strict=True, gt=0)] | None = None
+    task_kind: Literal["executable", "container"] | None = None
+    sort_order: Annotated[int, Field(strict=True, ge=0, le=10000)] | None = None
 
     @field_validator("title")
     @classmethod
@@ -66,7 +72,7 @@ class TaskUpdate(BaseModel):
             raise ValueError("duration_minutes must be a positive multiple of 5")
         return value
 
-    @field_validator("deadline", "priority", "status")
+    @field_validator("deadline", "priority", "status", "task_kind", "sort_order")
     @classmethod
     def required_fields_cannot_be_null(cls, value: object) -> object:
         if value is None:
@@ -86,6 +92,25 @@ class TaskResponse(BaseModel):
     status: TaskStatus
     created_at: AwareDatetime
     updated_at: AwareDatetime
+    parent_task_id: int | None = None
+    task_kind: Literal["executable", "container"] = "executable"
+    sort_order: int = 0
+    progress: "TaskProgress | None" = None
+
+
+class TaskProgress(BaseModel):
+    total_children: int
+    completed_children: int
+    cancelled_children: int
+    partial_children: int
+    scheduled_children: int
+    executed_children: int
+    total_estimate_minutes: int
+    remaining_minutes: int
+    actual_minutes: int
+
+
+TaskResponse.model_rebuild()
 
 
 class GrowthGoalFields(BaseModel):

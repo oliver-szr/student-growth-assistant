@@ -57,6 +57,8 @@ def allowed(task,start,end,week,now,busy,old,fragment=False):
 
 
 def validate_assistant(week,now,tasks,rules,items,previous):
+    if any(t.get('task_kind') == 'container' for t in tasks):
+        return ['父容器不能直接排程，请选择子任务。']
     old=old_segments([x for x in previous if dt(x['end_at'])>now])
     busy=[(x.start_at,x.end_at) for x in expand_window_rules(week,rules)]
     expected={t['ref']:t for t in tasks}; groups={}; errors=[]

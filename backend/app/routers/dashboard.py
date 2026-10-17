@@ -23,13 +23,16 @@ def task_snapshot(db):
     latest=select(func.max(TaskWorkSession.id).label('id')).group_by(TaskWorkSession.task_id).subquery()
     for row in db.scalars(select(TaskWorkSession).join(latest,TaskWorkSession.id==latest.c.id)).all():sessions[row.task_id]=session_payload(row)
     samples=list(db.scalars(select(TaskFeedback).where(TaskFeedback.outcome=='completed',TaskFeedback.retracted_at.is_(None),TaskFeedback.family_confirmed_snapshot.is_(True),TaskFeedback.completed_at>=now-timedelta(days=28),TaskFeedback.completed_at<=now,TaskFeedback.actual_minutes.is_not(None)).order_by(TaskFeedback.id.desc())).all())
-    counts=dict(db.execute(select(TaskFeedback.task_id,func.count()).group_by(TaskFeedback.task_id)).all())
+    feedbacks=list(db.scalars(select(TaskFeedback)).all())
+    from collections import Counter
+    counts=dict(Counter(row.task_id for row in feedbacks))
     context_data={}; advice={}
     for task in tasks:
         c=contexts.get(task.id) or TaskGrowthContext(task_id=task.id,initial_estimate_minutes=task.duration_minutes,family='',family_confirmed=False)
         context_data[task.id]={'task_id':task.id,'goal_id':c.goal_id,'family':c.family,'family_confirmed':c.family_confirmed,'initial_estimate_minutes':c.initial_estimate_minutes,'deadline_source':c.deadline_source or 'external'}
-        advice[task.id]=_duration_advice(db,task,c,now,samples)
-    return {'tasks':[TaskResponse.model_validate(t).model_dump(mode='json') for t in tasks],'contexts':context_data,'sessions':sessions,'advice':advice,'feedback_counts':counts,'categories':categories_payload(db)}
+        advice[task.id]=_duration_advice(db,task,c,now,samples) if task.task_kind == 'executable' else {'status':'container'}
+    from ..services.task_hierarchy import serialize_tasks
+    return {'tasks':[t.model_dump(mode='json') for t in serialize_tasks(db,tasks,contexts,feedbacks)],'contexts':context_data,'sessions':sessions,'advice':advice,'feedback_counts':counts,'categories':categories_payload(db)}
 
 @router.get('/api/tasks/dashboard')
 def tasks_dashboard(db:Session=Depends(get_db)):

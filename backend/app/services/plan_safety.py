@@ -92,6 +92,8 @@ def validate_saved_plan(db: Session, plan: Plan, current: Plan | None, now: date
     tasks = list(db.scalars(select(Task).where(Task.id.in_(plan.task_ids))).all())
     if {task.id for task in tasks} != set(plan.task_ids):
         raise SchedulingInputError("TASK_NOT_FOUND", "部分所选任务已不存在，请重新生成。")
+    if any(task.task_kind == "container" for task in tasks):
+        raise SchedulingInputError("CONTAINER_NOT_EXECUTABLE", "父容器不能直接排程，请选择子任务。")
     task_inputs = [TaskInput(
         id=task.id, title=task.title, duration_minutes=task.duration_minutes,
         deadline=task.deadline, priority=task.priority.value, status=task.status.value,

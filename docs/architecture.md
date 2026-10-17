@@ -36,8 +36,20 @@ FastAPI 将 HTTP 校验交给 routers，排程、业务事务、统计和模型�
 
 旧 `/api/plans` 单周兼容入口继续存在，有独立的安全拒绝与确认复验；当前规划工作台使用 `/api/assistant` 两周候选流程。旧单周 API 的前端纯函数只作为 tests/fixtures 中的兼容测试辅助，不重新挂载旧页面。
 
-Alembic 资源位于 `backend/alembic/`，冻结基线、环境和 revision 按原内容迁移。`scripts/migrate.py` 与启动共用 schema_migrations.upgrade_database，不重新生成基线。备份及导出/恢复格式没有变化；数据库与迁移说明见 [database.md](database.md)。
+Alembic 资源位于 `backend/alembic/`；`scripts/migrate.py` 与启动共用 schema_migrations.upgrade_database，不重新生成基线。阶段 2 新增 `0002_task_hierarchy` 和 JSON v2；旧 v1 先经冻结契约校验，再显式补齐普通任务默认值。数据库与迁移说明见 [database.md](database.md)。
 
 脚本、约束、演示场景的当前布局见 README。新演示和审计产物进入 scripts/.runtime、scripts/.local；原本地目录不移动。演示路径白名单保留旧库兼容；备份若已存在旧默认目录继续使用，其他安装默认用 scripts/.runtime/backups，显式 SGA_BACKUP_DIR 仍优先。没有受版本管理的运行工具依赖旧目录。
 
-当前没有提交中的 CI 工作流；本地正式测试保留在 backend/tests 和 frontend/tests。可选浏览器和真实模型 smoke 不属于自动核心测试或启动流程。具体 API 见 [api-contract.md](api-contract.md)，历史验收仅保留阶段 0、1 及目录整理记录。
+当前没有提交中的 CI 工作流；本地正式测试保留在 backend/tests 和 frontend/tests。可选浏览器和真实模型 smoke 不属于自动核心测试或启动流程。具体 API 见 [api-contract.md](api-contract.md)，阶段 0、1、2 及目录整理验收记录位于 docs/archive。
+
+## 阶段 2：任务拆解与两级层级
+
+继续使用 `Task`，增加 `parent_task_id`、`task_kind`、`sort_order`。父容器的 duration_minutes 保留原始预期用于比较；它的 status 保持 todo，真实进度由子任务汇总。task_hierarchy 统一验证父引用、两级上限、DDL、转换与备份规则；已有任何计划引用、反馈、计时或锁定的可执行任务不能直接转换类型。保留无硬删除接口的策略，父容器也不能以批量取消静默处理子任务。
+
+拆解复用 `GrowthChangeDraft`（scope=task_breakdown）、`AssistantSession` 与消息 JSON，没有新增草案表。现有 assistant_ai/claude_client 返回强类型建议；模型调用前后分别取版本快照，等待期间释放事务。AI 不能改写用户给定父 DDL。用户可以编辑父 DDL，但确认前仍会校验全部子任务与当前时间。
+
+草案 payload 保存输入、结构化内容、编辑 version 与确认后的任务 ID。生成请求可按 client_request_id 重试；编辑/确认检查草案 version 与全局 source_revision。`BEGIN IMMEDIATE` 串行化确认：父任务、全部子任务、目标上下文、applied 状态和 planning revision 一起提交。重试已确认草案返回原 ID；并发确认不会生成第二棵树。确认草案不写日历，之后仍走原候选→独立校验→用户采用流程。
+
+前端 `TaskBreakdown` 在规划页提供 AI/手动入口；合法编辑暂停 1.2 秒后自动保存，也能显式保存。无效或网络失败保留当前编辑并提示修正/重试，刷新可从服务器读取已保存草案。`TaskHierarchy` 在原任务与执行区展示可折叠子任务、完成数、初始估时总量和剩余量；复用 TaskForm、api.js 与既有 CSS。
+
+task_library、attention 和两条排程确认边界仅接受可执行任务。子任务沿用原两周、5 分钟网格、分段、局部范围、历史和锁定机制。反馈/计时也拒绝父容器，因此成长统计只收到子任务的正式执行事实。完成比例为 done 子任务数 / 全部子任务数（含 cancelled，另列取消数）；总预计为子任务初始估时之和，剩余只加总 todo 的当前分钟，实际投入只加总未撤回的用户反馈。已安排只表示正式计划中有记录，不等于已执行或完成。目标按创建时继承，之后独立管理；父容器不贡献一次额外完成量。

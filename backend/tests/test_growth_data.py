@@ -19,7 +19,7 @@ def test_export_and_import_restore_growth_data_atomically(client: TestClient) ->
     exported = client.get("/api/data/export")
     assert exported.status_code == 200
     snapshot = exported.json()
-    assert snapshot["format_version"] == 1
+    assert snapshot["format_version"] == 2
     assert "growth_goals" in snapshot["tables"]
 
     client.patch(f"/api/tasks/{task['id']}", json={"status": "done"})

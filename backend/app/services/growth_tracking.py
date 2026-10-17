@@ -66,6 +66,8 @@ def feedback_payload(db: Session, task: Task, feedback: TaskFeedback, context=No
 
 def record_feedback(db: Session, task: Task, payload) -> tuple[TaskFeedback, bool]:
     """Append one idempotent feedback record. The caller owns transaction/commit."""
+    from .task_hierarchy import require_executable
+    require_executable(task)
     existing = db.scalar(
         select(TaskFeedback).where(
             TaskFeedback.task_id == task.id,
@@ -140,6 +142,8 @@ def record_feedback(db: Session, task: Task, payload) -> tuple[TaskFeedback, boo
 
 def record_unknown_completion(db: Session, task: Task) -> TaskFeedback:
     """Preserve status-only completion without inventing an actual duration."""
+    from .task_hierarchy import require_executable
+    require_executable(task)
     context = ensure_task_context(db, task)
     goal = db.get(GrowthGoal, context.goal_id) if context.goal_id else None
     category = db.get(TaskCategory, context.family) if context.family else None

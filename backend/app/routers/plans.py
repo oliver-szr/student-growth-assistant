@@ -66,6 +66,9 @@ def create_candidate(payload: CandidateCreate, db: Session = Depends(get_db)) ->
                     "code": "TASK_NOT_FOUND", "message": "All selected tasks must exist.", "task_ids": missing,
                 })
             not_todo = [task.id for task in tasks if task.status != TaskStatus.todo]
+            from ..services.task_hierarchy import require_executable
+            for task in tasks:
+                require_executable(task)
             if not_todo:
                 raise HTTPException(422, detail={
                     "code": "TASK_NOT_TODO", "message": "All selected tasks must be todo.", "task_ids": not_todo,
