@@ -1,130 +1,96 @@
 # 个人成长助手 · Student Growth Assistant
 
-当前发布版本：[v1](https://github.com/szt1107/student-growth-assistant/releases/tag/v1)。
+软件工程课程项目，使用 **React + Vite + JavaScript、FastAPI + Python、SQLAlchemy + SQLite、Alembic**，提供本地单用户的“规划—执行—复盘—改进”工作台。
 
-通过 AI 对话整理任务、目标和偏好，根据真实执行记录改善下一次安排。本项目是 **本地单用户课程项目 MVP**，使用 React、FastAPI 和 SQLite。
+- **规划**：两周安排、5 分钟网格、明确允许后分段、候选比较与局部重规划。未受影响的合法安排保持原位；局部失败后，用户明确同意才扩大范围。
+- **复盘**：记录实际投入、完成/部分完成/暂缓，查看目标进展、估时与习惯建议。日程或计时结束不自动完成任务。
+- **我的档案**：管理长期目标、类别、偏好、课程、保护时间和数据备份。
 
-## 三个工作台
+AI 只生成建议和草案。用户确认后，后端重新校验当前时间、DDL、课程、锁定、历史和版本，并在一个事务中保存两周日程；无 AI 配置仍可手动规划和管理数据。
 
-| 页面 | 可以做什么 |
-|---|---|
-| **规划** | 输入新任务、DDL 和临时要求；查看冲突、比较候选安排，确认后保存日程 |
-| **复盘** | 补录或更正完成情况、实际耗时和阻碍；查看目标进展、估时建议和周复盘 |
-| **我的档案** | 对话整理长期目标、自定义类别与安排偏好；管理课程、固定时间与数据备份 |
+![匿名规划工作台](docs/images/planning.png)
 
-**AI 理解表达 → 程序计算与校验 → 展示修改草案 → 用户确认保存。** AI 不直接修改正式日程。课程、锁定时段、截止时间和当前时间由后端检查，旧候选不能覆盖新数据。
+## 环境与安装
 
-### 局部重规划
-
-在“我的档案 → 课程与保护时间”保存临时安排后，回到规划点击“局部重规划”。也可在任务概览中对某项任务点击“重新安排”，或编辑任务后生成候选。程序根据正式任务 ID 和完整片段识别冲突，保留未受影响的合法安排，并展示保留、调整、新增、待处理及原/新时间、具体原因。此入口不需要 AI Key。
-
-若局部搜索未找到完整方案，正式计划保持原样；原安排与新规则冲突时会显示需要核对的提示。只有点击“允许扩大范围并重新计算”，其他尚未开始、未锁定的任务才会参与调整。也可暂不扩大并放弃候选。最终仍需点击“采用方案”，两周计划才一起保存。错过旧安排的任务必须核对剩余时长，日程结束不会自动完成任务。详细验证见 [阶段 1 验收](codex/阶段1局部重规划与冲突解释验收.md)。
-
-## 页面预览
-
-![规划工作台](codex/previews/planning.png)
-![复盘助手](codex/previews/review.png)
-![档案助手](codex/previews/profile.png)
-
-截图使用匿名演示数据，不代表真实个人经历。
-
-## 安装
-
-推荐 Python **3.11**、Node.js **22**、Git；依赖版本通过 `codex/requirements.lock.txt` 固定。当前开发复用已有 Conda 环境 **app_env**，不创建 `.venv`，不修改 base。Node.js 24 已通过本阶段测试和构建，无需更换版本。Windows 下建议使用较短的项目路径，避免 SQLite 备份超过系统路径限制。下列命令在项目根目录运行，示例使用 Windows PowerShell：
+使用已有 **Conda app_env（Python 3.11）**，不创建 `.venv`、不重建环境或改动 base。推荐 Node.js 22；现有 Node.js 24 也已通过测试。以下命令从仓库根目录运行：
 
 ```powershell
-git clone https://github.com/szt1107/student-growth-assistant.git
-cd student-growth-assistant
 conda env list
 conda run -n app_env python --version
 conda run -n app_env python -m pip check
-# 先核对现有版本；可加 --dry-run 检查安装计划，冲突时先诊断
-conda run -n app_env python -m pip install -r backend/requirements.txt -c codex/requirements.lock.txt
-conda run -n app_env python -m pip check
+# 先检查缺失依赖和冲突；需要安装时使用原版本约束
+conda run -n app_env python -m pip install -r backend/requirements.txt -c backend/constraints.txt
 npm --prefix frontend ci
-Copy-Item backend/.env.example backend/.env
+# 仅首次配置；不要覆盖已有 .env
+if (!(Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
 ```
 
-所有后端安装、开发和测试使用 `conda run -n app_env`；不要删除或重建已有环境。上述 Conda 命令也适用于 macOS/Linux，前后端可以分别手动启动。
-
-## 配置 AI
-
-在本地 `backend/.env` 填写以下配置，文件已被 Git 忽略：
+可选 AI 配置保存在本地 `backend/.env`：
 
 ```dotenv
 AI_API_FORMAT=openai
 OPENAI_BASE_URL=https://api.deepseek.com/v1
-OPENAI_MODEL=填写账号可用的模型名称
-OPENAI_API_KEY=填写你自己的密钥
+OPENAI_MODEL=填写服务支持的模型名称
+OPENAI_API_KEY=填写自己的密钥
 AI_TIMEOUT_SECONDS=120
 ```
 
-支持 OpenAI Chat Completions 兼容接口，以及 `AI_API_FORMAT=anthropic` 对应的 Anthropic Messages 兼容接口。分别读取 `OPENAI_*` 或 `CLAUDE_*` 配置，不借用另一组密钥。`claude_client.py` 名称仅用于兼容。
+也支持 `AI_API_FORMAT=anthropic` 及 `CLAUDE_*` 配置，两组密钥不混用。需要模型的功能在配置缺失时会明确提示；模型请求会发送相关任务与执行事实，不要在业务字段中填写密钥或敏感身份信息。
 
-没有有效配置也能启动并管理任务、目标、课程和执行记录；需要模型的聊天、分析和解释会提示不可用。单次模型调用最多 120 秒，可取消或重试。模型可用性和输出质量依赖配置的服务。
+## 本地运行
 
-## 正常启动
-
-打开两个终端，均从项目根目录运行：
+打开两个终端，在根目录分别执行：
 
 ```powershell
-# 终端一：后端
+# 终端一
 conda run -n app_env --no-capture-output python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
-# 终端二：前端
+# 终端二
 npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-访问 **http://localhost:5173/**，API 文档为 http://127.0.0.1:8000/docs 。正常模式使用真实北京时间，数据库默认是 `backend/data/app.db`。
+页面：http://localhost:5173/ ，API 文档：http://127.0.0.1:8000/docs 。正常模式使用真实北京时间和 `backend/data/app.db`，启动时检查 Alembic 版本；显式升级和恢复见 [数据库说明](docs/database.md)。
 
 ## 匿名演示
 
 ```powershell
-& .\codex\启动演示版.ps1 -OpenBrowser
-# 停止演示；正常数据不受影响
-& .\codex\停止演示版.ps1
-# 重新生成匿名样例
-& .\codex\启动演示版.ps1 -Reset -OpenBrowser
+& .\scripts\启动演示版.ps1
+& .\scripts\停止演示版.ps1
+# 新建另一份匿名样例，保留之前的数据库
+& .\scripts\启动演示版.ps1 -Reset -OpenBrowser
 ```
 
-演示地址为 **http://localhost:5174/**，后端端口为 8001。场景固定为 **2026-10-12 至 2026-10-18**，模拟时间是 **10 月 14 日 18:00，北京时间**。课程、任务、偏好和学习样本均为示例。
+脚本从已有 `app_env` 解析解释器及环境，不硬编码 Conda 安装路径。默认前端 5174、后端 8001；模拟时间为 **2026-10-14 18:00，北京时间**。新数据写到忽略的 `scripts/.runtime/`，不重置正常库或已有本地资料，不停止未知进程。详见 [演示与浏览器验证](docs/demo.md)。
 
-默认不会读取个人课表。如需使用自己的课程，显式添加 `-CourseSource <本地课程JSON路径>`；新场景可使用 `-Reset`。演示数据库独立保存在 `codex/.runtime/`，不会重置正常数据库。脚本不停止未知进程。
-
-## 数据与使用边界
-
-- 目标、偏好、对话、反馈和日程保存在本地 SQLite；“我的档案”提供导出与恢复。
-- 备份不包含 API 密钥。导入校验结构和引用，失败回滚；恢复后旧运行和候选失效。
-- 使用真实 AI 时，相关任务、目标、偏好和执行事实会发送给所配置的模型服务；不要在业务字段中填写密钥或敏感身份信息。
-- 安排范围是本周剩余时间及下周，按 5 分钟网格计算；默认连续完成，明确允许后可分段。界面可切换本周／下周，采用时统一保存两周计划。
-- 已结束但没有完成反馈的任务先核对剩余工作；跨周沿用同一任务，不自动修改外部 DDL。未提供多人账号、公网部署或外部日历同步。
-- 软偏好不能覆盖课程、保护时间、锁定和 DDL。有限搜索未找到方案不代表数学上无解。
-- 耗时与习惯建议需要有效执行样本，用户采用后才生效；日程或计时结束不会自动证明任务完成。
-
-## 验证
+## 测试与审计
 
 ```powershell
 cd backend
-conda run -n app_env python -m pytest -p no:cacheprovider --basetemp=../codex/.local/pytest-public
+conda run -n app_env python -m pytest -p no:cacheprovider --basetemp=../scripts/.local/pytest
 cd ..
 npm --prefix frontend test
 npm --prefix frontend run build
-conda run -n app_env python codex/publication_audit.py
+conda run -n app_env python scripts/publication_audit.py
 ```
 
-测试使用独立数据库。实际发布结果见 [发布验收报告](codex/公开发布验收.md)。历史阶段文档保留原阶段上下文，不代表当前版本的全部验收已经通过。
+测试使用隔离数据库和固定时钟，不自动调用付费模型；测试产物、审计清单和演示日志不进入 Git。安装约束与 npm 锁文件不随整理升级。
 
-## 进一步了解
+## 目录与协作
 
-[仓库目录](DIRECTORY_STRUCTURE.md) · [现行架构](docs/architecture.md) · [使用说明与演示讲稿](codex/公开版使用与演示.md)
+```text
+backend/                 后端应用、正式测试、constraints.txt
+  alembic/               冻结迁移基线与版本文件
+frontend/                React 页面与正式测试；tests/fixtures 为兼容测试辅助函数
+scripts/                 演示、迁移、导入、审计及显式验收工具
+  .runtime/、.local/     本地运行和验证产物（忽略）
+docs/                    现行架构、API、数据库、演示、协作说明
+  images/                原有匿名界面预览
+  archive/               少量历史验收记录
+```
 
-本轮升级见 [修改与验收说明](codex/本轮修改与验收.md)，已有数据库升级见 [迁移与恢复说明](codex/数据库迁移与恢复.md)。启动会检查 Alembic 版本，实际升级前先生成本地备份；也可运行 `conda run -n app_env python codex/migrate.py` 单独迁移。
+[现行架构](docs/architecture.md) · [API 契约](docs/api-contract.md) · [小组协作](docs/collaboration.md)
 
-阶段 0 安全修复保留旧单周 `/api/plans` 接口，阻止过去时间的新安排，并在确认时重新检查约束。旧接口无法安全处理的分段、锁定及已开始记录会明确拒绝，使用现有规划工作台处理；已有正式计划不会因拒绝而改变。详见 [API 契约](docs/api-contract.md) 和 [阶段 0 验收记录](codex/阶段0开发基线与安全验收.md)。
+[阶段 0 安全验收](docs/archive/阶段0开发基线与安全验收.md) · [阶段 1 局部重规划验收](docs/archive/阶段1局部重规划与冲突解释验收.md) · [目录整理验收](docs/archive/仓库整理验收.md)
 
-最新整理包含三页统一的聊天／结果布局、精简文字、手机切换、可访问的日程详情，以及冲突提示与确认联动修复。更新验证见 [最新版上传验收](codex/最新版上传验收.md)。公开预览使用匿名样例；个人课程、数据库和私人演示图片保留本地。
+SQLite、备份、`.env`、个人课表、日志和临时截图只保留本地。历史验收中的路径与结果对应当时版本，当前操作以本 README 为准。
 
-## 小组来源与许可
-
-本项目基于小组课程作业 [oliver-szr/student-growth-assistant](https://github.com/oliver-szr/student-growth-assistant) 持续完善，保留原提交历史与作者贡献。此仓库是个人整理展示版本，不代表原小组仓库已同步升级。
-
-**本次没有新增开源许可证。** 公开可见不等于授予额外使用、修改或分发许可，后续许可由共同作者协商确定。
+项目保留原小组仓库 [oliver-szr/student-growth-assistant](https://github.com/oliver-szr/student-growth-assistant) 的提交历史与作者贡献。本次未新增许可证；仓库公开不等于授予额外使用、修改或分发许可。

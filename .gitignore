@@ -30,6 +30,8 @@ codex/_pytesttmp/
 **/.env.*
 !**/.env.example
 *.log
+scripts/.local/
+scripts/.runtime/
 
 # Private preview maintenance and personal-course demonstration assets
 codex/任务冲突演示/

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { currentShanghaiMonday, displayDeadline, mondayOfDate } from '../src/datetime.js'
-import { groupPlanItems, planTimeRange, sameTaskSelection } from '../../codex/legacy/frontend/planning.js'
+import { groupPlanItems, planTimeRange, sameTaskSelection } from './fixtures/planning.js'
 
 for (const [selected, candidate, expected] of [
   [[1, 2], [1, 2], true],
@@ -70,7 +70,7 @@ test('Plan grouping uses Shanghai date and preserves API item order and snapshot
 
 test('Week and plan display agree in browsers with different local timezones', () => {
   const datetimeUrl = new URL('../src/datetime.js', import.meta.url).href
-  const planningUrl = new URL('../../codex/legacy/frontend/planning.js', import.meta.url).href
+  const planningUrl = new URL('./fixtures/planning.js', import.meta.url).href
   const script = `
     import { currentShanghaiMonday, mondayOfDate } from ${JSON.stringify(datetimeUrl)};
     import { groupPlanItems, planTimeRange } from ${JSON.stringify(planningUrl)};

@@ -13,7 +13,7 @@ from app.services.growth_migrations import apply_growth_migrations
 
 
 def test_existing_task_database_gets_growth_context_without_losing_tasks() -> None:
-    directory = Path(__file__).resolve().parents[2] / "codex" / ".runtime" / f"migration-test-{uuid4().hex}"
+    directory = Path(__file__).resolve().parents[2] / "scripts" / ".runtime" / f"migration-test-{uuid4().hex}"
     directory.mkdir(parents=True)
     database = directory / "legacy.db"
     engine = create_sqlite_engine(f"sqlite:///{database.as_posix()}")
@@ -49,7 +49,7 @@ def test_daily_backup_is_idempotent_and_retains_five_integrity_checked_copies(te
     with Session(test_engine) as db:
         db.add(PlanningState(id=1, revision=7))
         db.commit()
-    directory = Path(__file__).resolve().parents[2] / "codex" / ".runtime" / f"backup-test-{uuid4().hex}"
+    directory = Path(__file__).resolve().parents[2] / "scripts" / ".runtime" / f"backup-test-{uuid4().hex}"
     directory.mkdir(parents=True)
     try:
         monkeypatch.setenv("SGA_BACKUP_DIR", str(directory))

@@ -10,7 +10,7 @@ from app.database import Base,create_sqlite_engine
 
 
 def test_seed_is_repeatable_and_safe(monkeypatch):
-    path=Path(__file__).resolve().parents[2]/'codex'/'demo_init.py'
+    path=Path(__file__).resolve().parents[2]/'scripts'/'demo_init.py'
     spec=importlib.util.spec_from_file_location('demo_init',path)
     mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
     data_dir=Path(__file__).resolve().parents[1]/'data'

@@ -29,7 +29,8 @@ def _backup_root() -> Path:
     if configured:
         return Path(configured).expanduser().resolve()
     repository = Path(__file__).resolve().parents[3]
-    return repository / "codex" / ".runtime" / "backups"
+    legacy = repository / "codex" / ".runtime" / "backups"
+    return legacy if legacy.exists() else repository / "scripts" / ".runtime" / "backups"
 
 
 def _database_path(engine: Engine) -> Path:
