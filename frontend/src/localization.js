@@ -4,6 +4,7 @@ export const PRIORITY_LABELS = { low: '低', normal: '普通', high: '高' }
 export const RECURRENCE_LABELS = { weekly: '每周', once: '仅一次' }
 
 const CODE_MESSAGES = {
+  INVALID_STATISTICS_RANGE: '请选择最近4、8或12周；结束周须为不晚于当前周的周一。',
   STALE_CANDIDATE: '候选计划已过期：当前时间、任务、时间规则或正式计划发生了变化。请重新生成后再确认。',
   PLAN_NOT_CANDIDATE: '此计划已不是待确认的候选计划，请重新加载并生成新方案。',
   PLAN_NOT_FOUND: '未找到计划，请重新加载。',

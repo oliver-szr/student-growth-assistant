@@ -7,11 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import GrowthGoal, GrowthWeeklyReview, Plan, PlanItem, TaskFeedback
+from ..models import GrowthGoal, GrowthWeeklyReview, Plan, PlanItem, Task, TaskFeedback
 from ..schemas import GrowthReviewCreate
-from ..services import assistant_ai
+from ..services import assistant_ai, assistant_clock
 from ..services.planning_state import planning_transaction
 from ..services.scheduling_types import SHANGHAI
+from ..services.growth_tracking import (goal_progress_from_feedback, valid_execution_feedback,
+                                      feedback_completion_time, unique_completed_feedback)
 
 router = APIRouter(prefix="/api/growth", tags=["Personal Growth"])
 
@@ -19,36 +21,23 @@ router = APIRouter(prefix="/api/growth", tags=["Personal Growth"])
 def _review_facts(db: Session, week_start: date) -> dict:
     week_end = week_start + timedelta(days=7)
     rows = db.scalars(
-        select(TaskFeedback)
-        .where(TaskFeedback.retracted_at.is_(None))
+        select(TaskFeedback).join(Task, Task.id == TaskFeedback.task_id)
+        .where(TaskFeedback.retracted_at.is_(None), Task.task_kind == "executable")
         .order_by(TaskFeedback.occurred_at, TaskFeedback.id)
     ).all()
-    # Use the actual event time for every outcome. Partial and postponed work
-    # must remain visible even though it has no completed_at value.
+    now = assistant_clock.assistant_now()
+    rows = [row for row in rows if valid_execution_feedback(row) and row.occurred_at <= now]
+    # Effort follows occurred_at; completion follows completed_at (legacy fallback
+    # occurred_at). Shared with live statistics, even for cross-week backfills.
     in_week = [row for row in rows if row.occurred_at and week_start <= row.occurred_at.astimezone(SHANGHAI).date() < week_end]
-    completed = [row for row in in_week if row.outcome == "completed"]
+    completed = [row for row in unique_completed_feedback(rows, now)
+                 if week_start <= feedback_completion_time(row).astimezone(SHANGHAI).date() < week_end]
     goal_map = {goal.id: goal for goal in db.scalars(select(GrowthGoal)).all()}
-    progress = []
-    for goal in goal_map.values():
-        related = [row for row in in_week if row.goal_id_snapshot == goal.id]
-        if goal.metric_kind == "time":
-            actual = sum(row.actual_minutes or 0 for row in related)
-        else:
-            actual = len({row.task_id for row in related if row.outcome == "completed"})
-        progress.append({
-            "goal_id": goal.id,
-            "goal_title": goal.title,
-            "metric_kind": goal.metric_kind,
-            "target": goal.weekly_target,
-            "unit_label": goal.unit_label,
-            "actual": actual,
-            "remaining": max(0, goal.weekly_target - actual),
-            "status": goal.status,
-        })
+    progress = goal_progress_from_feedback(goal_map.values(), in_week, completed)
     plan = db.scalar(select(Plan).where(Plan.week_start == week_start, Plan.status == "confirmed"))
     planned_minutes = 0
     if plan:
-        for item in db.scalars(select(PlanItem).where(PlanItem.plan_id == plan.id, PlanItem.kind == "task")).all():
+        for item in db.scalars(select(PlanItem).join(Task, Task.id == PlanItem.task_id).where(PlanItem.plan_id == plan.id, PlanItem.kind == "task", Task.task_kind == "executable")).all():
             planned_minutes += max(0, int((item.end_at - item.start_at).total_seconds() // 60))
     blockers = [
         {"task_title": row.title_snapshot, "reason": row.reason, "outcome": row.outcome}
@@ -65,6 +54,7 @@ def _review_facts(db: Session, week_start: date) -> dict:
         ],
         "completed_count": len({row.task_id for row in completed}),
         "confirmed_actual_minutes": sum(row.actual_minutes or 0 for row in in_week),
+        "unknown_actual_count": sum(row.actual_minutes is None for row in in_week),
         "execution_feedback": [
             {"feedback_id": row.id, "task_id": row.task_id, "title": row.title_snapshot,
              "outcome": row.outcome, "actual_minutes": row.actual_minutes,
@@ -76,7 +66,7 @@ def _review_facts(db: Session, week_start: date) -> dict:
         "planned_minutes": planned_minutes,
         "goal_progress": progress,
         "blockers": blockers,
-        "data_quality_note": "只统计用户确认的执行反馈；缺少反馈的日程不会被视为完成。",
+        "data_quality_note": "完成按有效完成时间归周，投入按反馈发生时间归周；只统计用户确认的有效反馈，投入数为已知小计，缺失耗时不等于0；日程或计时结束不代表完成。旧复盘版本保留生成时的事实。",
     }
 
 
@@ -98,7 +88,7 @@ def _review_payload(row: GrowthWeeklyReview) -> dict:
 def _review_options(facts: dict) -> tuple[list[dict], list[dict]]:
     fact_options = [{
         "id": "week-summary",
-        "text": f"本周确认完成 {facts['completed_count']} 项任务，共记录 {facts['confirmed_actual_minutes']} 分钟投入。",
+        "text": f"本周确认完成 {facts['completed_count']} 项任务，共记录已知 {facts['confirmed_actual_minutes']} 分钟投入。" + (f"另有{facts['unknown_actual_count']}条反馈耗时未知。" if facts.get('unknown_actual_count') else ""),
     }]
     suggestions = []
     for item in facts["goal_progress"]:

@@ -130,6 +130,7 @@ export const editGrowthInsight = (id, time_window) => request(`/api/growth/insig
 export const acceptGrowthInsight = (id) => request(`/api/growth/insights/${id}/accept`, { method: 'POST' })
 export const ignoreGrowthInsight = (id) => request(`/api/growth/insights/${id}/ignore`, { method: 'POST' })
 export const getGrowthReviews = (weekStart) => request(`/api/growth/reviews${weekStart ? `?week_start=${encodeURIComponent(weekStart)}` : ''}`)
+export const getGrowthStatistics = (weeks = 4, endWeek) => request(`/api/growth/statistics?weeks=${encodeURIComponent(weeks)}${endWeek ? `&end_week=${encodeURIComponent(endWeek)}` : ''}`)
 export const createGrowthReview = (weekStart) => request('/api/growth/reviews', { method: 'POST', body: JSON.stringify({ week_start: weekStart }) })
 export const getLocalBackups = () => request('/api/data/backups')
 export const exportGrowthData = () => request('/api/data/export', {}, 60000)

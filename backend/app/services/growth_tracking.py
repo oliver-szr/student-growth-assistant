@@ -11,7 +11,7 @@ from ..models import (
     GrowthGoal, Task, TaskFeedback, TaskGrowthContext, TaskStatus,
     TaskSchedulingProfile, TaskWorkSession, TaskCategory, utc_now,
 )
-from .assistant_clock import assistant_now
+from . import assistant_clock
 from .taxonomy import validate_category
 
 
@@ -39,6 +39,43 @@ def _active_actual_minutes(db: Session, task_id: int) -> int:
         )
     )
     return int(value or 0)
+
+
+def goal_progress_from_feedback(goals, effort_rows, completed_rows):
+    """Shared existing goal semantics: minutes, or distinct completed task IDs.
+
+    Callers retain their own missing-time coverage; a known subtotal is not an
+    assertion that unrecorded effort was zero. This never updates a Goal.
+    """
+    progress = []
+    for goal in goals:
+        related = [row for row in effort_rows if row.goal_id_snapshot == goal.id]
+        actual = (sum(row.actual_minutes or 0 for row in related) if goal.metric_kind == "time" else
+                  len({row.task_id for row in completed_rows if row.goal_id_snapshot == goal.id}))
+        progress.append({"goal_id": goal.id, "goal_title": goal.title, "metric_kind": goal.metric_kind,
+                         "target": goal.weekly_target, "unit_label": goal.unit_label, "actual": actual,
+                         "remaining": max(0, goal.weekly_target-actual), "status": goal.status})
+    return progress
+
+
+def valid_execution_feedback(row):
+    """Effective, well-formed execution facts, including legitimate legacy zero."""
+    return (row.retracted_at is None and row.outcome in ("completed", "partial", "postponed") and
+            (row.actual_minutes is None or (type(row.actual_minutes) is int and 0 <= row.actual_minutes <= 1440)) and
+            (row.outcome != "partial" or (type(row.remaining_minutes) is int and row.remaining_minutes > 0 and row.remaining_minutes % 5 == 0)))
+
+
+def feedback_completion_time(row):
+    return row.completed_at or row.occurred_at
+
+
+def unique_completed_feedback(rows, as_of):
+    """Latest effective completed fact per stable task ID, never current status."""
+    latest = {}
+    for row in sorted(rows, key=lambda item: (feedback_completion_time(item), item.id)):
+        if row.outcome == "completed" and feedback_completion_time(row) <= as_of:
+            latest[row.task_id] = row
+    return list(latest.values())
 
 
 def _learning_eligible(outcome: str, actual: int | None, context: TaskGrowthContext) -> bool:
@@ -104,7 +141,7 @@ def record_feedback(db: Session, task: Task, payload) -> tuple[TaskFeedback, boo
     context.updated_at = utc_now()
 
     goal = db.get(GrowthGoal, context.goal_id) if context.goal_id else None
-    occurred_at = payload.occurred_at or assistant_now()
+    occurred_at = payload.occurred_at or assistant_clock.assistant_now()
     feedback = TaskFeedback(
         task_id=task.id,
         client_action_id=payload.client_action_id,

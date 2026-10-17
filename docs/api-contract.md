@@ -1,6 +1,6 @@
 # Student Growth Assistant API Contract
 
-统一使用 `/api` 前缀。当前工作台使用两周 Assistant 流程；下表中的 `/api/plans` 是保留的单周兼容接口。二者均不能未经用户确认修改正式日程。时间语义为北京时间，任务时长和安排起点采用 **5 分钟网格**，API 时间戳输出为 UTC。
+统一使用 `/api` 前缀。当前工作台使用两周 Assistant 流程；下表中的 `/api/plans` 是保留的单周兼容接口。二者均不能未经用户确认修改正式日程。时间语义为北京时间，任务时长和安排起点采用 **5 分钟网格**，API 时间戳带时区；既有业务记录输出 UTC，成长统计 as_of 可以是 UTC+08。
 
 阶段 0 保留请求和成功响应结构，强化当前时间、锁定、历史及确认时校验。新增拒绝语义见下文，不新增业务接口或数据库字段。
 
@@ -333,8 +333,38 @@ baseline 始终读取 candidate.based_on_plan_id，即使它后来 superseded；
 
 explanation 是 1–3000 字符的纯文本，独立于确定性事实。模型仅消费 structured diff；不返回 raw response/usage/headers/model metadata。明确的最优性/因果措辞被保守拒绝，但不能把该检查理解为语义真实性证明。输出不保存数据库，Task、TimeRule、Plan、PlanItem、PlanningState 和 revision 全部不变。没有 Scheduler/Confirm/tool/SQL-from-AI 调用，读事务在等待 provider 前释放。请求仅在用户主动点击 Explain 时发出；Provider 超时上限 120 秒，前端请求期限 125 秒，无自动重试。
 
+## 阶段 3：成长统计
+
+`GET /api/growth/statistics?weeks=4&end_week=2026-10-12`，无需请求体或 AI 配置。weeks 默认 4，仅接受 4、8、12；end_week 可选，表示最后一周的周一，默认当前北京时间周一，不能晚于当前周。区间为 `[end_week-(weeks-1)周, end_week+1周)`，最多 12 周，按时间升序。执行事实截止 `as_of=min(当前时钟, 区间结束时刻)`；计划包含区间内尚未到来的正式安排。
+
+非法星期、未来周、不支持的周数及日期溢出返回 422 `INVALID_STATISTICS_RANGE`，message 为可读中文；日期解析失败及参数越界使用 FastAPI 标准 422 字段错误。响应为 extra-forbid 的 `GrowthStatistics`，分钟为整数，比例为小数，缺失值使用 null。
+
+| 字段 | 内容与口径 |
+|---|---|
+| timezone / unit / weeks / start_date / end_date_exclusive / as_of | Asia/Shanghai、minutes、范围及带时区的事实截止时间 |
+| overview / totals / weekly | 最后一周、整个范围、各周的同结构指标；周界为北京时间周一零点 |
+| planned_task_count / planned_minutes | 当前 confirmed 正式片段的唯一可执行 Task ID 数、裁剪至区间的片段分钟；totals 再去重，不能简单相加各周任务数 |
+| completed_count | 有效 completed 反馈按 completed_at 归周，每个 Task ID 保留最新有效完成；缺旧完成时间回退 occurred_at，不由当前状态反推 |
+| partial_task_count / feedback_count | occurred_at 在范围内的部分完成唯一任务数、有效反馈条数 |
+| actual_minutes / known_actual_minutes / unknown_actual_count | 完整反馈分钟或 null、已知小计、缺耗时条数；包含 partial/postponed，不加计时器 |
+| completion_rate / cancelled_event_count | 恒为 null；缺不可变周初任务集、取消事件时间日志，不伪造历史率/事件数 |
+| data_state | no_records / no_feedback / missing_time / complete；分别为无安排或反馈、有安排/完成但无范围投入、耗时缺失、反馈耗时完整 |
+| current_cancelled_task_count | 查询时全库可执行任务的当前 cancelled 状态数，和所选周的取消事件数不同 |
+| categories | 反馈 family_snapshot 分组，名称优先当前类别，缺快照归未分类；完成数、反馈数、分钟覆盖及 known_time_share（已知分钟占已知总量，总量为0时null） |
+| estimation | 完成配对汇总、类别、最多20项按超时分钟降序的任务；差异=实际合计-原始预计合计，比例=差异/原始预计合计 |
+| goals | 最后一周对当前目标的进展：time=有效反馈分钟，count/deliverable=不同完成任务数；另列当前关联可执行任务的完成/取消状态数 |
+| excluded_invalid_feedback_count / legacy_completion_time_count / definitions | 范围内排除的非法反馈数、完成时间回退条数、完整统计定义 |
+
+actual_minutes 为 null 可以表示无反馈或有反馈缺耗时，需结合 feedback_count、unknown_actual_count 与 data_state；合法历史 0 分钟为已知值，不改动现有反馈创建接口拒绝新零值的契约。只累计未撤回、合法且不在未来的反馈，父容器不贡献执行、完成或计划量。更正只保留新有效记录，结果代表查询时更正后的事实，不能视为历史数据库快照。
+
+estimation 仅接受范围内确认完成且截至完成的全过程有效耗时完整、原始估时一致的任务；包含范围外早期投入。supersedes_id 链追溯原位置，晚补更正替换早期投入；循环、断链、跨任务、多个有效完成事实等不可比较记录排除。sample_count 表示有效配对数，status 在至少3项时为 available，否则 insufficient_data；单项差异仍可展示。类别观察额外要求至少2/3样本超时且合计偏差超过10%，只描述记录。未采集到的实际耗时不作为零配对。
+
+time 目标缺反馈或缺耗时输出 actual/remaining=null，保留 known_actual；次数/交付型没有有效完成时为0。目标的 target、status 和关联任务是当前元数据，没有历史目标快照，不伪造过去目标趋势。父容器进度继续由已有 Review context 提供，分母包含取消子任务。
+
+新生成的 `/api/growth/reviews` 事实采用相同的有效反馈、完成时间去重与目标汇总，新增 unknown_actual_count，confirmed_actual_minutes 仍为已知小计；已保存的旧复盘不重写。统计 GET 在 SQLite 读事务中运行，不生成复盘、不修改任务/版本/目标/日程，不调用 AI，无新增迁移或备份字段。
+
 ## 已知边界
 
-旧入口继续使用单周连续任务启发式；Assistant 在原有界两周搜索外增加局部范围约束，均不保证全局最优，未找到方案不等于数学上无解。本阶段未新增任务层级、统计图表或数据库迁移。版本检查为单用户全局版本；无关资料变更仍可能令旧候选失效。可重复测试和 Conda 开发命令见 README。
+旧入口继续使用单周连续任务启发式；Assistant 在原有界两周搜索外增加局部范围约束，均不保证全局最优，未找到方案不等于数学上无解。阶段2增加任务层级与迁移，阶段3增加只读统计且无新迁移。版本检查为单用户全局版本；无关资料变更仍可能令旧候选失效。可重复测试和 Conda 开发命令见 README。
 
 独立审核补充：provider BASE_URL 支持 gateway origin 或 `/v1` base（去尾斜杠后规范化），不会重复拼接版本；不传完整 `/messages` endpoint。解释 prompt 要求引用的钟点保持 UTC；AI Explanation 区显式标注 UTC，deterministic Changes 使用上海 UTC+08。明确确认压力及肯定式删除断言也会安全降级，但词法检查不是完整语义验证。
