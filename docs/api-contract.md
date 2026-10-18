@@ -2,6 +2,8 @@
 
 统一使用 `/api` 前缀。当前工作台使用两周 Assistant 流程；下表中的 `/api/plans` 是保留的单周兼容接口。二者均不能未经用户确认修改正式日程。时间语义为北京时间，任务时长和安排起点采用 **5 分钟网格**，API 时间戳带时区；既有业务记录输出 UTC，成长统计 as_of 可以是 UTC+08。
 
+目标编辑沿用 `PATCH /api/goals/{id}`：只提交目标可编辑字段（title、motivation、goal_type、priority、metric_kind、weekly_target、unit_label、due_date、status）。查询响应的 id、version、created_at、updated_at 是只读元数据，不应原样回传；额外字段仍返回422。阶段5修正前端编辑提交，不改变后端契约。
+
 阶段 0 保留请求和成功响应结构，强化当前时间、锁定、历史及确认时校验。新增拒绝语义见下文，不新增业务接口或数据库字段。
 
 | 方法 | 路径 | 阶段 | 用途 |

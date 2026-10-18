@@ -13,7 +13,18 @@ AI 只生成建议和草案。用户确认后，后端重新校验当前时间�
 
 ## 环境与安装
 
-使用已有 **Conda app_env（Python 3.11）**，不创建 `.venv`、不重建环境或改动 base。推荐 Node.js 22；现有 Node.js 24 也已通过测试。以下命令从仓库根目录运行：
+需要 **Python 3.11、Node.js 22 和 npm**；本机 Node.js 24 也已通过测试。以下命令从仓库根目录运行。
+
+新组员可以自行选择环境名称，例如首次建立独立 Conda 环境：
+
+```powershell
+conda create -n sga_dev python=3.11 pip
+conda activate sga_dev
+python -m pip install -r backend/requirements.txt -c backend/constraints.txt
+python -m pip check
+```
+
+已有兼容 Python 环境的组员可直接激活后执行后两条命令，不必使用固定名称。当前维护者继续使用已有 **app_env**，不创建 `.venv`、不重建环境或改动 base；先检查依赖，避免不必要的升级：
 
 ```powershell
 conda env list
@@ -40,6 +51,15 @@ AI_TIMEOUT_SECONDS=120
 
 ## 本地运行
 
+首次安装或升级前先备份已有数据，再显式检查迁移：
+
+```powershell
+# 在已激活的 Python 3.11 项目环境中
+python scripts/migrate.py
+```
+
+新库会初始化到 `0002_task_hierarchy`，旧库通过结构检查后增量升级。不要删除旧库或修改历史 revision；迁移失败的处理见 [数据库说明](docs/database.md)。
+
 打开两个终端，在根目录分别执行：
 
 ```powershell
@@ -48,6 +68,8 @@ conda run -n app_env --no-capture-output python -m uvicorn app.main:app --app-di
 # 终端二
 npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
+
+使用其他环境的组员，在已激活的环境中将上述后端命令前缀 `conda run -n app_env --no-capture-output python` 换成 `python` 即可；测试、迁移和审计同理。匿名演示 PowerShell 启动器目前专用于维护者的 `app_env`，其他环境可按 [演示文档](docs/demo.md) 的手动启动命令运行。
 
 页面：http://localhost:5173/ ，API 文档：http://127.0.0.1:8000/docs 。正常模式使用真实北京时间和 `backend/data/app.db`，启动时检查 Alembic 版本；显式升级和恢复见 [数据库说明](docs/database.md)。
 
@@ -58,6 +80,8 @@ npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173 --strictPort
 & .\scripts\停止演示版.ps1
 # 新建另一份匿名样例，保留之前的数据库
 & .\scripts\启动演示版.ps1 -Reset -OpenBrowser
+# 从空匿名库开始，禁止真实模型请求，仅 Mock 任务拆解
+& .\scripts\启动演示版.ps1 -MockIntegration
 ```
 
 脚本从已有 `app_env` 解析解释器及环境，不硬编码 Conda 安装路径。默认前端 5174、后端 8001；模拟时间为 **2026-10-14 18:00，北京时间**。新数据写到忽略的 `scripts/.runtime/`，不重置正常库或已有本地资料，不停止未知进程。详见 [演示与浏览器验证](docs/demo.md)。
@@ -108,5 +132,11 @@ docs/                    现行架构、API、数据库、演示、协作说明
 [阶段 4 性能与工程质量验收](docs/archive/阶段4性能与工程质量验收.md)：先测量再复用搜索中的重复评分，保留原策略、预算、候选与独立校验；新增可重复基准、CI、固定测试时钟及跨阶段匿名集成演示。
 
 SQLite、备份、`.env`、个人课表、日志和临时截图只保留本地。历史验收中的路径与结果对应当时版本，当前操作以本 README 为准。
+
+## 数据与限制
+
+“我的档案”提供完整 JSON 导出/恢复；导出为 v2，严格兼容旧 v1，恢复会使旧候选失效。恢复前保留独立备份并停止其他写入同库的服务；不要直接覆盖运行中的 SQLite 文件。详见 [数据库与备份](docs/database.md)。
+
+当前是本地单用户课程项目。仅两级任务，建议顺序不构成依赖网络；30/100 个任务可能达到搜索预算而没有完整方案，每策略 20 秒不是整个 HTTP 请求的硬超时。AI 功能需要自行配置 Provider，手动任务、排程和统计不依赖 AI。最终 Mock、浏览器、迁移、性能及未验证范围见 [最终集成验收](docs/archive/最终集成与交付验收.md)。
 
 项目保留原小组仓库 [oliver-szr/student-growth-assistant](https://github.com/oliver-szr/student-growth-assistant) 的提交历史与作者贡献。本次未新增许可证；仓库公开不等于授予额外使用、修改或分发许可。
