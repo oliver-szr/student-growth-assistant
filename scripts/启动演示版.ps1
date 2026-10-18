@@ -1,4 +1,4 @@
-﻿param([switch]$Reset,[switch]$OpenBrowser,[string]$AiModel,[string]$CourseSource,[int]$BackendPort=8001,[int]$FrontendPort=5174)
+﻿param([switch]$Reset,[switch]$OpenBrowser,[switch]$MockIntegration,[string]$AiModel,[string]$CourseSource,[int]$BackendPort=8001,[int]$FrontendPort=5174)
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path -Parent $PSScriptRoot
 $runtime=Join-Path $PSScriptRoot '.runtime'
@@ -30,6 +30,9 @@ function Test-Port([int]$Port) {
 }
 function Test-DemoApi {
     try {
+        $health=Invoke-WebRequest "http://127.0.0.1:$BackendPort/api/health" -UseBasicParsing -TimeoutSec 1
+        $isMock=$health.Headers['X-SGA-Integration-Mock'] -eq '1'
+        if ([bool]$isMock -ne [bool]$MockIntegration) { return $false }
         $settings=Invoke-RestMethod "http://127.0.0.1:$BackendPort/api/assistant/settings" -TimeoutSec 1
         return $settings.demo -and $settings.now -eq $demoNow -and $settings.week_start -eq $demoWeek
     } catch { return $false }
@@ -41,7 +44,7 @@ if (Test-Path -LiteralPath $state) {
         $process=Get-Process -Id $entry.Id -ErrorAction SilentlyContinue
         if (!$process -or $process.StartTime.ToUniversalTime().Ticks.ToString() -ne $entry.StartTicks -or $process.Path -ne $entry.Executable) { $running=$false }
     }
-    if (!$Reset -and $running -and (Test-Port $FrontendPort) -and (Test-DemoApi)) {
+    if (!$Reset -and !$MockIntegration -and $running -and (Test-Port $FrontendPort) -and (Test-DemoApi)) {
         Write-Output "演示版已在运行：http://127.0.0.1:$FrontendPort"
         if ($OpenBrowser) { Start-Process "http://127.0.0.1:$FrontendPort" }
         return
@@ -51,7 +54,7 @@ if (Test-Path -LiteralPath $state) {
 foreach ($port in @($BackendPort,$FrontendPort)) {
     if (Test-Port $port) { throw "端口 $port 已被占用；不会停止未知进程。" }
 }
-if (!$Reset -and (Test-Path -LiteralPath $dbRecord)) { $database=(Get-Content -LiteralPath $dbRecord -Encoding UTF8 -Raw).Trim() }
+if (!$Reset -and !$MockIntegration -and (Test-Path -LiteralPath $dbRecord)) { $database=(Get-Content -LiteralPath $dbRecord -Encoding UTF8 -Raw).Trim() }
 else { $database=Join-Path $runtime ('demo-'+[guid]::NewGuid().ToString('N')+'.db') }
 $argsInit=@((Join-Path $PSScriptRoot 'demo_init.py'),'--database',$database)
 if ($CourseSource) { $argsInit+=@('--source',(Resolve-Path -LiteralPath $CourseSource).Path) }
@@ -69,10 +72,16 @@ try {
     $env:SGA_BACKUP_DIR=Join-Path $runtime 'backups'
     $env:PYTHONIOENCODING='utf-8'
     if ($AiModel) { $env:CLAUDE_MODEL=$AiModel; $env:OPENAI_MODEL=$AiModel }
-    & $python @argsInit
-    if ($LASTEXITCODE -ne 0) { throw '演示数据初始化失败，未启动服务。' }
-    $database | Set-Content -LiteralPath $dbRecord -Encoding UTF8
-    $back=Start-Process -FilePath $python -ArgumentList @('-m','uvicorn','app.main:app','--app-dir','backend','--host','127.0.0.1','--port',"$BackendPort") -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $runtime 'demo-backend.out.log') -RedirectStandardError (Join-Path $runtime 'demo-backend.err.log') -PassThru
+    if ($MockIntegration) {
+        # integration_demo owns a fresh UUID database and blocks live AI.
+        $backendArgs=@('scripts/integration_demo.py','--serve','--port',"$BackendPort")
+    } else {
+        & $python @argsInit
+        if ($LASTEXITCODE -ne 0) { throw '演示数据初始化失败，未启动服务。' }
+        $database | Set-Content -LiteralPath $dbRecord -Encoding UTF8
+        $backendArgs=@('-m','uvicorn','app.main:app','--app-dir','backend','--host','127.0.0.1','--port',"$BackendPort")
+    }
+    $back=Start-Process -FilePath $python -ArgumentList $backendArgs -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $runtime 'demo-backend.out.log') -RedirectStandardError (Join-Path $runtime 'demo-backend.err.log') -PassThru
     $started+=$back
     $env:VITE_API_BASE_URL="http://127.0.0.1:$BackendPort"
     $front=Start-Process -FilePath $node -ArgumentList @(('"{0}"' -f $vite),'--host','127.0.0.1','--port',"$FrontendPort",'--strictPort') -WorkingDirectory (Join-Path $projectRoot 'frontend') -WindowStyle Hidden -RedirectStandardOutput (Join-Path $runtime 'demo-frontend.out.log') -RedirectStandardError (Join-Path $runtime 'demo-frontend.err.log') -PassThru

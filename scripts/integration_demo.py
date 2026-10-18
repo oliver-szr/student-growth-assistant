@@ -67,9 +67,13 @@ def exercise(api):
     goal = call("POST", "/api/goals", json={"title": "匿名课程交付", "metric_kind": "count", "weekly_target": 2})
     base = "/api/tasks/breakdown-drafts"
     draft = call("POST", base, json={"client_request_id": uuid4().hex, "source": "ai", "text": "匿名课程项目",
-                 "title": "匿名集成项目", "deadline": "2026-10-25T20:00:00+08:00", "expected_duration_minutes": 120, "goal_id": goal["id"]})
+                 "title": "Software Engineering Project", "deadline": "2026-10-25T20:00:00+08:00", "expected_duration_minutes": 120, "goal_id": goal["id"]})
     content = deepcopy(draft["content"])
     content["children"][0]["duration_minutes"] = 45
+    content["children"][0]["deadline"] = "2026-10-24T18:00:00+08:00"
+    content["children"].reverse()
+    for index, child in enumerate(content["children"]):
+        child["sort_order"] = index
     draft = call("PATCH", f"{base}/{draft['id']}", json={"version": draft["version"], "content": content})
     assert call("GET", "/api/tasks") == [], "An AI draft must not create formal tasks"
     confirmed = call("POST", f"{base}/{draft['id']}/confirm", json={"version": draft["version"]})
@@ -79,6 +83,8 @@ def exercise(api):
     parent = next(t for t in tasks if t["task_kind"] == "container")
     children = [t for t in tasks if t["parent_task_id"] == parent["id"]]
     assert len(children) == 2
+    assert [c["title"] for c in sorted(children, key=lambda c: c["sort_order"])] == ["实现与验证", "需求分析"]
+    assert next(c for c in children if c["title"] == "需求分析")["duration_minutes"] == 45
     sid = call("POST", "/api/assistant/sessions", json={})["id"]
     def replan(actions=None):
         return call("POST", f"/api/assistant/sessions/{sid}/messages", json={"client_message_id": uuid4().hex,
@@ -88,18 +94,26 @@ def exercise(api):
     assert proposal["status"] == "ready" and len(proposal["items"]) == 2
     assert f"task:{parent['id']}" not in {x["ref"] for x in proposal["items"]}
     call("POST", f"/api/assistant/proposals/{proposal['id']}/confirm")
+    before = call("GET", f"/api/assistant/sessions/{sid}")["confirmed_items"]
+    pending = replan()
+    assert pending["status"] == "ready"
     first = min(proposal["items"], key=lambda x: x["start_at"])
     from datetime import datetime, timedelta
     start = datetime.fromisoformat(first["start_at"])
     rule = call("POST", "/api/time-rules", json={"title": "匿名临时课程", "kind": "course", "recurrence": "once",
                 "date": start.date().isoformat(), "start_time": start.strftime("%H:%M"), "end_time": (start+timedelta(minutes=15)).strftime("%H:%M")})
+    stale = api.request("POST", f"/api/assistant/proposals/{pending['id']}/confirm")
+    assert stale.status_code == 409 and stale.json()["detail"]["code"] == "STALE_CANDIDATE"
+    assert call("GET", f"/api/assistant/sessions/{sid}")["confirmed_items"] == before
     repaired = replan()
     assert repaired["status"] == "ready" and repaired["replanning"]["mode"] == "local"
     assert repaired["selected_metrics"]["moved_task_count"] == 1
     assert any(d.get("time_rule_id") == rule["id"] for d in repaired["diagnostics"])
+    unaffected = [item for item in before if item["ref"] != first["ref"]]
+    assert unaffected and all(item in repaired["items"] for item in unaffected)
     call("POST", f"/api/assistant/proposals/{repaired['id']}/confirm")
     official = call("GET", f"/api/assistant/sessions/{sid}")["confirmed_items"]
-    assert official == call("GET", f"/api/assistant/sessions/{sid}")["confirmed_items"]
+    assert official == repaired["items"] and all(item in official for item in unaffected)
     call("POST", f"/api/tasks/{children[0]['id']}/feedback", json={"client_action_id": uuid4().hex, "outcome": "completed",
          "actual_minutes": 40, "occurred_at": NOW, "completed_at": NOW})
     stats = call("GET", "/api/growth/statistics?weeks=4")
@@ -108,9 +122,9 @@ def exercise(api):
     assert parent["progress"]["completed_children"] == 1 and parent["progress"]["total_children"] == 2
     assert call("GET", "/api/profile/context")["goals"]
     call("GET", "/api/review/context")
-    return dict(mode="anonymous_HTTP_integration_with_Mock_AI", checks=["health", "draft_edit_no_formal_write", "idempotent_hierarchy_confirmation",
+    return dict(mode="anonymous_HTTP_integration_with_Mock_AI", checks=["health", "duration_deadline_order_edit_no_formal_write", "idempotent_hierarchy_confirmation",
                 "child_only_candidates", "two_week_confirmation", "new_course_local_repair_one_move", "conflict_explanation", "formal_persistence",
-                "child_feedback", "growth_statistics", "parent_progress_1_of_2", "profile_and_review"],
+                "stale_candidate_rejected_no_formal_write", "unaffected_items_preserved", "child_feedback", "growth_statistics", "parent_progress_1_of_2", "profile_and_review"],
                 parent_id=parent["id"], child_ids=[c["id"] for c in children], known_actual_minutes=40)
 
 

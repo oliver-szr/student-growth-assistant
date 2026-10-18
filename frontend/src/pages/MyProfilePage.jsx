@@ -6,6 +6,7 @@ import {
 } from '../api.js'
 import TimeRulesPage from './TimeRulesPage.jsx'
 import WorkspaceChat from '../components/WorkspaceChat.jsx'
+import { goalPayload } from '../goals.js'
 
 const emptyGoal = { title: '', motivation: '', priority: 2, metric_kind: 'count', weekly_target: 1, unit_label: '次', due_date: '' }
 const emptyRule = { name: '', description: '', kind: 'prefer_time', category_key: '', weekdays: [], start: '08:00', end: '12:00', hours: '24', mode: 'balanced', text: '' }
@@ -67,7 +68,7 @@ export default function MyProfilePage({ onAdjustTask }) {
 
   async function saveGoal(event) {
     event.preventDefault()
-    const payload = { ...goalForm, priority: Number(goalForm.priority), weekly_target: Number(goalForm.weekly_target), due_date: goalForm.due_date || null }
+    const payload = goalPayload(goalForm)
     await runAction(async () => {
       if (editingGoalId) await updateGoal(editingGoalId, payload)
       else await createGoal(payload)
