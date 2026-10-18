@@ -40,7 +40,7 @@ Alembic 资源位于 `backend/alembic/`；`scripts/migrate.py` 与启动共用 s
 
 脚本、约束、演示场景的当前布局见 README。新演示和审计产物进入 scripts/.runtime、scripts/.local；原本地目录不移动。演示路径白名单保留旧库兼容；备份若已存在旧默认目录继续使用，其他安装默认用 scripts/.runtime/backups，显式 SGA_BACKUP_DIR 仍优先。没有受版本管理的运行工具依赖旧目录。
 
-当前没有提交中的 CI 工作流；本地正式测试保留在 backend/tests 和 frontend/tests。可选浏览器和真实模型 smoke 不属于自动核心测试或启动流程。具体 API 见 [api-contract.md](api-contract.md)，阶段 0、1、2、3 及目录整理验收记录位于 docs/archive。
+GitHub Actions 在 PR/main 更新时运行后端全套 pytest、依赖/文件引用检查，以及前端锁定安装、测试与构建。本地正式测试保留在 backend/tests 和 frontend/tests，测试默认固定应用与记录时间，单例仍可覆盖时钟，数据库放在 pytest 的隔离临时目录。可选浏览器、压力基准和真实模型 smoke 不属于自动核心测试或启动流程。具体 API 见 [api-contract.md](api-contract.md)，阶段验收记录位于 docs/archive。
 
 ## 阶段 2：任务拆解与两级层级
 
@@ -65,3 +65,11 @@ task_library、attention 和两条排程确认边界仅接受可执行任务。�
 目标汇总复用 growth_tracking 提取的 goal_progress_from_feedback：time 取反馈分钟，count/deliverable 取不同完成 Task ID。最新周进展对照当前目标值，当前关联任务状态单列。新生成的周复盘共用有效反馈与完成归周逻辑，旧复盘版本继续保留生成时事实；修复默认反馈时间捕获函数别名的问题，使其跟随统一固定时钟。
 
 Review 原结果区挂载 GrowthAnalytics，api.js 统一请求；原生 SVG、CSS 和可访问表格提供 4/8/12 周、刷新、错误重试、空数据、未知耗时和样本不足状态，无新增图表依赖。移动端继续复用聊天/结果切换，图表与表格在自身容器横向滚动。保存的周复盘和待确认建议保留。缺少不可变周初任务集和取消事件日志，因此不计算历史完成率和周取消数；当前正式快照也不能代表当时的计划版本。详细结果见 [阶段 3 验收](archive/阶段3成长统计与可视化验收.md)。
+
+## 阶段 4：性能与可重复验证
+
+先在1c5b2cb建立固定输入基准，再使用cProfile确认热点。beam扩展时，同一完整状态原先在分支与全局排序中分别评分；现在将评分与状态一起保留，第二次排序复用原值。两次稳定排序的键与插入顺序不变，不增加持久化缓存，不改5分钟网格、两周窗口、分段规则或三策略权重。独立Validator、范围授权和确认事务均保持原路径。
+
+每策略20秒、50,000次扩展及64状态保留原阈值，SEARCH_LIMIT另外报告budget_kind=time/expansions、expansions及phase=search。候选预生成和分段内部仍是粗粒度时间检查，非抢占式硬超时；所有手动压力基准额外使用子进程超时，不将终止当成功日程。基准脚本不访问数据库/模型，普通规模重复3次，100任务压力只运行1次。7个阶段3小场景输出指纹进入轻量回归，重负载不进入CI。
+
+scripts/integration_demo.py是显式独立工具：--serve新建白名单目录内UUID演示库，仅在该进程Mock拆解并禁止真实模型；正常app.main不导入该工具。--verify在空匿名库上执行草案编辑、幂等创建、子任务排程、课程冲突局部修复、反馈、父进度和统计的HTTP链路。浏览器验证与HTTP/Mock结果分别记录，见 [阶段4报告](archive/阶段4性能与工程质量验收.md)。

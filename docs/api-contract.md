@@ -77,6 +77,8 @@ diagnostics 保留 code/message 并按事实附加 ref/task_id、constraint、or
 
 主要原因代码为 TIME_RULE_CONFLICT、DEADLINE_VIOLATION、LOCKED_SEGMENT、CURRENT_TIME_ADVANCED、WORK_REQUIREMENTS_CHANGED、NEW_TASK、TASK_UPDATED、EXPLICIT_REPLAN、SCOPE_EXPANDED、LOCAL_SCOPE_LIMIT，并保留引擎 NO_PLAN_FOUND/SEARCH_LIMIT。缺少剩余证据和窗口外任务的 pending reasons 使用 REMAINING_WORK_REQUIRED/OUTSIDE_PLANNING_WINDOW。范围和搜索失败均不能表述为数学上无解。
 
+阶段4保留原错误代码；SEARCH_LIMIT增加budget_kind=time或expansions、实际检查时expansions数与phase=search，中文message区分时间和扩展次数上限。仍返回空items，不能作为部分可确认方案。单策略20秒、50,000扩展、64状态不变；无法找到时段、局部范围限制、启发式未找到和预算耗尽保持不同诊断，不声称数学无解。没有新增HTTP接口或修改成功统计响应。
+
 没有新增数据库结构，历史无范围字段的候选继续走阶段 0 校验；新候选若范围字段损坏、丢失或与已有消息标记不一致则拒绝。备份恢复仍使所有待确认候选失效。
 
 ## Phase 1：健康检查
