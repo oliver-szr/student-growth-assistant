@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
+import httpx
 import pytest
 from sqlalchemy import event, inspect, select, text
 from sqlalchemy.orm import Session
@@ -461,3 +462,90 @@ def test_manual_child_limit_and_parent_type_are_enforced(client):
     assert response.status_code==422 and response.json()['detail']['code']=='TOO_MANY_CHILDREN'
     assert client.patch(f"/api/tasks/{parent['id']}",json={'task_kind':'executable'}).status_code==422
     assert client.patch(f"/api/tasks/{children[0]['id']}",json={'task_kind':'container'}).status_code==422
+
+
+@pytest.mark.parametrize('case', [
+    'json', 'fenced', 'http_500', 'timeout', 'malformed_json', 'missing_children',
+    'missing_title', 'child_deadline', 'parent_deadline', 'duration', 'extra_text',
+])
+def test_breakdown_messages_transport_and_failure_isolation(client, monkeypatch, test_engine, case):
+    """Exercise the real router/parser/transport together without any network access."""
+    existing = task(client, title='Existing confirmed task')
+    with Session(test_engine) as db:
+        plan = Plan(week_start=datetime(2026, 10, 12).date(), status='confirmed',
+                    source_revision=revision(test_engine), task_ids=[existing['id']])
+        db.add(plan)
+        db.flush()
+        db.add(PlanItem(plan_id=plan.id, kind='task', task_id=existing['id'],
+                        title_snapshot=existing['title'],
+                        start_at=datetime.fromisoformat('2026-10-15T09:00:00+08:00'),
+                        end_at=datetime.fromisoformat('2026-10-15T10:00:00+08:00')))
+        db.commit()
+    before = client.get('/api/data/export').json()['tables']
+    request = {'client_request_id':'wire-test', 'source':'ai',
+               'text':'Split Software Engineering Project into four actionable steps.',
+               'title':'Software Engineering Project', 'deadline':DEADLINE,
+               'expected_duration_minutes':180, 'goal_id':None}
+    config = ClaudeConfig('offline-placeholder', 'qwen3.7-plus', 'https://gateway.example/v1/')
+    monkeypatch.setattr(assistant_ai, 'get_claude_config', lambda: config)
+    calls = []
+
+    def handler(wire_request):
+        calls.append(wire_request)
+        assert wire_request.method == 'POST'
+        assert str(wire_request.url) == 'https://gateway.example/v1/messages'
+        assert wire_request.headers['x-api-key'] == config.api_key
+        assert wire_request.headers['anthropic-version'] == '2023-06-01'
+        assert wire_request.headers['content-type'] == 'application/json'
+        body = json.loads(wire_request.content)
+        assert set(body) == {'model', 'max_tokens', 'system', 'messages'}
+        assert body['model'] == config.model and body['max_tokens'] == 4000
+        assert isinstance(body['system'], str) and body['system']
+        assert len(body['messages']) == 1 and body['messages'][0]['role'] == 'user'
+        message = json.loads(body['messages'][0]['content'])
+        assert message == {'request':request, 'context':{'now':'2026-10-14T18:00:00+08:00'}}
+        if case == 'http_500':
+            # Synthetic anonymous fixture; no claim about the real gateway's message.
+            return httpx.Response(500, json={'error':{'type':'new_api_error', 'message':'synthetic gateway failure'}})
+        if case == 'timeout':
+            raise httpx.ReadTimeout('synthetic timeout', request=wire_request)
+        result = content(4)
+        if case == 'missing_children':
+            del result['children']
+        elif case == 'missing_title':
+            del result['children'][0]['title']
+        elif case == 'child_deadline':
+            result['children'][0]['deadline'] = '2026-10-26T20:00:00+08:00'
+        elif case == 'parent_deadline':
+            result['parent']['deadline'] = '2026-10-26T20:00:00+08:00'
+        elif case == 'duration':
+            result['children'][0]['duration_minutes'] = 7
+        answer = json.dumps(result)
+        if case == 'fenced':
+            answer = '```json\n' + answer + '\n```'
+        elif case == 'malformed_json':
+            answer = '{not valid JSON'
+        elif case == 'extra_text':
+            answer = 'Here is the suggested plan:\n' + answer
+        return httpx.Response(200, json={'stop_reason':'end_turn', 'content':[{'type':'text', 'text':answer}]})
+
+    original_client = httpx.AsyncClient
+    transport = httpx.MockTransport(handler)
+    monkeypatch.setattr(httpx, 'AsyncClient', lambda **kwargs: original_client(transport=transport, **kwargs))
+    response = client.post(BASE, json=request)
+    assert len(calls) == 1  # A failed gateway request must never trigger an automatic retry.
+    after = client.get('/api/data/export').json()['tables']
+    if case in ('json', 'fenced'):
+        assert response.status_code == 201, response.text
+        assert response.json()['status'] == 'ready'
+        assert len(response.json()['content']['children']) == 4
+        assert response.json()['created_task_ids'] == []
+        draft_tables = {'assistant_sessions', 'assistant_messages', 'growth_change_drafts'}
+        assert {k:v for k,v in after.items() if k not in draft_tables} == {
+            k:v for k,v in before.items() if k not in draft_tables}
+    else:
+        expected = 'AI_UNAVAILABLE' if case in ('http_500', 'timeout') else 'AI_RESPONSE_INVALID'
+        assert response.status_code == (503 if expected == 'AI_UNAVAILABLE' else 502)
+        assert response.json()['detail']['code'] == expected
+        assert after == before  # Includes the pre-existing confirmed plan, revision and drafts.
+    assert config.api_key not in response.text
