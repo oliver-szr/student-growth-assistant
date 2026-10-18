@@ -69,3 +69,20 @@ def test_daily_backup_is_idempotent_and_retains_five_integrity_checked_copies(te
         assert len(backups) == 5
     finally:
         shutil.rmtree(directory)
+
+
+def test_forced_backups_do_not_overwrite_when_wall_clock_repeats(test_engine, tmp_path, monkeypatch):
+    from app.services import growth_data
+    Base.metadata.create_all(test_engine)
+    monkeypatch.setenv("SGA_BACKUP_DIR", str(tmp_path / "backups"))
+
+    class CoarseDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 14, 10, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(growth_data, "datetime", CoarseDateTime)
+    paths = [create_sqlite_backup(test_engine, force=True) for _ in range(7)]
+    assert len(set(paths)) == 7
+    assert paths[-1].exists()
+    assert len(list_sqlite_backups(test_engine)) == 5

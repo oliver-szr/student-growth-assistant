@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import sqlite3
 from typing import Any
+from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import Boolean, Date, DateTime, Enum as SqlEnum, Integer, JSON, MetaData, String, Table, Time, delete, select, text
@@ -62,9 +63,10 @@ def create_sqlite_backup(engine: Engine, *, force: bool = False) -> Path | None:
     if daily_path.exists() and not force:
         return daily_path
     timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S-%f")
-    label = f"{timestamp}-pre-restore" if force else today
+    nonce = uuid4().hex
+    label = f"{timestamp}-{nonce}-pre-restore" if force else today
     destination = daily_path if not force else folder / f"{label}.sqlite"
-    temporary = folder / f".{label}-{os.getpid()}.tmp"
+    temporary = folder / f".{label}-{os.getpid()}-{nonce}.tmp"
 
     source = sqlite3.connect(f"file:{source_path.as_posix()}?mode=ro", uri=True, timeout=30)
     target = sqlite3.connect(temporary, timeout=30)
@@ -79,7 +81,7 @@ def create_sqlite_backup(engine: Engine, *, force: bool = False) -> Path | None:
         source.close()
     temporary.replace(destination)
 
-    backups = sorted(folder.glob("*.sqlite"), key=lambda item: (item.stat().st_mtime_ns, item.name), reverse=True)
+    backups = sorted(folder.glob("*.sqlite"), key=lambda item: (item == destination, item.stat().st_mtime_ns, item.name), reverse=True)
     for old in backups[RETAIN_BACKUPS:]:
         try:
             old.unlink(missing_ok=True)
