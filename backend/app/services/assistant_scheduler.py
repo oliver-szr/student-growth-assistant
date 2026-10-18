@@ -9,6 +9,8 @@ from .planning_window import GRID_MINUTES, WINDOW_DAYS, expand_window_rules
 WEIGHTS = {'high':9,'normal':3,'low':1}
 GOAL_WEIGHTS = {1:3, 2:2, 3:1}
 STRATEGY_WEIGHTS = {'balanced':(4,3,3), 'preference':(6,2,2), 'stable':(2,6,2)}
+SEARCH_SECONDS = 20
+SEARCH_EXPANSIONS = 50000
 
 
 @lru_cache(maxsize=20000)
@@ -184,7 +186,7 @@ def _split_options(task,starts,week,now,busy,old,preferences,strategy):
 
 
 def _arrange_single(week,now,tasks,rules,previous,allow_alternatives=True,preferences=None,strategy='balanced'):
-    until=monotonic()+20
+    until=monotonic()+SEARCH_SECONDS
     old=old_segments([x for x in previous if dt(x['end_at'])>now]); intervals=expand_window_rules(week,rules)
     busy=[(x.start_at,x.end_at) for x in intervals]
     by_ref={t['ref']:t for t in tasks}; choices={}; diagnostics=[]
@@ -241,14 +243,25 @@ def _arrange_single(week,now,tasks,rules,previous,allow_alternatives=True,prefer
                 if len(candidates)==64:break
             if not candidates and (t.get('profile') or {}).get('splittable'):
                 candidates+=_split_options(t,starts,week,now,busy+occupied,old,preferences,strategy)
-            candidates.sort(key=lambda pack:(len(pack),score(state+pack,by_ref,old,week,preferences,strategy)))
-            for pack in candidates[:64]:
+            # Score each expanded state once. Both stable sorts use precisely
+            # the former keys/order; no cross-request cache or search change.
+            ranked=[]
+            for pack in candidates:
+                solution=state+pack
+                ranked.append((len(pack),score(solution,by_ref,old,week,preferences,strategy),solution))
+            ranked.sort(key=lambda entry:entry[:2])
+            for _,rank,solution in ranked[:64]:
                 expansions+=1
-                if expansions>50000 or monotonic()>until:return dict(status='no_plan',items=[],alternatives=[],diagnostics=[dict(code='SEARCH_LIMIT',message='有界搜索达到状态或时间上限，未找到完整方案；不等于数学上无解。')])
-                expanded.append(state+pack)
+                limit='expansions' if expansions>SEARCH_EXPANSIONS else 'time' if monotonic()>until else None
+                if limit:
+                    reason='扩展次数' if limit=='expansions' else '时间'
+                    return dict(status='no_plan',items=[],alternatives=[],diagnostics=[dict(code='SEARCH_LIMIT',
+                        budget_kind=limit, expansions=expansions, phase='search',
+                        message=f'有界搜索达到{reason}上限，未找到完整方案；不等于数学上无解。')])
+                expanded.append((len(solution),rank,solution))
         if not expanded:return dict(status='no_plan',items=[],alternatives=[],diagnostics=[dict(code='NO_PLAN_FOUND',message='有界搜索未找到完整方案；这不等于证明无解。')])
-        expanded.sort(key=lambda state:(len(state),score(state,by_ref,old,week,preferences,strategy)))
-        beam=expanded[:64]
+        expanded.sort(key=lambda entry:entry[:2])
+        beam=[entry[2] for entry in expanded[:64]]
     pool=[];seen=set()
     for state in beam:
         key=_schedule_key(state)
