@@ -8,6 +8,7 @@ import {
 import TimeRulesPage from './TimeRulesPage.jsx'
 import WorkspaceChat from '../components/WorkspaceChat.jsx'
 import { goalPayload } from '../goals.js'
+import EditRecovery, { useEditRecovery } from '../components/EditRecovery.jsx'
 
 const emptyGoal = { title: '', motivation: '', priority: 2, metric_kind: 'count', weekly_target: 1, unit_label: '次', due_date: '' }
 const emptyRule = { name: '', description: '', kind: 'prefer_time', category_key: '', weekdays: [], start: '08:00', end: '12:00', hours: '24', mode: 'balanced', text: '' }
@@ -25,7 +26,7 @@ function describeRule(rule) {
   return parameters.text || rule.description || '只供 AI 参考，不直接参与排程'
 }
 
-export default function MyProfilePage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null }) {
+export default function MyProfilePage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null, recoveryWorkspace }) {
   const Content = embedded ? Fragment : WorkspaceChat
   const [profile, setProfile] = useState(null)
   const [goals, setGoals] = useState([])
@@ -47,6 +48,14 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
   const [previewError, setPreviewError] = useState('')
   const [notice, setNotice] = useState('')
   const [backups, setBackups] = useState([])
+  const recovery=useEditRecovery({workspace:recoveryWorkspace,resource:'profile-editors',
+    base:loading||previewError?undefined:JSON.stringify({goals,rules,categories}),
+    value:{goalForm:Object.fromEntries(Object.keys(emptyGoal).map(key=>[key,goalForm[key]])),editingGoalId,showGoalEditor,ruleForm,editingRuleId,showRuleEditor,categoryName,editingCategoryKey},
+    dirty:showGoalEditor||showRuleEditor||Boolean(categoryName),restore:value=>{
+      setGoalForm({...emptyGoal,...value.goalForm});setEditingGoalId(value.editingGoalId);setShowGoalEditor(Boolean(value.showGoalEditor))
+      setRuleForm({...emptyRule,...value.ruleForm});setEditingRuleId(value.editingRuleId);setShowRuleEditor(Boolean(value.showRuleEditor))
+      setCategoryName(value.categoryName||'');setEditingCategoryKey(value.editingCategoryKey||null)
+    }})
 
   async function load() {
     let snapshot,backupData
@@ -160,6 +169,7 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
   return <><section className="growth-page profile-page" aria-labelledby="profile-heading">
     <div className="growth-page-heading"><div><h2 id="profile-heading">我的档案</h2></div></div>
     <Content {...(embedded ? {} : { scope: 'profile', onAdjustTask, onDraftConfirmed: load })}>
+    <EditRecovery recovery={recovery} label="目标与偏好编辑"/>
     {error && <p className="error-box" role="alert">{error}</p>}{notice && <p className="success-box" role="status">{notice}</p>}
 
     <section className="growth-section profile-wide">

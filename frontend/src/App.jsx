@@ -5,6 +5,8 @@ import AssistantPage from './pages/AssistantPage.jsx'
 import ReviewPage from './pages/GoalsGrowthPage.jsx'
 import MyProfilePage from './pages/MyProfilePage.jsx'
 import WorkspaceShell from './components/WorkspaceShell.jsx'
+import ConversationManager from './components/ConversationManager.jsx'
+import EditRecovery, { useEditRecovery } from './components/EditRecovery.jsx'
 import { initialWorkbench, readSplitRatio, splitPreferenceKey, toolPlacement, workbenchPanel, workbenchReducer, workspaceClock } from './workbench.js'
 
 export default function App() {
@@ -17,10 +19,14 @@ function WorkspaceApp() {
   })
   const [settings, setSettings] = useState(null)
   const [clock, setClock] = useState('')
+  const [settingsError,setSettingsError]=useState('')
   const [taskVersion, setTaskVersion] = useState(0)
   const [planningVersion, setPlanningVersion] = useState(0)
   const [adjustment, setAdjustment] = useState(null)
-  useEffect(() => { getAssistantSettings().then(next => setSettings({ ...next, receivedAt: Date.now() })).catch(() => {}) }, [])
+  const layoutRecovery = useEditRecovery({ workspace: settings?.workspace_id, resource: 'layout', base: settings ? 'layout-v1' : undefined,
+    value: { navigation: state.navigation, auxiliaryPage: state.auxiliaryPage, panel: state.panel, conversations: state.conversations, mobile: state.mobile }, dirty: true,
+    automatic: true, restore: value => dispatch({ type: 'restore', value }) })
+  useEffect(() => { getAssistantSettings().then(next => setSettings({ ...next, receivedAt: Date.now() })).catch(cause => setSettingsError(cause.message)) }, [])
   useEffect(() => {
     if (!settings || !Number.isFinite(Date.parse(settings.now))) return
     let timer
@@ -40,19 +46,20 @@ function WorkspaceApp() {
     setAdjustment({ ...next, requestKey: crypto.randomUUID() })
     dispatch({ type: 'navigate', page: 'schedule' })
   }
-  return <AssistantPage active={state.navigation === 'home' || toolActive('schedule')} fullCalendar={state.navigation === 'schedule'} refreshVersion={planningVersion}
+  if (!settings) return <p role="status">{settingsError||'正在读取工作区设置…'}{settingsError&&<button onClick={()=>location.reload()}>重试读取工作区</button>}</p>
+  return <ConversationManager key={settings?.workspace_id || 'loading'} workspace={settings?.workspace_id} onOpen={() => dispatch({ type: 'navigate', page: 'home' })}>{({ sidebar, chat: conversationChat, planning, openPlanning }) => <AssistantPage active={state.navigation === 'home' || toolActive('schedule')} observeChat={planning && state.navigation === 'home'} recoveryWorkspace={settings?.workspace_id} fullCalendar={state.navigation === 'schedule'} refreshVersion={planningVersion}
     requestedAction={adjustment} onActionHandled={() => setAdjustment(null)}
     onPlanConfirmed={() => setTaskVersion(value => value + 1)}
     onManagePreferences={() => dispatch({ type: 'navigate', page: 'profile' })}
     onOpenSchedule={() => dispatch({ type: 'navigate', page: 'schedule' })}
-    onFocusChat={() => dispatch({ type: 'navigate', page: 'home' })}
-    taskTools={<TasksPage refreshVersion={taskVersion} onDataChanged={() => setPlanningVersion(value => value + 1)} onAdjustTask={requestAdjustment} />}
-    renderWorkbench={({ chat, children, conversation, auxiliarySchedule }) => <WorkspaceShell state={state} dispatch={dispatch} chat={chat} conversation={conversation} auxiliarySchedule={auxiliarySchedule}
+    onFocusChat={openPlanning}
+    taskTools={<TasksPage recoveryWorkspace={settings?.workspace_id} refreshVersion={taskVersion} onDataChanged={() => setPlanningVersion(value => value + 1)} onAdjustTask={requestAdjustment} />}
+    renderWorkbench={({ chat, children, conversation, auxiliarySchedule }) => <WorkspaceShell state={state} dispatch={dispatch} chatNote={planning?'当前支持任务规划与调整，自由交流将在后续开放。':'当前会话用于保存和浏览消息，AI 回复尚未接入。'} conversationContent={<><EditRecovery recovery={layoutRecovery} label="界面状态" />{sidebar}</>} chat={<><div className="v2-chat-surface" hidden={!planning} inert={!planning}>{chat}</div><div className="v2-chat-surface" hidden={planning} inert={planning}>{conversationChat}</div></>} conversation={conversation} auxiliarySchedule={auxiliarySchedule}
       clock={clock}
       review={state.visited.includes('review') && <ReviewPage embedded active={toolActive('review')} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}
-      profile={state.visited.includes('profile') && <MyProfilePage embedded active={toolActive('profile')} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}>
+      profile={state.visited.includes('profile') && <MyProfilePage embedded recoveryWorkspace={settings?.workspace_id} active={toolActive('profile')} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}>
       {children}
-    </WorkspaceShell>} />
+    </WorkspaceShell>} />}</ConversationManager>
 }
 
 function LegacyApp() {

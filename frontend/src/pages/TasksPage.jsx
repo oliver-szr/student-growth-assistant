@@ -9,6 +9,7 @@ import {
 import { displayDeadline } from '../datetime.js'
 import TaskForm from '../components/TaskForm.jsx'
 import TaskHierarchy from '../components/TaskHierarchy.jsx'
+import EditRecovery, { useEditRecovery } from '../components/EditRecovery.jsx'
 
 const freshFeedback = { outcome: 'completed', actual_minutes: '', remaining_minutes: '30', family: 'other', difficulty: 'expected', reason: '' }
 
@@ -23,7 +24,7 @@ function formatTimer(total) {
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
-export default function TasksPage({ onAdjustTask, refreshVersion=0,onDataChanged }) {
+export default function TasksPage({ onAdjustTask, refreshVersion=0,onDataChanged,recoveryWorkspace }) {
   const [tasks, setTasks] = useState([])
   const [categories, setCategories] = useState([])
   const [contexts, setContexts] = useState({})
@@ -63,8 +64,8 @@ export default function TasksPage({ onAdjustTask, refreshVersion=0,onDataChanged
     try {
       if (id === null) { await createTask(data); setFormVersion((value) => value + 1) }
       else { await updateTask(id, data); setEditingId(null) }
-      await load();onDataChanged?.()
-    } catch (error) { setActionError(error.message) }
+      await load();onDataChanged?.();return true
+    } catch (error) { setActionError(error.message);return false }
     finally { setPending(false) }
   }
 
@@ -130,15 +131,21 @@ export default function TasksPage({ onAdjustTask, refreshVersion=0,onDataChanged
   }
 
   const [showAdd,setShowAdd]=useState(false)
+  const recovery=useEditRecovery({workspace:recoveryWorkspace,resource:'task-editor-selection',base:loading||loadError?undefined:JSON.stringify(tasks),
+    value:{editingId,recordingId,addingChildId:addingChild?.id,feedbackForms,showAdd},dirty:Boolean(editingId||recordingId||addingChild||showAdd),restore:value=>{
+      setEditingId(tasks.some(t=>t.id===value.editingId)?value.editingId:null)
+      setRecordingId(tasks.some(t=>t.id===value.recordingId)?value.recordingId:null)
+      setAddingChild(tasks.find(t=>t.id===value.addingChildId)||null);setFeedbackForms(value.feedbackForms||{});setShowAdd(Boolean(value.showAdd))
+    }})
   return (
-    <section aria-labelledby="tasks-heading" className="task-execution-page">
+    <section aria-labelledby="tasks-heading" className="task-execution-page"><EditRecovery recovery={recovery} label="任务编辑选择"/>
       <div className="section-heading"><div><h2 id="tasks-heading">任务与执行记录</h2></div></div>
-      <button type="button" className="button secondary" onClick={()=>setShowAdd(v=>!v)}>新增任务</button><div hidden={!showAdd} className="panel"><h3>新增任务</h3><TaskForm key={formVersion} pending={pending} disabled={loading || Boolean(loadError)} onSubmit={(data) => save(data)} /></div>
+      <button type="button" className="button secondary" onClick={()=>setShowAdd(v=>!v)}>新增任务</button><div hidden={!showAdd} className="panel"><h3>新增任务</h3><TaskForm recoveryWorkspace={recoveryWorkspace} key={formVersion} pending={pending} disabled={loading || Boolean(loadError)} onSubmit={(data) => save(data)} /></div>
       {actionError && <p className="error-box" role="alert">{actionError}</p>}
       {loading ? <p className="state-box" role="status">正在加载任务和执行历史…</p> : loadError ? <div className="error-box" role="alert">无法加载任务。 {loadError} <button className="button subtle" onClick={load} type="button">重试</button></div> : !tasks.length ? <p className="state-box">暂无任务。</p> : <div className="card-list">
         <TaskHierarchy tasks={tasks} pending={pending} onEditContainer={task=>{setEditingId(task.id);setAddingChild(null)}} onAddChild={task=>{setAddingChild(task);setEditingId(null)}} renderContainer={task=><>
-          {editingId===task.id && <TaskForm key={`parent-${task.id}`} task={task} pending={pending} onSubmit={data=>save(data,task.id)} onCancel={()=>setEditingId(null)} />}
-          {addingChild?.id===task.id && <TaskForm key={`child-${task.id}-${formVersion}`} pending={pending} onCancel={()=>setAddingChild(null)} onSubmit={data=>save({...data,parent_task_id:task.id,sort_order:tasks.filter(t=>t.parent_task_id===task.id).length})} />}
+          {editingId===task.id && <TaskForm recoveryWorkspace={recoveryWorkspace} key={`parent-${task.id}`} task={task} pending={pending} onSubmit={data=>save(data,task.id)} onCancel={()=>setEditingId(null)} />}
+          {addingChild?.id===task.id && <TaskForm recoveryWorkspace={recoveryWorkspace} recoveryResource={`task:child-of-${task.id}`} key={`child-${task.id}-${formVersion}`} pending={pending} onCancel={()=>setAddingChild(null)} onSubmit={data=>save({...data,parent_task_id:task.id,sort_order:tasks.filter(t=>t.parent_task_id===task.id).length})} />}
         </>} renderTask={(task) => {
           const context = contexts[task.id] || {}
           const session = sessions[task.id]
@@ -155,7 +162,7 @@ export default function TasksPage({ onAdjustTask, refreshVersion=0,onDataChanged
               <div className="button-row"><button className="button subtle" type="button" disabled={pending} onClick={() => { setActionError(''); setEditingId(task.id) }}>编辑任务</button><button className="button secondary" type="button" disabled={pending} onClick={() => setRecordingId(recordingId === task.id ? null : task.id)}>记录进度 / 完成</button><button className="button subtle" type="button" disabled={pending} onClick={() => setStatus(task, 'cancelled')}>取消任务</button></div>
               {!task.parent_task_id && <button type="button" className="button subtle" disabled={pending} onClick={()=>convert(task)}>转为父容器</button>}
               {recordingId === task.id && <form className="feedback-form" onSubmit={(event) => { event.preventDefault(); submitFeedback(task) }}><h5>保存本次执行情况</h5><label>本次结果<select value={form.outcome} onChange={(e) => setFeedbackForms((current) => ({ ...current, [task.id]: { ...form, outcome: e.target.value } }))}><option value="completed">完成</option><option value="partial">部分完成</option><option value="postponed">暂缓</option></select></label><label>实际投入（分钟，可留空）<input type="number" min="1" max="1440" value={form.actual_minutes} onChange={(e) => setFeedbackForms((current) => ({ ...current, [task.id]: { ...form, actual_minutes: e.target.value } }))} /></label>{form.outcome === 'partial' && <label>剩余时长要分钟<input type="number" min="5" max="1440" step="5" value={form.remaining_minutes} onChange={(e) => setFeedbackForms((current) => ({ ...current, [task.id]: { ...form, remaining_minutes: e.target.value } }))} /></label>}<label>难度感受<select value={form.difficulty} onChange={(e) => setFeedbackForms((current) => ({ ...current, [task.id]: { ...form, difficulty: e.target.value } }))}><option value="easy">比预期容易</option><option value="expected">和预期差不多</option><option value="hard">比预期困难</option></select></label><label>遇到什么情况（可选）<input maxLength="500" value={form.reason} onChange={(e) => setFeedbackForms((current) => ({ ...current, [task.id]: { ...form, reason: e.target.value } }))} placeholder="例如：临时被打断、工作量增加" /></label><p className="helper">计时器仅帮助填写耗时；本次反馈需你确认后保存。</p><div className="button-row"><button className="button primary" disabled={pending}>保存记录</button><button className="button subtle" type="button" onClick={() => setRecordingId(null)}>暂不记录</button></div></form>}
-              {editingId === task.id && <TaskForm key={task.id} task={task} pending={pending} onSubmit={(data) => save(data, task.id)} onCancel={() => setEditingId(null)} />}
+              {editingId === task.id && <TaskForm recoveryWorkspace={recoveryWorkspace} key={task.id} task={task} pending={pending} onSubmit={(data) => save(data, task.id)} onCancel={() => setEditingId(null)} />}
             </>}
             {feedbackCounts[task.id] > 0 && <details className="feedback-history" onToggle={async(event)=>{if(event.currentTarget.open&&!feedbacks[task.id])try{const result=await getTaskFeedback(task.id);setFeedbacks(current=>({...current,[task.id]:result.entries}))}catch(error){setActionError(error.message)}}}><summary>执行记录（{feedbackCounts[task.id]}）</summary>{(feedbacks[task.id]||[]).map((row) => <p key={row.id}>{row.outcome === 'completed' ? '完成' : row.outcome === 'partial' ? '部分完成' : '暂缓'} · {row.actual_minutes ? `投入 ${row.actual_minutes} 分钟` : '未记录耗时'}{row.reason ? ` · ${row.reason}` : ''}{row.superseded ? '（已更正）' : ''}</p>)}</details>}
           </article>

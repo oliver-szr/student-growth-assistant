@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createTaskBreakdown, getTaskBreakdowns, getTaskBreakdown, editTaskBreakdown, confirmTaskBreakdown, discardTaskBreakdown, getGoals } from '../api.js'
 import { toBackendDeadline } from '../datetime.js'
 import { breakdownPayload, breakdownTotals, editableContent, MAX_CHILDREN, moveChild } from '../taskHierarchy.js'
+import EditRecovery, { useEditRecovery } from './EditRecovery.jsx'
 
 export function BreakdownEditor({ content, expected, disabled, onChange }) {
   const { total, difference } = breakdownTotals(content.children, expected)
@@ -21,15 +22,23 @@ export function BreakdownEditor({ content, expected, disabled, onChange }) {
   </fieldset>
 }
 
-export default function TaskBreakdown({ onCreated }) {
+export default function TaskBreakdown({ onCreated, recoveryWorkspace }) {
   const [open, setOpen] = useState(false), [drafts, setDrafts] = useState([]), [goals, setGoals] = useState([])
   const [draft, setDraft] = useState(null), [content, setContent] = useState(null)
   const [pending, setPending] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [dirty, setDirty] = useState(false)
   const [form, setForm] = useState({ title: '', text: '', deadline: '', expected: '180', goal_id: '' })
   const requestKey = useRef(null), busy = useRef(false)
+  const [loaded,setLoaded]=useState(false),[recovered,setRecovered]=useState(false)
+  const formRecovery=useEditRecovery({workspace:recoveryWorkspace,resource:'breakdown-new',base:loaded?'unversioned-form':undefined,
+    value:{form,open,requestKey:requestKey.current},dirty:!draft&&Boolean(form.title||form.text||form.deadline),restore:value=>{setForm(value.form);setOpen(true);requestKey.current=value.requestKey||null}})
+  const selectionRecovery=useEditRecovery({workspace:recoveryWorkspace,resource:'breakdown-selection',base:loaded?'selection':undefined,
+    value:{id:draft?.id},dirty:Boolean(draft),automatic:true,restore:value=>{const row=drafts.find(item=>item.id===value.id);if(row)select(row)}})
+  const draftRecovery=useEditRecovery({workspace:recoveryWorkspace,resource:`breakdown:${draft?.id}:edit`,
+    base:draft?JSON.stringify([draft.id,draft.version,draft.source_revision,draft.status]):undefined,
+    value:{content},dirty,restore:value=>{setContent(value.content);setDirty(true);setRecovered(true);setNotice('已恢复本地编辑，请核对后显式保存。')}})
 
-  async function reload() { const rows = await getTaskBreakdowns(); setDrafts(rows); return rows }
-  function select(row) { setDraft(row); setContent(editableContent(row.content)); setDirty(false); setOpen(true); setError(''); setNotice('已读取服务器草案，刷新后可以继续。') }
+  async function reload() { const rows = await getTaskBreakdowns(); setDrafts(rows); setLoaded(true); return rows }
+  function select(row) { setDraft(row); setContent(editableContent(row.content)); setDirty(false); setRecovered(false); setOpen(true); setError(''); setNotice('已读取服务器草案，刷新后可以继续。') }
   useEffect(() => { reload().catch(e => setError(e.message)); getGoals().then(data => setGoals(data.goals)).catch(e => setError(e.message)) }, [])
 
   async function act(action) {
@@ -40,15 +49,15 @@ export default function TaskBreakdown({ onCreated }) {
   async function persist() {
     if (!dirty) return draft
     const saved = await editTaskBreakdown(draft.id, { version: draft.version, content: breakdownPayload(content) })
-    setDraft(saved); setDirty(false); setNotice('草案已保存，刷新后可以继续。'); return saved
+    setDraft(saved); setDirty(false); setRecovered(false); setNotice('草案已保存，刷新后可以继续。'); return saved
   }
   function change(next) { setContent(next); setDirty(true); setError(''); setNotice('修改尚未保存') }
   // Only valid edits can be persisted. Failed saves retain the editor and offer retry.
   useEffect(() => {
-    if (!dirty || pending || error || draft?.status !== 'ready') return
+    if (!dirty || pending || error || recovered || draftRecovery.saved || draft?.status !== 'ready') return
     const timer = setTimeout(() => act(persist), 1200)
     return () => clearTimeout(timer)
-  }, [dirty, content, pending, error, draft?.id, draft?.version])
+  }, [dirty, content, pending, error, recovered, draftRecovery.saved, draft?.id, draft?.version])
 
   async function generate(source) {
     requestKey.current ||= crypto.randomUUID()
@@ -70,6 +79,7 @@ export default function TaskBreakdown({ onCreated }) {
     await act(async () => { await discardTaskBreakdown(draft.id, draft.version); setDraft(null); setContent(null); setDirty(false); await reload(); setNotice('拆解已取消，没有创建正式任务。') })
   }
   return <section className="task-breakdown panel" aria-labelledby="breakdown-heading">
+    <EditRecovery recovery={formRecovery} label="拆解输入"/><EditRecovery recovery={draftRecovery} label="拆解草案编辑"/><EditRecovery recovery={selectionRecovery} label="拆解选择"/>
     <div className="section-heading"><h3 id="breakdown-heading">复杂任务拆解</h3><button type="button" className="button secondary" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? '收起拆解' : 'AI 拆解任务 / 手动拆解'}</button></div>
     {error && <p className="error-box" role="alert">{error} <button type="button" disabled={pending} onClick={() => act(async () => { await reload(); if (draft) select(await getTaskBreakdown(draft.id)) })}>重新加载草案</button></p>}
     {notice && <p className="helper" role="status">{notice}</p>}
@@ -79,7 +89,7 @@ export default function TaskBreakdown({ onCreated }) {
         <BreakdownEditor content={content} expected={draft.input.expected_duration_minutes} disabled={pending || draft.status !== 'ready'} onChange={change} />
         {draft.status === 'stale' && <p role="alert" className="error-box">任务、目标或计划已变化，或截止时间已过。请取消此草案，按最新资料重新生成。</p>}
         <div className="button-row"><button type="submit" className="button primary" disabled={pending || draft.status !== 'ready' || !content.children.length}>确认创建父子任务</button><button type="button" className="button secondary" disabled={pending || !dirty || draft.status !== 'ready'} onClick={() => act(persist)}>保存草案</button><button type="button" className="button subtle" disabled={pending} onClick={cancel}>取消拆解</button></div>
-        <p className="helper">{dirty ? '有效修改会自动保存；若保存失败，请先修正或重试。' : '当前草案已保存。'}原始预期保留用于比较；只有你编辑的父任务截止时间会在确认后生效。</p>
+        <p className="helper">{recovered ? '恢复的编辑不会自动保存，请核对后点击保存草案。' : dirty ? '有效修改会自动保存；若保存失败，请先修正或重试。' : '当前草案已保存。'}原始预期保留用于比较；只有你编辑的父任务截止时间会在确认后生效。</p>
       </form>}
     </>}
   </section>

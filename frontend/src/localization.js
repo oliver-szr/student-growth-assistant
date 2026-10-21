@@ -4,6 +4,13 @@ export const PRIORITY_LABELS = { low: '低', normal: '普通', high: '高' }
 export const RECURRENCE_LABELS = { weekly: '每周', once: '仅一次' }
 
 const CODE_MESSAGES = {
+  CONVERSATION_NOT_FOUND: '会话不存在，当前选择已保留。请检查会话列表。',
+  CONVERSATION_DELETED: '会话已删除，不能继续发送。正式任务和日程仍保留。',
+  CONVERSATION_ARCHIVED: '会话已归档，请先恢复后再发送。',
+  CONVERSATION_VERSION_CONFLICT: '会话已被其他页面修改。已保留输入，请读取最新状态后重试。',
+  CONVERSATION_BUSY: '会话仍有运行中的请求，请等待完成或到原入口处理。本次没有取消运行。',
+  CONVERSATION_HAS_DRAFTS: '会话仍有未处理草案，请到原业务入口明确处理。本次没有采用或放弃草案。',
+  LEGACY_CONVERSATION_READ_ONLY: '历史工具会话只供阅读，请通过原规划或业务入口操作。',
   INVALID_STATISTICS_RANGE: '请选择最近4、8或12周；结束周须为不晚于当前周的周一。',
   STALE_CANDIDATE: '候选计划已过期：当前时间、任务、时间规则或正式计划发生了变化。请重新生成后再确认。',
   PLAN_NOT_CANDIDATE: '此计划已不是待确认的候选计划，请重新加载并生成新方案。',

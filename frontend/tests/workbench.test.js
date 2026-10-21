@@ -124,16 +124,16 @@ test('unknown primary page, auxiliary page, size or mobile surface cannot corrup
 const shellSource = await readFile(new URL('../src/components/WorkspaceShell.jsx', import.meta.url), 'utf8')
 const compiledShell = await transformWithEsbuild(`import React from '${import.meta.resolve('react')}';\n${shellSource.replace("from 'react'", `from '${import.meta.resolve('react')}'`).replace('../workbench.js', new URL('../src/workbench.js', import.meta.url).href)}`, 'WorkspaceShell.jsx', { jsx: 'transform', jsxFactory: 'React.createElement' })
 const { default: WorkspaceShell } = await import(`data:text/javascript;base64,${Buffer.from(compiledShell.code).toString('base64')}`)
-const renderShell = state => renderToStaticMarkup(React.createElement(WorkspaceShell, { state, dispatch: () => {}, conversation: 7, chat: 'CHAT', review: 'REVIEW', profile: 'PROFILE', clock: '演示 · 2026-10-14 18:00 北京时间' }, 'SCHEDULE'))
+const renderShell = state => renderToStaticMarkup(React.createElement(WorkspaceShell, { state, dispatch: () => {}, conversationContent: 'REAL_CONVERSATION_LIST', chat: 'CHAT', review: 'REVIEW', profile: 'PROFILE', clock: '演示 · 2026-10-14 18:00 北京时间' }, 'SCHEDULE'))
 
 test('shell exposes exactly three linked tabs, real current conversation and honest unavailable controls', () => {
   const html = renderShell(initialWorkbench)
   assert.equal((html.match(/role="tab"/g) || []).length, 3)
   assert.equal((html.match(/role="tab"[^>]*aria-controls="v2-auxiliary-shared"/g) || []).length, 3)
-  assert.ok(html.includes('本周规划对话'))
-  assert.ok(html.includes('新建、搜索与归档将在后续开放'))
+  assert.ok(html.includes('REAL_CONVERSATION_LIST'))
+  assert.ok(!html.includes('新建、搜索与归档将在后续开放'))
   assert.ok(html.includes('href="?layout=legacy"'))
-  assert.ok(html.includes('type="search" placeholder="搜索会话" disabled=""'))
+  assert.ok(!html.includes('搜索会话" disabled=""'))
   assert.ok(!html.includes('登录'))
 })
 

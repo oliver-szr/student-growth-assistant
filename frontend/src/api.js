@@ -139,3 +139,12 @@ export const importGrowthData = (snapshot) => request('/api/data/import', { meth
 export const getTasksDashboard=()=>request('/api/tasks/dashboard')
 export const getProfileContext=()=>request('/api/profile/context')
 export const getReviewContext=()=>request('/api/review/context')
+
+const conversationQuery = values => new URLSearchParams(Object.entries(values).filter(([, value]) => value !== undefined && value !== null && value !== '')).toString()
+export const getConversations = (values = {}) => request(`/api/conversations?${conversationQuery(values)}`)
+export const createConversation = data => request('/api/conversations', { method: 'POST', body: JSON.stringify(data) })
+export const getConversation = id => request(`/api/conversations/${id}`)
+export const updateConversation = (id, data) => request(`/api/conversations/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+export const deleteConversation = (id, version) => request(`/api/conversations/${id}?expected_version=${encodeURIComponent(version)}`, { method: 'DELETE' })
+export const getConversationMessages = (id, values = {}) => request(`/api/conversations/${id}/messages?${conversationQuery(values)}`)
+export const saveConversationMessage = (id, data) => request(`/api/conversations/${id}/messages`, { method: 'POST', body: JSON.stringify(data) })

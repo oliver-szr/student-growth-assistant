@@ -37,6 +37,23 @@
 .compact-shell.v2-shell .v2-chat-heading .workspace-clock {font-size:12px}
 .compact-shell.v2-shell .v2-chat-note {font-size:13px;color:#526974;margin:8px 0 20px}
 .compact-shell.v2-shell .v2-chat>.chat-panel {display:flex;flex-direction:column;flex:1;min-height:440px;overflow:visible;border-radius:12px}
+.compact-shell.v2-shell .v2-chat-surface {display:flex;flex-direction:column;flex:1;min-height:0}
+.compact-shell.v2-shell .v2-chat-surface>.chat-panel,.compact-shell.v2-shell .conversation-chat {display:flex;flex-direction:column;flex:1;min-height:440px;border-radius:12px}
+.compact-shell.v2-shell .conversation-chat .chat-scroll {max-height:55dvh;overflow:auto}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-input {display:grid;gap:10px}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-input label {display:grid;gap:8px}
+.compact-shell.v2-shell .conversation-list {display:grid;gap:12px;min-width:0}
+.compact-shell.v2-shell .conversation-list .button-row {gap:2px;flex-wrap:wrap}
+.compact-shell.v2-shell .conversation-list .button {font-size:12px;padding:7px}
+.compact-shell.v2-shell .conversation-row {margin-bottom:12px;min-width:0;overflow-wrap:anywhere}
+.compact-shell.v2-shell .conversation-row summary {font-size:12px;padding:8px;color:var(--muted);cursor:pointer}
+.compact-shell.v2-shell .conversation-actions {display:grid;gap:4px}
+.compact-shell.v2-shell .conversation-actions button,.compact-shell.v2-shell .conversation-snippet {border:0;background:transparent;text-align:left;padding:8px;color:var(--ink);font-size:12px;overflow-wrap:anywhere}
+.compact-shell.v2-shell .v2-current-conversation:not([aria-current=true]) {background:#f8faf9;font-weight:400}
+.compact-shell.v2-shell .conversation-rename label {display:grid;gap:8px}
+.recovery-note {padding:12px;border:1px solid #d6c28e;background:#fffbee;border-radius:8px;font-size:13px;overflow-wrap:anywhere}
+.recovery-note pre {white-space:pre-wrap;max-height:240px;overflow:auto;font-size:12px}
+.search-match {outline:2px solid #b18a30;outline-offset:-2px}
 .compact-shell.v2-shell .v2-chat .chat-history {flex:1;min-height:160px}
 .compact-shell.v2-shell .v2-chat .chat-scroll {height:100%;max-height:none;min-height:160px}
 .compact-shell.v2-shell .v2-chat .panel-heading {flex-wrap:wrap;padding:14px 16px}

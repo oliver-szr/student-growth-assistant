@@ -9,10 +9,15 @@ import { createTaskBreakdown, getTaskBreakdowns, getTaskBreakdown, editTaskBreak
 
 async function component(name) {
   const path = new URL(`../src/components/${name}.jsx`, import.meta.url)
-  const source = await readFile(path, 'utf8')
+  let source = await readFile(path, 'utf8')
+  if (name !== 'EditRecovery' && source.includes("from './EditRecovery.jsx'")) {
+    const recovery = await component('EditRecovery')
+    source = source.replace("from './EditRecovery.jsx'", `from '${recovery.url}'`)
+  }
   const imports = source.replace(/from '(\.\.\/[^']+)'/g, (_, relative) => `from '${new URL(relative, path).href}'`).replace("from 'react'", `from '${import.meta.resolve('react')}'`)
   const compiled = await transformWithEsbuild(`import React from '${import.meta.resolve('react')}';\n${imports}`, `${name}.jsx`, { jsx: 'transform', jsxFactory: 'React.createElement' })
-  return import(`data:text/javascript;base64,${Buffer.from(compiled.code).toString('base64')}`)
+  const url = `data:text/javascript;base64,${Buffer.from(compiled.code).toString('base64')}`
+  return { ...await import(url), url }
 }
 
 const { default: TaskHierarchy } = await component('TaskHierarchy')
