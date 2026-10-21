@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import {
   getReviewContext, acceptGrowthInsight, analyzeGrowthInsights, createGrowthReview, editGrowthInsight, getDurationAdvice, getGoals, getGrowthAttention, getGrowthInsights,
   getGrowthReviews, getTaskCategories, getTaskGrowthContext, getTasks, ignoreGrowthInsight,
@@ -9,7 +9,8 @@ import SafeMessage from '../components/SafeMessage.jsx'
 import WorkspaceChat from '../components/WorkspaceChat.jsx'
 
 
-export default function ReviewPage({ onAdjustTask }) {
+export default function ReviewPage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0 }) {
+  const Content = embedded ? Fragment : WorkspaceChat
   const [parentTasks, setParentTasks] = useState([])
   const [analyticsVersion, setAnalyticsVersion] = useState(0)
   const [categories, setCategories] = useState([])
@@ -45,7 +46,7 @@ export default function ReviewPage({ onAdjustTask }) {
     }
   }
 
-  useEffect(() => { refresh().catch((e) => setError(e.message)) }, [])
+  useEffect(() => { if (active) refresh().catch((e) => setError(e.message)) }, [active, refreshVersion])
 
   async function generateReview() {
     setOperation('review'); setBusy(true); setError(''); setNotice('')
@@ -80,7 +81,7 @@ export default function ReviewPage({ onAdjustTask }) {
       <div><h2 id="growth-heading">复盘</h2></div><span className="review-week muted">{weekStart} 周</span>
       <button className="button primary" type="button" disabled={busy} onClick={generateReview}>{operation==='review'?'生成中…':'生成复盘'}</button>
     </div>
-    <WorkspaceChat scope="review" weekStart={weekStart || undefined} onAdjustTask={onAdjustTask} onDraftConfirmed={afterChatDraftConfirmed}>
+    <Content {...(embedded ? {} : { scope: 'review', weekStart: weekStart || undefined, onAdjustTask, onDraftConfirmed: afterChatDraftConfirmed })}>
     {error && <p className="error-box" role="alert">{error}</p>}{notice && <p className="success-box" role="status">{notice}</p>}
 
     <GrowthAnalytics refreshVersion={analyticsVersion} parentTasks={parentTasks} onRefresh={()=>refresh().catch(cause=>setError(cause.message))} />
@@ -102,6 +103,6 @@ export default function ReviewPage({ onAdjustTask }) {
     </section>
 
 
-    </WorkspaceChat>
+    </Content>
   </section>
 }

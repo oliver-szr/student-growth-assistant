@@ -1,11 +1,43 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useReducer, useState } from 'react'
 import { getAssistantSettings } from './api.js'
 import TasksPage from './pages/TasksPage.jsx'
 import AssistantPage from './pages/AssistantPage.jsx'
 import ReviewPage from './pages/GoalsGrowthPage.jsx'
 import MyProfilePage from './pages/MyProfilePage.jsx'
+import WorkspaceShell from './components/WorkspaceShell.jsx'
+import { initialWorkbench, workbenchReducer } from './workbench.js'
 
 export default function App() {
+  return new URLSearchParams(window.location.search).get('layout') === 'legacy' ? <LegacyApp /> : <WorkspaceApp />
+}
+
+function WorkspaceApp() {
+  const [state, dispatch] = useReducer(workbenchReducer, initialWorkbench)
+  const [settings, setSettings] = useState(null)
+  const [taskVersion, setTaskVersion] = useState(0)
+  const [planningVersion, setPlanningVersion] = useState(0)
+  const [adjustment, setAdjustment] = useState(null)
+  useEffect(() => { getAssistantSettings().then(setSettings).catch(() => {}) }, [])
+  function requestAdjustment(next) {
+    setAdjustment({ ...next, requestKey: crypto.randomUUID() })
+    dispatch({ type: 'open', page: 'schedule' })
+  }
+  return <AssistantPage active={state.page === 'schedule' || state.mobile === 'chat'} refreshVersion={planningVersion}
+    requestedAction={adjustment} onActionHandled={() => setAdjustment(null)}
+    onPlanConfirmed={() => setTaskVersion(value => value + 1)}
+    onManagePreferences={() => dispatch({ type: 'open', page: 'profile' })}
+    onOpenSchedule={() => dispatch({ type: 'open', page: 'schedule' })}
+    onFocusChat={() => dispatch({ type: 'mobile', value: 'chat' })}
+    taskTools={<TasksPage refreshVersion={taskVersion} onDataChanged={() => setPlanningVersion(value => value + 1)} onAdjustTask={requestAdjustment} />}
+    renderWorkbench={({ chat, children, conversation }) => <WorkspaceShell state={state} dispatch={dispatch} chat={chat} conversation={conversation}
+      clock={settings ? `${settings.demo ? '演示 · ' : ''}${settings.now?.slice(0, 16).replace('T', ' ')} 北京时间` : ''}
+      review={state.visited.includes('review') && <ReviewPage embedded active={state.page === 'review' && state.panel !== 'collapsed'} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}
+      profile={state.visited.includes('profile') && <MyProfilePage embedded active={state.page === 'profile' && state.panel !== 'collapsed'} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}>
+      {children}
+    </WorkspaceShell>} />
+}
+
+function LegacyApp() {
   const [settings,setSettings]=useState(null)
   useEffect(()=>{getAssistantSettings().then(setSettings).catch(()=>{})},[])
   const [taskVersion,setTaskVersion]=useState(0)
@@ -22,7 +54,7 @@ export default function App() {
     <div className="app-shell compact-shell">
       <header className="site-header">
         <div className="container">
-          <div className="brand-row"><h1>个人成长助手</h1><span>规划每一步，复盘每一程</span></div>
+          <div className="brand-row"><h1>个人成长助手</h1><span>规划每一步，复盘每一程</span><a href="?">返回新工作台</a></div>
         </div>
       </header>
       <main className="container">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import {
   getProfileContext, createGoal, createPreferenceRule, createTaskCategory, exportGrowthData, getGoals, getGrowthProfile,
   getLocalBackups, getPreferenceRules, getTaskCategories, getTaskGrowthContext, getTasks, importGrowthData,
@@ -24,7 +24,8 @@ function describeRule(rule) {
   return parameters.text || rule.description || '只供 AI 参考，不直接参与排程'
 }
 
-export default function MyProfilePage({ onAdjustTask }) {
+export default function MyProfilePage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0 }) {
+  const Content = embedded ? Fragment : WorkspaceChat
   const [profile, setProfile] = useState(null)
   const [goals, setGoals] = useState([])
   const [tasks, setTasks] = useState([])
@@ -54,10 +55,11 @@ export default function MyProfilePage({ onAdjustTask }) {
   }
 
   useEffect(() => {
-    let active = true
-    load().catch((cause) => setError(cause.message)).finally(() => active && setLoading(false))
-    return () => { active = false }
-  }, [])
+    if (!active) return
+    let mounted = true
+    load().catch((cause) => setError(cause.message)).finally(() => mounted && setLoading(false))
+    return () => { mounted = false }
+  }, [active, refreshVersion])
 
   async function runAction(action, success) {
     setBusy(true); setError(''); setNotice('')
@@ -153,7 +155,7 @@ export default function MyProfilePage({ onAdjustTask }) {
   const weekdays = ruleForm.weekdays
   return <section className="growth-page profile-page" aria-labelledby="profile-heading">
     <div className="growth-page-heading"><div><h2 id="profile-heading">我的档案</h2></div></div>
-    <WorkspaceChat scope="profile" onAdjustTask={onAdjustTask} onDraftConfirmed={load}>
+    <Content {...(embedded ? {} : { scope: 'profile', onAdjustTask, onDraftConfirmed: load })}>
     {error && <p className="error-box" role="alert">{error}</p>}{notice && <p className="success-box" role="status">{notice}</p>}
 
     <section className="growth-section profile-wide">
@@ -203,6 +205,6 @@ export default function MyProfilePage({ onAdjustTask }) {
       <p className="helper">应用启动时每天最多自动保存一次 SQLite 安全副本，最多保留 5 份。导入前还会额外保存当前数据库。</p>
       {backups.length ? <ul className="backup-list">{backups.map((backup) => <li key={backup.name}><strong>{backup.name}</strong><span>{Math.ceil(backup.size_bytes / 1024)} KB</span></li>)}</ul> : <p className="growth-empty">尚未生成自动备份；应用下次启动时会检查并创建。</p>}
     </details>
-    </WorkspaceChat>
+    </Content>
   </section>
 }
