@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   getProfileContext, createGoal, createPreferenceRule, createTaskCategory, exportGrowthData, getGoals, getGrowthProfile,
   getLocalBackups, getPreferenceRules, getTaskCategories, getTaskGrowthContext, getTasks, importGrowthData,
@@ -24,7 +25,7 @@ function describeRule(rule) {
   return parameters.text || rule.description || '只供 AI 参考，不直接参与排程'
 }
 
-export default function MyProfilePage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0 }) {
+export default function MyProfilePage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null }) {
   const Content = embedded ? Fragment : WorkspaceChat
   const [profile, setProfile] = useState(null)
   const [goals, setGoals] = useState([])
@@ -153,7 +154,7 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
   if (loading) return <p className="state-box">正在读取档案、目标和已确认偏好…</p>
 
   const weekdays = ruleForm.weekdays
-  return <section className="growth-page profile-page" aria-labelledby="profile-heading">
+  return <><section className="growth-page profile-page" aria-labelledby="profile-heading">
     <div className="growth-page-heading"><div><h2 id="profile-heading">我的档案</h2></div></div>
     <Content {...(embedded ? {} : { scope: 'profile', onAdjustTask, onDraftConfirmed: load })}>
     {error && <p className="error-box" role="alert">{error}</p>}{notice && <p className="success-box" role="status">{notice}</p>}
@@ -207,4 +208,17 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
     </details>
     </Content>
   </section>
+    {auxiliaryTarget && createPortal(<section className="v2-readonly-summary" aria-label="档案辅助视图">
+      {error && <p className="error-box" role="alert">{error}</p>}
+      <h3>长期目标</h3>
+      {goals.filter(goal => goal.status === 'active').map(goal => <article key={goal.id}><strong>{goal.title}</strong><p>每周 {goal.weekly_target} {goal.unit_label}</p>{goal.due_date && <small>目标日期：{goal.due_date}</small>}</article>)}
+      {!goals.some(goal => goal.status === 'active') && <p>暂无进行中的目标。</p>}
+      <h3>安排偏好</h3>
+      {rules.filter(rule => rule.enabled).map(rule => <article key={rule.id}><strong>{rule.name}</strong><p>{describeRule(rule)}</p></article>)}
+      {!rules.some(rule => rule.enabled) && <p>暂无已启用偏好。</p>}
+      {showGoalEditor && <p className="v2-unsaved-note">目标未提交：{goalForm.title || '尚未命名'}</p>}
+      {showRuleEditor && <p className="v2-unsaved-note">偏好未提交：{ruleForm.name || '尚未命名'}</p>}
+      <p className="helper">在主体编辑目标、偏好与其他档案。</p>
+    </section>, auxiliaryTarget)}
+  </>
 }

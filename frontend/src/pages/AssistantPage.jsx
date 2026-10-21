@@ -1,4 +1,4 @@
-import { useEffect,useState,useRef } from 'react'
+import { useEffect,useState,useRef,useId } from 'react'
 import {createAssistantSession,getAssistantSession,sendAssistantMessage,previewAssistant,confirmAssistant,discardAssistant,explainAssistant,createAssistantRun,getAssistantRun,cancelAssistantRun,retryAssistantRun,getAssistantSettings,getGrowthAttention,replanAssistant,expandAssistantScope} from '../api.js'
 import {calendarPosition,visibleSchedule,shanghaiTime,manualAction,focusCards,PRIORITIES} from '../assistant.js'
 import { UI_COPY, changeSummary } from '../uiCopy.js'
@@ -17,6 +17,7 @@ const short=value=>shanghaiTime(value).slice(11)
 const CALENDAR_PIXELS_PER_MINUTE=.7
 
 function Calendar({data,offset=0,selectedDate}){
+  const detailId=useId()
   const [selected,setSelected]=useState(null)
   const dialog=useRef(null)
   useEffect(()=>{if(selected && !dialog.current.open)dialog.current.showModal()},[selected])
@@ -33,8 +34,8 @@ function Calendar({data,offset=0,selectedDate}){
     {dates.map((date,i)=><div className="day-column" key={date}><div className={`day-heading ${data.settings.now.startsWith(date)?'today':''}`}><strong>{weekDays[(new Date(`${date}T12:00:00+08:00`).getUTCDay()+6)%7]}</strong><span>{date.slice(5)}</span></div><div className="day-body">
       {items.filter(x=>calendarPosition(x).date===date).map(x=>{const pos=calendarPosition(x),changed=changes.has(x.ref),past=x.end_at<data.settings.now,label=segmentLabels.get(`${x.ref}:${x.start_at}:${x.end_at}`),locked=(p?.tasks||data.tasks).find(t=>t.ref===x.ref)?.profile?.locked;return <button type="button" onClick={()=>setSelected({...x,label,locked,changed})} aria-label={`${x.title} ${short(x.start_at)}至${short(x.end_at)}，查看详情`} key={`${x.ref}:${x.start_at}:${x.end_at}`} className={`calendar-block ${x.kind==='course'?'course':'task'} ${changed?'changed':''} ${past?'past':''} ${pos.height*CALENDAR_PIXELS_PER_MINUTE<32?'short-block':''}`} style={{top:pos.top*CALENDAR_PIXELS_PER_MINUTE,height:pos.height*CALENDAR_PIXELS_PER_MINUTE}} title={`${x.title}\n${short(x.start_at)}–${short(x.end_at)}${label?` · ${label}`:''}`}><span>{short(x.start_at)}–{short(x.end_at)}</span><strong>{x.title}</strong><small>{x.kind==='course'?'课程':`${changed?'待确认':''}${locked?' · 锁定':''}${label?` · ${label}`:''}`}</small></button>})}
     </div></div>)}
-  </div></div><dialog ref={dialog} className="schedule-detail" aria-labelledby="schedule-detail-heading" onClose={()=>setSelected(null)}>
-    {selected&&<><h3 id="schedule-detail-heading">{selected.title}</h3><p>{stamp(selected.start_at)}–{short(selected.end_at)}</p><div className="detail-tags"><span>{selected.kind==='course'?'课程':selected.changed?'待确认':'正式任务'}</span>{selected.locked&&<span>锁定</span>}{selected.label&&<span>{selected.label}</span>}</div></>}
+  </div></div><dialog ref={dialog} className="schedule-detail" aria-labelledby={detailId} onClose={()=>setSelected(null)}>
+    {selected&&<><h3 id={detailId}>{selected.title}</h3><p>{stamp(selected.start_at)}–{short(selected.end_at)}</p><div className="detail-tags"><span>{selected.kind==='course'?'课程':selected.changed?'待确认':'正式任务'}</span>{selected.locked&&<span>锁定</span>}{selected.label&&<span>{selected.label}</span>}</div></>}
     <form method="dialog"><button className="button secondary">关闭</button></form>
   </dialog></>
 }
@@ -130,7 +131,12 @@ export default function AssistantPage({active, requestedAction, onActionHandled,
       {p.notices.length>0&&<details><summary>任务与安排提示</summary>{[...new Set(p.notices)].map((n,i)=><p key={i}>{n}</p>)}</details>}
     </section>}</>
   const tasks=<details className="task-memory workspace-details"><summary>任务与执行 · {data.tasks.filter(t=>t.status==='todo').length} 项未完成任务 {live?'· 待确认':''}</summary><h3>任务概览</h3><div className="memory-list">{data.tasks.map(t=><div key={t.ref}><strong>{t.title}</strong><span>{categoryName(t.task_type)}　截止 {stamp(t.deadline)}　剩余 {t.duration_minutes} 分钟　{PRIORITIES[t.priority]}　{t.status==='done'?'已完成':t.status==='cancelled'?'已取消':'待完成'}　{t.profile?.locked?'已锁定':''}</span><button disabled={pending} onClick={()=>edit(t)}>修改</button><button disabled={pending||t.status!=='todo'||t.profile?.locked} onClick={()=>act(()=>replanAssistant(data.id,t.ref))}>重新安排</button><button disabled={pending} onClick={()=>act(()=>sendAssistantMessage(data.id,{client_message_id:crypto.randomUUID(),text:`${t.title}：${t.profile?.locked?'解锁':'锁定'}安排`,actions:[{op:'update',target:t.ref,fields:{profile:{locked:!t.profile?.locked}}}]}))}>{t.profile?.locked?'解锁':'锁定'}</button><button disabled={pending||t.status!=='todo'} onClick={()=>act(()=>sendAssistantMessage(data.id,{client_message_id:crypto.randomUUID(),text:`完成 ${t.title}`,actions:[{op:'update',target:t.ref,fields:{status:'done'}}]}))}>完成</button></div>)}</div><h3>执行记录</h3>{taskTools}</details>
-  const layout=<WorkbenchLayout view={view} onViewChange={setView} resultLabel="日程" chat={chat} renderLayout={renderWorkbench} conversation={data.id}>
+  const auxiliarySchedule=<section className="schedule-panel" aria-label="同步日程辅助视图">
+    <div className="panel-heading v2-calendar-heading"><h3>日程</h3><div className="v2-calendar-view" role="group" aria-label="辅助日程显示"><button type="button" aria-pressed={calendarView==='day'} onClick={()=>setCalendarView('day')}>单日</button><button type="button" aria-pressed={calendarView==='week'} onClick={()=>setCalendarView('week')}>本周 / 下周</button></div><label>查看日期<input type="date" min={data.week_start} max={lastDate} value={date} onChange={e=>{if(e.target.value>=data.week_start&&e.target.value<=lastDate)setSelectedDate(e.target.value)}}/></label></div>
+    <Calendar data={data} offset={calendarOffset} selectedDate={calendarView==='day'?date:undefined}/>
+    {p&&<p className="v2-calendar-note">{STATUS[p.status]||p.status} · 在主体查看与确认方案</p>}
+  </section>
+  const layout=<WorkbenchLayout view={view} onViewChange={setView} resultLabel="日程" chat={chat} renderLayout={renderWorkbench} conversation={data.id} auxiliarySchedule={auxiliarySchedule}>
     {renderWorkbench?<div className="assistant-workspace v2-planning-content">{content}{overview}{tasks}</div>:content}
   </WorkbenchLayout>
   return renderWorkbench?layout:<section className="assistant-workspace" aria-labelledby="planning-heading">

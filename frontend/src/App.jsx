@@ -35,7 +35,7 @@ function WorkspaceApp() {
     onOpenSchedule={() => dispatch({ type: 'auxiliary', page: 'schedule' })}
     onFocusChat={() => dispatch({ type: 'navigate', page: 'home' })}
     taskTools={<TasksPage refreshVersion={taskVersion} onDataChanged={() => setPlanningVersion(value => value + 1)} onAdjustTask={requestAdjustment} />}
-    renderWorkbench={({ chat, children, conversation }) => <WorkspaceShell state={state} dispatch={dispatch} chat={chat} conversation={conversation}
+    renderWorkbench={({ chat, children, conversation, auxiliarySchedule }) => <WorkspaceShell state={state} dispatch={dispatch} chat={chat} conversation={conversation} auxiliarySchedule={auxiliarySchedule}
       clock={settings ? `${settings.demo ? '演示 · ' : ''}${settings.now?.slice(0, 16).replace('T', ' ')} 北京时间` : ''}
       review={state.visited.includes('review') && <ReviewPage embedded active={toolActive('review')} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}
       profile={state.visited.includes('profile') && <MyProfilePage embedded active={toolActive('profile')} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}>

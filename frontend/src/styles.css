@@ -11,7 +11,6 @@
 .compact-shell.v2-shell .v2-grid {display:grid;grid-template-columns:76px var(--v2-list-width) minmax(360px,var(--v2-primary-fr)) 8px minmax(320px,var(--v2-auxiliary-fr));grid-template-rows:auto minmax(0,1fr);flex:1;min-height:0}
 .compact-shell.v2-shell[data-panel=collapsed] .v2-grid {grid-template-columns:76px var(--v2-list-width) minmax(0,1fr) 0 44px}
 .compact-shell.v2-shell[data-panel=expanded] .v2-grid {grid-template-columns:76px 0 280px 0 minmax(0,1fr)}
-.compact-shell.v2-shell:not([data-navigation=home])[data-panel=normal] .v2-grid {grid-template-columns:76px 0 minmax(360px,1.5fr) 0 minmax(320px,1fr)}
 .compact-shell.v2-shell .v2-navigation {grid-column:1;grid-row:1 / span 2;display:flex;flex-direction:column;gap:8px;padding:20px 8px 12px;background:#eaf1ee;border-right:1px solid #d9e4e7;min-width:0}
 .compact-shell.v2-shell .v2-brand {font-size:19px;font-weight:700;text-align:center;color:#176e58;margin:4px 0 24px}
 .compact-shell.v2-shell .v2-navigation>button {display:flex;flex-direction:column;align-items:center;gap:2px;border:0;background:transparent;border-radius:10px;min-height:64px;color:#526974;font-size:13px;padding:6px}
@@ -61,6 +60,11 @@
 .compact-shell.v2-shell .v2-tool-page[data-placement=auxiliary] {grid-column:5;grid-row:2;border-left:1px solid #d9e4e7}
 .compact-shell.v2-shell .v2-primary-page-heading {display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:20px}
 .compact-shell.v2-shell .v2-primary-page-heading h1 {font-size:26px;margin:0}
+.compact-shell.v2-shell .v2-readonly-summary {display:grid;gap:12px;overflow-wrap:anywhere}
+.compact-shell.v2-shell .v2-readonly-summary h3 {margin:8px 0 0}
+.compact-shell.v2-shell .v2-readonly-summary p {margin:4px 0}
+.compact-shell.v2-shell .v2-readonly-summary article {padding:12px;border:1px solid var(--line);border-radius:8px}
+.compact-shell.v2-shell .v2-unsaved-note {padding:10px;background:#fff8e8;border-left:3px solid #b98a32}
 .compact-shell.v2-shell .v2-planning-content {display:grid;gap:20px;min-width:0}
 .compact-shell.v2-shell .v2-planning-content .today-focus {margin:0}
 .compact-shell.v2-shell .v2-planning-content .today-focus ol {grid-template-columns:minmax(0,1fr)}

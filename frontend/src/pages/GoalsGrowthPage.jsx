@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   getReviewContext, acceptGrowthInsight, analyzeGrowthInsights, createGrowthReview, editGrowthInsight, getDurationAdvice, getGoals, getGrowthAttention, getGrowthInsights,
   getGrowthReviews, getTaskCategories, getTaskGrowthContext, getTasks, ignoreGrowthInsight,
@@ -9,7 +10,7 @@ import SafeMessage from '../components/SafeMessage.jsx'
 import WorkspaceChat from '../components/WorkspaceChat.jsx'
 
 
-export default function ReviewPage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0 }) {
+export default function ReviewPage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null }) {
   const Content = embedded ? Fragment : WorkspaceChat
   const [parentTasks, setParentTasks] = useState([])
   const [analyticsVersion, setAnalyticsVersion] = useState(0)
@@ -76,7 +77,7 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
     catch (e) { setError(e.message) } finally { setBusy(false);setOperation('') }
   }
 
-  return <section className="growth-page" aria-labelledby="growth-heading">
+  return <><section className="growth-page" aria-labelledby="growth-heading">
     <div className="growth-page-heading">
       <div><h2 id="growth-heading">复盘</h2></div><span className="review-week muted">{weekStart} 周</span>
       <button className="button primary" type="button" disabled={busy} onClick={generateReview}>{operation==='review'?'生成中…':'生成复盘'}</button>
@@ -105,4 +106,11 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
 
     </Content>
   </section>
+    {auxiliaryTarget && createPortal(<section className="v2-readonly-summary" aria-label="复盘辅助视图">
+      <h3>已保存周复盘说明</h3><p className="muted">{weekStart ? `${weekStart} 周` : '正在读取复盘…'}</p>
+      {error && <p className="error-box" role="alert">{error}</p>}
+      {review ? <><SafeMessage text={review.narrative || '此版本没有文字说明。'}/><p className="helper">已保存版本 v{review.version}</p></> : weekStart && <p>尚未生成周复盘说明。</p>}
+      <p className="helper">完整统计与复盘操作在主体中查看。</p>
+    </section>, auxiliaryTarget)}
+  </>
 }

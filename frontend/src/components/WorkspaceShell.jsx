@@ -1,12 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { defaultSplitRatio, renderedSplitRatio, splitBounds, toolPlacement, workbenchPanel, workbenchVisibility, workspacePages } from '../workbench.js'
 
 const labels = { home: '首页', schedule: '日程', review: '复盘', profile: '档案' }
 
-// Keep one mounted instance per tool. CSS moves its existing pane, never its business state.
-export default function WorkspaceShell({ state, dispatch, chat, children, review, profile, clock, conversation }) {
+// One controller/edit buffer per tool; matching auxiliary views read that controller's data.
+export default function WorkspaceShell({ state, dispatch, chat, children, review, profile, clock, conversation, auxiliarySchedule }) {
   const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches)
   const [gridWidth, setGridWidth] = useState(1440)
+  const [auxiliaryTarget, setAuxiliaryTarget] = useState(null)
   const root = useRef(null), grid = useRef(null), lastFocus = useRef(null), drag = useRef(null)
   const panel = workbenchPanel(state)
   const visible = workbenchVisibility(state, narrow)
@@ -15,9 +16,9 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
   const available = Math.max(680, gridWidth - 76 - listWidth - 8)
   const ratio = renderedSplitRatio(state.splitRatio, available)
   const bounds = splitBounds(available)
-  const resizable = !narrow && home && panel === 'normal'
+  const resizable = !narrow && panel === 'normal'
   const samePage = state.navigation === state.auxiliaryPage
-  const controls = samePage ? 'v2-auxiliary-current' : 'v2-page-' + state.auxiliaryPage
+  const controls = samePage ? 'v2-auxiliary-shared' : 'v2-page-' + state.auxiliaryPage
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 1023px)')
@@ -111,13 +112,13 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
         <p className="v2-chat-note">当前支持任务规划与调整，自由交流将在后续开放。</p>
         {chat}
       </main>
-      <div className="v2-resizer" role="separator" tabIndex={0} hidden={!resizable} inert={!resizable} aria-label="调整聊天与辅助栏宽度" aria-orientation="vertical" aria-valuemin={Math.round(bounds.min * 100)} aria-valuemax={Math.round(bounds.max * 100)} aria-valuenow={Math.round(ratio * 100)} aria-valuetext={`聊天占 ${Math.round(ratio * 100)}%`} onKeyDown={resizeKey} onDoubleClick={() => dispatch({ type: 'split', value: defaultSplitRatio })} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={event => pointerEnd(event, true)} onLostPointerCapture={() => { drag.current = null }} />
+      <div className="v2-resizer" role="separator" tabIndex={0} hidden={!resizable} inert={!resizable} aria-label="调整主体与辅助栏宽度" aria-orientation="vertical" aria-valuemin={Math.round(bounds.min * 100)} aria-valuemax={Math.round(bounds.max * 100)} aria-valuenow={Math.round(ratio * 100)} aria-valuetext={`主体占 ${Math.round(ratio * 100)}%`} onKeyDown={resizeKey} onDoubleClick={() => dispatch({ type: 'split', value: defaultSplitRatio })} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={event => pointerEnd(event, true)} onLostPointerCapture={() => { drag.current = null }} />
       <aside id="v2-workspace" className="v2-workspace" aria-label="辅助栏控制" hidden={narrow && !visible.auxiliary} inert={narrow && !visible.auxiliary}>
         <button id="v2-restore-workspace" className="v2-workspace-restore" type="button" hidden={visible.auxiliary} aria-label="恢复辅助栏" aria-expanded="false" onClick={() => changePanel('normal')}>‹<span>辅助栏</span></button>
         <header className="v2-workspace-heading" hidden={!visible.auxiliary} inert={!visible.auxiliary}>
-          <div className="v2-workspace-tabs" role="tablist" aria-label="辅助栏页签">{workspacePages.map(page => <button key={page} id={'v2-tab-' + page} type="button" role="tab" aria-selected={state.auxiliaryPage === page} aria-controls={state.navigation === page ? 'v2-auxiliary-current' : 'v2-page-' + page} tabIndex={state.auxiliaryPage === page ? 0 : -1} onKeyDown={event => tabKey(event, page)} onClick={() => dispatch({ type: 'auxiliary', page })}>{labels[page]}</button>)}</div>
+          <div className="v2-workspace-tabs" role="tablist" aria-label="辅助栏页签">{workspacePages.map(page => <button key={page} id={'v2-tab-' + page} type="button" role="tab" aria-selected={state.auxiliaryPage === page} aria-controls={state.navigation === page ? 'v2-auxiliary-shared' : 'v2-page-' + page} tabIndex={state.auxiliaryPage === page ? 0 : -1} onKeyDown={event => tabKey(event, page)} onClick={() => dispatch({ type: 'auxiliary', page })}>{labels[page]}</button>)}</div>
           <div className="v2-panel-controls">
-            {resizable && <button type="button" onClick={() => dispatch({ type: 'split', value: defaultSplitRatio })}>恢复默认宽度</button>}
+            {!narrow && <button type="button" onClick={() => dispatch({ type: 'split', value: defaultSplitRatio })}>恢复默认宽度</button>}
             <button type="button" aria-label={panel === 'expanded' ? '恢复普通辅助栏' : '展开辅助栏'} aria-pressed={panel === 'expanded'} onClick={() => changePanel(panel === 'expanded' ? 'normal' : 'expanded')}>{panel === 'expanded' ? '普通' : '展开'}</button>
             <button type="button" aria-label="收起辅助栏" aria-expanded="true" aria-controls={controls} onClick={() => changePanel('collapsed')}>收起</button>
           </div>
@@ -126,13 +127,16 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
       {workspacePages.map(page => {
         const placement = toolPlacement(state, page)
         const shown = placement !== 'hidden' && visible[placement]
+        const content = page === 'schedule' ? children : page === 'review' ? review : profile
+        const target = samePage && page === state.auxiliaryPage ? auxiliaryTarget : null
         return <section key={page} id={'v2-page-' + page} className="v2-tool-page" data-placement={placement} role={placement === 'primary' ? 'main' : 'tabpanel'} tabIndex={placement === 'primary' ? -1 : 0} aria-labelledby={placement === 'primary' ? 'v2-primary-' + page : 'v2-tab-' + page} hidden={!shown} inert={!shown}>
           <header className="v2-primary-page-heading" hidden={placement !== 'primary'}><h1 id={'v2-primary-' + page}>{labels[page]}</h1><button type="button" className="button subtle" onClick={() => changePanel(panel === 'collapsed' ? 'normal' : 'collapsed')}>{panel === 'collapsed' ? '打开辅助栏' : '收起辅助栏'}</button></header>
-          {page === 'schedule' ? children : page === 'review' ? review : profile}
+          {page !== 'schedule' && isValidElement(content) ? cloneElement(content, { auxiliaryTarget: target }) : content}
         </section>
       })}
-      <div id="v2-auxiliary-current" className="v2-tool-page v2-same-page" data-placement="auxiliary" role="tabpanel" aria-labelledby={'v2-tab-' + state.auxiliaryPage} hidden={!samePage || !visible.auxiliary} inert={!samePage || !visible.auxiliary}>
-        <p>{labels[state.auxiliaryPage]}已在主体显示。</p><button className="button subtle" type="button" onClick={() => { dispatch({ type: 'mobile', value: 'primary' }); requestAnimationFrame(() => root.current?.querySelector('#v2-page-' + state.navigation)?.focus()) }}>查看主体{labels[state.navigation]}</button>
+      <div id="v2-auxiliary-shared" className="v2-tool-page" data-placement="auxiliary" role="tabpanel" aria-labelledby={'v2-tab-' + state.auxiliaryPage} hidden={!samePage || !visible.auxiliary} inert={!samePage || !visible.auxiliary}>
+        <div ref={setAuxiliaryTarget}>{samePage && state.auxiliaryPage === 'schedule' ? auxiliarySchedule : null}</div>
+        <button className="button subtle" type="button" onClick={() => { dispatch({ type: 'mobile', value: 'primary' }); requestAnimationFrame(() => root.current?.querySelector('#v2-page-' + state.navigation)?.focus()) }}>在主体编辑{labels[state.navigation]}</button>
       </div>
     </div>
   </div>

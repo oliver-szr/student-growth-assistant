@@ -8,7 +8,7 @@ export const workspacePages = ['schedule', 'review', 'profile']
 export const defaultSplitRatio = 0.58
 export const splitPreferenceKey = 'sga-v2-home-split-ratio'
 export const initialWorkbench = {
-  navigation: 'home', auxiliaryPage: 'schedule', panel: 'normal', toolPanel: 'collapsed',
+  navigation: 'home', auxiliaryPage: 'schedule', panel: 'normal',
   conversations: true, mobile: 'primary', visited: ['schedule'], splitRatio: defaultSplitRatio,
 }
 
@@ -32,28 +32,25 @@ export function renderedSplitRatio(preferred, available) {
   const { min, max } = splitBounds(available)
   return Math.max(min, Math.min(max, clampSplitRatio(preferred)))
 }
-export const workbenchPanel = state => state.navigation === 'home' ? state.panel : state.toolPanel
+export const workbenchPanel = state => state.panel
 
 export function workbenchReducer(state, action) {
   if (action.type === 'navigate' && ['home', ...workspacePages].includes(action.page)) {
     return { ...state, navigation: action.page, mobile: 'primary',
-      toolPanel: action.page === 'home' ? state.toolPanel : 'collapsed',
       visited: action.page === 'home' ? state.visited : [...new Set([...state.visited, action.page])] }
   }
   if (action.type === 'auxiliary' && workspacePages.includes(action.page)) {
-    const key = state.navigation === 'home' ? 'panel' : 'toolPanel'
     return { ...state, auxiliaryPage: action.page, mobile: 'auxiliary',
-      [key]: state[key] === 'collapsed' ? 'normal' : state[key],
+      panel: state.panel === 'collapsed' ? 'normal' : state.panel,
       visited: [...new Set([...state.visited, action.page])] }
   }
   if (action.type === 'panel' && ['collapsed', 'normal', 'expanded'].includes(action.value)) {
-    return { ...state, [state.navigation === 'home' ? 'panel' : 'toolPanel']: action.value,
+    return { ...state, panel: action.value,
       mobile: action.value === 'collapsed' ? 'primary' : 'auxiliary' }
   }
   if (action.type === 'conversations') return { ...state, conversations: !state.conversations }
   if (action.type === 'mobile' && ['conversations', 'primary', 'auxiliary'].includes(action.value)) {
-    const key = state.navigation === 'home' ? 'panel' : 'toolPanel'
-    return { ...state, mobile: action.value, [key]: action.value === 'auxiliary' && state[key] === 'collapsed' ? 'normal' : state[key] }
+    return { ...state, mobile: action.value, panel: action.value === 'auxiliary' && state.panel === 'collapsed' ? 'normal' : state.panel }
   }
   if (action.type === 'split') return { ...state, splitRatio: clampSplitRatio(action.value) }
   return state

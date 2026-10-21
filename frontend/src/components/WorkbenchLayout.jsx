@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-export default function WorkbenchLayout({ chat, children, view: controlledView, onViewChange, resultLabel = '结果', renderLayout, conversation }) {
+export default function WorkbenchLayout({ chat, children, view: controlledView, onViewChange, resultLabel = '结果', renderLayout, conversation, auxiliarySchedule }) {
   const [localView, setLocalView] = useState('chat')
   const [fits, setFits] = useState(false)
   const sidebar = useRef(null)
@@ -15,7 +15,7 @@ export default function WorkbenchLayout({ chat, children, view: controlledView, 
     measure()
     return () => { observer.disconnect(); window.removeEventListener('resize', measure) }
   }, [Boolean(renderLayout)])
-  if (renderLayout) return renderLayout({ chat, children, conversation })
+  if (renderLayout) return renderLayout({ chat, children, conversation, auxiliarySchedule })
   return <>
     <div className="workbench-switch" role="group" aria-label="切换工作台视图">
       <button type="button" aria-pressed={view === 'chat'} onClick={() => change('chat')}>聊天</button>

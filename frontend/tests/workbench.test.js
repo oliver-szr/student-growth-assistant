@@ -22,30 +22,36 @@ test('primary navigation and auxiliary tabs have independent states in both dire
   assert.equal(workbenchPanel(state), 'normal')
 })
 
-test('tool navigation uses the primary pane with unnecessary auxiliary surfaces collapsed', () => {
-  for (const page of ['schedule', 'review', 'profile']) {
-    const state = workbenchReducer(initialWorkbench, { type: 'navigate', page })
-    assert.equal(toolPlacement(state, page), 'primary')
-    assert.equal(workbenchPanel(state), 'collapsed')
-    assert.deepEqual(workbenchVisibility(state, false), { conversations: false, primary: true, auxiliary: false })
-    assert.equal(state.mobile, 'primary')
+test('all primary pages share the same auxiliary tab, mode and width preference', () => {
+  for (const panel of ['normal', 'collapsed', 'expanded']) {
+    let state = { ...initialWorkbench, panel, auxiliaryPage: 'profile', splitRatio: 0.35, conversations: false }
+    for (const page of ['schedule', 'review', 'profile', 'home']) {
+      state = workbenchReducer(state, { type: 'navigate', page })
+      assert.equal(state.navigation, page)
+      assert.equal(state.auxiliaryPage, 'profile')
+      assert.equal(workbenchPanel(state), panel)
+      assert.equal(state.splitRatio, 0.35)
+      assert.equal(state.conversations, false)
+      assert.equal(state.mobile, 'primary')
+    }
   }
 })
 
-test('returning home restores its independent panel, conversation and width preferences', () => {
-  let state = { ...initialWorkbench, conversations: false, splitRatio: 0.66 }
-  state = workbenchReducer(state, { type: 'auxiliary', page: 'profile' })
-  state = workbenchReducer(state, { type: 'navigate', page: 'schedule' })
-  state = workbenchReducer(state, { type: 'panel', value: 'expanded' })
-  state = workbenchReducer(state, { type: 'navigate', page: 'home' })
-  assert.equal(workbenchPanel(state), 'normal')
-  assert.equal(state.auxiliaryPage, 'profile')
-  assert.equal(state.conversations, false)
-  assert.equal(state.splitRatio, 0.66)
-  assert.equal(state.mobile, 'primary')
+test('collapsing the shared auxiliary pane gives primary tools the available space without changing their state', () => {
+  let state = { ...initialWorkbench, auxiliaryPage: 'review', splitRatio: 0.64 }
+  for (const page of ['schedule', 'review', 'profile']) {
+    state = workbenchReducer(state, { type: 'navigate', page })
+    state = workbenchReducer(state, { type: 'panel', value: 'collapsed' })
+    assert.equal(toolPlacement(state, page), 'primary')
+    assert.deepEqual(workbenchVisibility(state, false), { conversations: false, primary: true, auxiliary: false })
+    state = workbenchReducer(state, { type: 'panel', value: 'normal' })
+    assert.equal(workbenchVisibility(state, false).auxiliary, true)
+    assert.equal(state.splitRatio, 0.64)
+    assert.equal(state.auxiliaryPage, 'review')
+  }
 })
 
-test('same tool selects a primary placement once without producing duplicate editing instances', () => {
+test('same tool keeps one primary controller when the auxiliary tab matches', () => {
   let state = workbenchReducer(initialWorkbench, { type: 'navigate', page: 'profile' })
   for (let i = 0; i < 3; i++) state = workbenchReducer(state, { type: 'auxiliary', page: 'profile' })
   assert.equal(toolPlacement(state, 'profile'), 'primary')
@@ -131,28 +137,54 @@ test('shell exposes exactly three linked tabs, real current conversation and hon
   assert.ok(!html.includes('登录'))
 })
 
-test('inactive tools remain mounted and primary calendar hides the chat and auxiliary controls', () => {
+test('primary calendar hides chat while keeping the common auxiliary controls', () => {
   const html = renderShell(workbenchReducer(initialWorkbench, { type: 'navigate', page: 'schedule' }))
   assert.match(html, /id="v2-chat"[^>]*hidden="" inert=""/)
   assert.match(html, /id="v2-page-schedule"[^>]*data-placement="primary"[^>]*role="main"/)
   assert.match(html, /id="v2-page-review"[^>]*hidden="" inert=""/)
   assert.match(html, /id="v2-page-profile"[^>]*hidden="" inert=""/)
-  assert.ok(html.includes('恢复辅助栏'))
-})
-
-test('desktop home exposes a bounded keyboard accessible separator and reset action', () => {
-  const html = renderShell(initialWorkbench)
-  assert.match(html, /role="separator"[^>]*tabindex="0"[^>]*aria-orientation="vertical"/)
   assert.ok(html.includes('恢复默认宽度'))
-  const tool = renderShell(workbenchReducer(initialWorkbench, { type: 'navigate', page: 'review' }))
-  assert.match(tool, /class="v2-resizer"[^>]*hidden="" inert=""/)
 })
 
-test('a tool open in primary and auxiliary shows a reference instead of a second form', () => {
+test('each desktop primary page exposes the same accessible width separator and reset control', () => {
+  for (const page of ['home', 'schedule', 'review', 'profile']) {
+    const html = renderShell(workbenchReducer(initialWorkbench, { type: 'navigate', page }))
+    assert.match(html, /class="v2-resizer" role="separator" tabindex="0" aria-label="调整主体与辅助栏宽度" aria-orientation="vertical"/)
+    assert.ok(html.includes('恢复默认宽度'))
+    assert.equal((html.match(/aria-label="辅助栏页签"/g) || []).length, 1)
+  }
+})
+
+test('matching calendar renders a second data projection rather than a reference placeholder', () => {
+  const state = workbenchReducer(initialWorkbench, { type: 'navigate', page: 'schedule' })
+  const html = renderToStaticMarkup(React.createElement(WorkspaceShell, { state, dispatch: () => {}, chat: 'CHAT', auxiliarySchedule: 'SHARED_CALENDAR_DATA' }, 'FULL_CALENDAR'))
+  assert.ok(html.includes('SHARED_CALENDAR_DATA'))
+  assert.ok(html.includes('FULL_CALENDAR'))
+  assert.ok(!html.includes('已在主体显示'))
+  assert.match(html, /id="v2-auxiliary-shared"[^>]*data-placement="auxiliary"/)
+})
+
+test('matching profile keeps only one complete editing instance and a shared auxiliary host', () => {
   let state = workbenchReducer(initialWorkbench, { type: 'navigate', page: 'profile' })
   state = workbenchReducer(state, { type: 'auxiliary', page: 'profile' })
   const html = renderShell(state)
-  assert.ok(html.includes('档案已在主体显示。'))
   assert.equal((html.match(/id="v2-page-profile"/g) || []).length, 1)
   assert.equal((html.match(/>PROFILE</g) || []).length, 1)
+  assert.equal((html.match(/id="v2-auxiliary-shared"/g) || []).length, 1)
+  assert.ok(html.includes('在主体编辑档案'))
+})
+
+test('width edits on every primary page remain shared after navigation and safe storage recovery', () => {
+  let state = initialWorkbench
+  for (const [index, page] of ['home', 'schedule', 'review', 'profile'].entries()) {
+    state = workbenchReducer(state, { type: 'navigate', page })
+    const value = 0.40 + index * 0.05
+    state = workbenchReducer(state, { type: 'split', value })
+    for (const next of ['home', 'schedule', 'review', 'profile']) {
+      state = workbenchReducer(state, { type: 'navigate', page: next })
+      assert.equal(state.splitRatio, value)
+    }
+    const reloaded = { ...initialWorkbench, splitRatio: readSplitRatio({ getItem: () => String(value) }) }
+    assert.equal(reloaded.splitRatio, value)
+  }
 })
