@@ -34,8 +34,16 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         get_or_create_planning_state(session)
         for run in session.query(AssistantRun).filter(AssistantRun.status=='running').all():
             run.status='interrupted'; run.phase='interrupted'
+            if run.payload.get('kind') == 'conversation':
+                output = session.get(models.AssistantMessage, run.payload.get('assistant_message_id'))
+                if output:
+                    output.content = {**(output.content or {}), 'status': 'interrupted'}
         session.commit()
-    yield
+    try:
+        yield
+    finally:
+        from .services.conversation_runs import shutdown
+        await shutdown(application.state.db_engine)
 
 
 app = FastAPI(lifespan=lifespan)

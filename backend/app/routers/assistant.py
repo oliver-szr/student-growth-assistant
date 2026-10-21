@@ -490,6 +490,7 @@ async def create_run(id:int,payload:RunRequest,db:Session=Depends(get_db)):
 @router.get('/runs/{id}')
 def get_run(id:int,db:Session=Depends(get_db)):
     run=require(db,AssistantRun,id)
+    if run.payload.get('kind')=='conversation': fail('CONVERSATION_API_REQUIRED','请使用真实会话回复接口。',422)
     if run.status=='running' and _revision(db)!=run.source_revision:
         begin_planning_transaction(db)
         run=require(db,AssistantRun,id)
@@ -503,6 +504,7 @@ def get_run(id:int,db:Session=Depends(get_db)):
 @router.post('/runs/{id}/cancel')
 def cancel_run(id:int,db:Session=Depends(get_db)):
     run=require(db,AssistantRun,id)
+    if run.payload.get('kind')=='conversation': fail('CONVERSATION_API_REQUIRED','请使用真实会话回复接口。',422)
     if run.status=='running':
         run.status='cancelled'; run.phase='cancelled'
         proposal_id=run.payload.get('proposal_id')
@@ -517,6 +519,7 @@ def cancel_run(id:int,db:Session=Depends(get_db)):
 @router.post('/runs/{id}/retry',status_code=202)
 async def retry_run(id:int,db:Session=Depends(get_db)):
     run=require(db,AssistantRun,id)
+    if run.payload.get('kind')=='conversation': fail('CONVERSATION_API_REQUIRED','请使用真实会话回复接口。',422)
     session=require(db,AssistantSession,run.session_id)
     if session.scope=='planning': require_current(session)
     if run.status=='running':return _run_response(run)

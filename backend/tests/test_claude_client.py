@@ -14,6 +14,67 @@ from app.services.claude_client import AIServiceError, ClaudeConfig, get_claude_
 CONFIG = ClaudeConfig("test-only-placeholder-secret", "configured-model", "https://gateway.example/", "2023-06-01")
 
 
+@pytest.mark.parametrize('api_format', ['anthropic','openai'])
+def test_stream_parses_only_final_text_and_requires_a_real_terminal(monkeypatch, api_format):
+    real_client=httpx.AsyncClient
+    config=ClaudeConfig('placeholder','model','https://gateway.example',api_format=api_format)
+    if api_format=='openai':
+        events=[{'choices':[{'delta':{'reasoning_content':'private'}}]},
+            {'choices':[{'delta':{'content':'甲🙂'}}]}, {'choices':[{'delta':{'content':'乙'}}]},
+            {'choices':[{'delta':{},'finish_reason':'stop'}]}]
+        ending='data: [DONE]\n\n'
+    else:
+        events=[{'type':'content_block_delta','delta':{'type':'thinking_delta','thinking':'private'}},
+            {'type':'content_block_delta','delta':{'type':'text_delta','text':'甲🙂'}},
+            {'type':'content_block_delta','delta':{'type':'text_delta','text':'乙'}},
+            {'type':'message_delta','delta':{'stop_reason':'end_turn'}}, {'type':'message_stop'}]
+        ending=''
+    body=''.join('data: '+json.dumps(event,ensure_ascii=False)+'\n\n' for event in events)+ending
+    mock_http(monkeypatch,lambda request:httpx.Response(200,headers={'content-type':'text/event-stream'},text=body))
+    async def collect():return [event async for event in claude_client.stream_claude('history','system',config)]
+    output=asyncio.run(collect())
+    assert output==[{'type':'mode','value':'streaming'},{'type':'delta','text':'甲🙂'},{'type':'delta','text':'乙'}]
+    broken=body.replace(ending,'') if ending else body[:body.rfind('data:')]
+    monkeypatch.setattr(claude_client.httpx,'AsyncClient',lambda **kw:real_client(transport=httpx.MockTransport(lambda r:httpx.Response(200,headers={'content-type':'text/event-stream'},text=broken)),**kw))
+    with pytest.raises(AIServiceError):asyncio.run(collect())
+
+
+def test_stream_rejection_falls_back_honestly_and_does_not_hide_auth_failure(monkeypatch):
+    calls=[]
+    def handler(request):
+        body=json.loads(request.content);calls.append(body)
+        if body.get('stream'):return httpx.Response(422,json={'error':'stream unsupported'})
+        return httpx.Response(200,json={'content':[{'type':'text','text':'完整回复'}],'stop_reason':'end_turn'})
+    mock_http(monkeypatch,handler)
+    async def collect():return [event async for event in claude_client.stream_claude('text','system',CONFIG)]
+    assert asyncio.run(collect())==[{'type':'mode','value':'full'},{'type':'delta','text':'完整回复'}]
+    assert len(calls)==2 and calls[0]['stream'] and 'stream' not in calls[1]
+
+
+def test_stream_200_json_is_full_mode_without_a_second_request(monkeypatch):
+    calls=[]
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200,json={'content':[{'type':'text','text':'整段'}],'stop_reason':'end_turn'})
+    mock_http(monkeypatch,handler)
+    async def collect():return [event async for event in claude_client.stream_claude('text','system',CONFIG)]
+    assert asyncio.run(collect())==[{'type':'mode','value':'full'},{'type':'delta','text':'整段'}]
+    assert len(calls)==1
+
+
+@pytest.mark.parametrize('status',[401,429,500])
+def test_stream_errors_never_expose_secrets_or_automatically_repeat(monkeypatch,status):
+    calls=[]
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(status,text='private-placeholder-secret internal gateway detail')
+    mock_http(monkeypatch,handler)
+    async def collect():return [event async for event in claude_client.stream_claude('text','system',CONFIG)]
+    with pytest.raises(AIServiceError) as captured:asyncio.run(collect())
+    assert captured.value.code=='AI_UNAVAILABLE'
+    assert 'private-placeholder' not in str(captured.value) and len(calls)==1
+
+
 def test_deepseek_official_defaults_to_low_thinking_with_room_for_final_json(monkeypatch):
     monkeypatch.setenv('AI_API_FORMAT','openai')
     monkeypatch.setenv('OPENAI_API_KEY','official-test-placeholder')

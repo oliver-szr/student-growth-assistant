@@ -1,4 +1,4 @@
-"""Persistent conversations and deterministic message storage; no AI execution."""
+"""Persistent conversations, messages and read-only AI replies."""
 from typing import Literal, Annotated
 
 from fastapi import APIRouter, Depends, Query, Path
@@ -6,8 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import AssistantSession, AssistantMessage, utc_now
-from ..assistant_schemas import ConversationCreate, ConversationPatch, ConversationMessageCreate
+from ..models import AssistantSession, AssistantMessage, AssistantRun, utc_now
+from ..assistant_schemas import ConversationCreate, ConversationPatch, ConversationMessageCreate, ConversationRunAttempt
+from ..services import conversation_runs
 from ..services.planning_state import planning_transaction
 from ..services.conversations import error, local_owner, require_conversation, require_idle, summary, message_data, list_conversations
 
@@ -127,3 +128,37 @@ def append(id: ConversationId, payload: ConversationMessageCreate, db: Session =
         db.add(message)
         db.flush()
         return message_data(message)
+
+
+@router.get('/{id}/runs')
+def runs(id: ConversationId, limit: int = Query(default=20, ge=1, le=50), db: Session = Depends(get_db)):
+    require_conversation(db, id)
+    rows = db.scalars(select(AssistantRun).where(AssistantRun.session_id == id).order_by((AssistantRun.status == 'running').desc(), AssistantRun.id.desc()).limit(limit)).all()
+    return {'items': [conversation_runs.run_data(db, r) for r in rows if r.payload.get('kind') == 'conversation']}
+
+
+@router.post('/{id}/runs', status_code=202)
+async def start(id: ConversationId, payload: ConversationMessageCreate, db: Session = Depends(get_db)):
+    result, created = conversation_runs.create_run(db, id, payload)
+    if created:
+        conversation_runs.launch(db, result['id'])
+    return result
+
+
+@router.get('/{id}/runs/{run_id}')
+def run(id: ConversationId, run_id: ConversationId, after: int = Query(default=0, ge=0, le=16000),
+        attempt: int | None = Query(default=None, ge=1), db: Session = Depends(get_db)):
+    return conversation_runs.run_data(db, conversation_runs.require_run(db, id, run_id), after, attempt)
+
+
+@router.post('/{id}/runs/{run_id}/stop')
+def stop_run(id: ConversationId, run_id: ConversationId, payload: ConversationRunAttempt, db: Session = Depends(get_db)):
+    return conversation_runs.stop(db, id, run_id, payload.expected_attempt)
+
+
+@router.post('/{id}/runs/{run_id}/retry', status_code=202)
+async def retry_run(id: ConversationId, run_id: ConversationId, payload: ConversationRunAttempt, db: Session = Depends(get_db)):
+    result, created = conversation_runs.retry(db, id, run_id, payload.expected_attempt)
+    if created:
+        conversation_runs.launch(db, result['id'])
+    return result

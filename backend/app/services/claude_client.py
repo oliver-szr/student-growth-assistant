@@ -5,6 +5,7 @@ No database or planning access.
 """
 
 import asyncio
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -112,31 +113,36 @@ def extract_openai_text(body: object) -> str:
     return message["content"].strip()
 
 
-async def request_claude(text: str, system: str, config: ClaudeConfig, max_tokens: int = 600) -> str:
-    timeout_seconds=_request_timeout()
+def _wire(text, system, config, max_tokens):
     # Accept a gateway origin or its /v1 API base without duplicating the version.
     base_url = config.base_url.rstrip("/").removesuffix("/v1")
+    if config.api_format == "openai":
+        endpoint = f"{base_url}/v1/chat/completions"
+        headers = {"authorization": f"Bearer {config.api_key}", "content-type": "application/json"}
+        payload = {"model": config.model, "max_tokens": max_tokens,
+                   "messages": [{"role": "system", "content": system}, {"role": "user", "content": text}]}
+        if urlsplit(base_url).hostname == "api.deepseek.com":
+            enabled = config.thinking_effort != "none"
+            payload["thinking"] = {"type": "enabled" if enabled else "disabled"}
+            if enabled:
+                payload["reasoning_effort"] = config.thinking_effort or "low"
+                # DeepSeek's output budget also covers reasoning before the final JSON.
+                payload["max_tokens"] = max(max_tokens, 8192)
+        elif config.thinking_effort is not None:
+            payload["reasoning_effort"] = config.thinking_effort
+    else:
+        endpoint = f"{base_url}/v1/messages"
+        headers = {"x-api-key": config.api_key, "anthropic-version": config.api_version,
+                   "content-type": "application/json"}
+        payload = {"model": config.model, "max_tokens": max_tokens, "system": system,
+                   "messages": [{"role": "user", "content": text}]}
+    return endpoint, headers, payload
+
+
+async def request_claude(text: str, system: str, config: ClaudeConfig, max_tokens: int = 600) -> str:
+    timeout_seconds=_request_timeout()
     try:
-        if config.api_format == "openai":
-            endpoint = f"{base_url}/v1/chat/completions"
-            headers = {"authorization": f"Bearer {config.api_key}", "content-type": "application/json"}
-            payload = {"model": config.model, "max_tokens": max_tokens,
-                       "messages": [{"role": "system", "content": system}, {"role": "user", "content": text}]}
-            if urlsplit(base_url).hostname == "api.deepseek.com":
-                enabled = config.thinking_effort != "none"
-                payload["thinking"] = {"type": "enabled" if enabled else "disabled"}
-                if enabled:
-                    payload["reasoning_effort"] = config.thinking_effort or "low"
-                    # DeepSeek's output budget also covers reasoning before the final JSON.
-                    payload["max_tokens"] = max(max_tokens, 8192)
-            elif config.thinking_effort is not None:
-                payload["reasoning_effort"] = config.thinking_effort
-        else:
-            endpoint = f"{base_url}/v1/messages"
-            headers = {"x-api-key": config.api_key, "anthropic-version": config.api_version,
-                       "content-type": "application/json"}
-            payload = {"model": config.model, "max_tokens": max_tokens, "system": system,
-                       "messages": [{"role": "user", "content": text}]}
+        endpoint, headers, payload = _wire(text, system, config, max_tokens)
         # Both per-operation and total request deadlines are bounded.
         async with asyncio.timeout(timeout_seconds):
             async with httpx.AsyncClient(timeout=timeout_seconds) as client:
@@ -158,3 +164,87 @@ async def request_claude(text: str, system: str, config: ClaudeConfig, max_token
     if isinstance(body,dict) and body.get('stop_reason')=='max_tokens':
         raise AIServiceError('AI_RESPONSE_INVALID')
     return extract_text(body)
+
+
+async def stream_claude(text: str, system: str, config: ClaudeConfig, max_tokens: int = 2000):
+    """Only final-answer deltas leave the transport; reasoning never reaches UI.
+
+    A rejecting gateway is retried once without stream. A broken established
+    stream is never silently reissued. Callers persist actual received text.
+    """
+    timeout = _request_timeout()
+    try:
+        endpoint, headers, payload = _wire(text, system, config, max_tokens)
+        payload['stream'] = True
+        fallback = False
+        async with asyncio.timeout(timeout):
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream('POST', endpoint, headers=headers, json=payload) as response:
+                    if response.status_code in (400, 404, 405, 415, 422, 501):
+                        fallback = True
+                    else:
+                        response.raise_for_status()
+                        if 'text/event-stream' not in response.headers.get('content-type', ''):
+                            raw = await response.aread()
+                            if len(raw) > 1024 * 1024:
+                                raise AIServiceError('AI_RESPONSE_INVALID')
+                            body = json.loads(raw)
+                            answer = extract_openai_text(body) if config.api_format == 'openai' else extract_text(body)
+                            if config.api_format != 'openai' and body.get('stop_reason') not in ('end_turn', 'stop_sequence'):
+                                raise AIServiceError('AI_RESPONSE_INVALID')
+                            yield {'type': 'mode', 'value': 'full'}
+                            yield {'type': 'delta', 'text': answer}
+                            return
+                        yield {'type': 'mode', 'value': 'streaming'}
+                        data, size, ended, valid_finish, output = [], 0, False, False, 0
+                        async for line in response.aiter_lines():
+                            size += len(line)
+                            if size > 1024 * 1024:
+                                raise AIServiceError('AI_RESPONSE_INVALID')
+                            if line.startswith('data:'):
+                                data.append(line[5:].lstrip())
+                            if line or not data:
+                                continue
+                            raw, data = '\n'.join(data), []
+                            if raw == '[DONE]':
+                                ended = True
+                                break
+                            event = json.loads(raw)
+                            part = ''
+                            if config.api_format == 'openai':
+                                choices = event.get('choices', [])
+                                if not choices:
+                                    continue  # optional usage event
+                                choice = choices[0]
+                                if choice.get('finish_reason') is not None:
+                                    valid_finish = choice['finish_reason'] == 'stop'
+                                part = choice.get('delta', {}).get('content') or ''
+                            else:
+                                if event.get('type') == 'error':
+                                    raise AIServiceError('AI_UNAVAILABLE')
+                                if event.get('type') == 'content_block_delta' and event.get('delta', {}).get('type') == 'text_delta':
+                                    part = event['delta'].get('text', '')
+                                if event.get('type') == 'message_delta':
+                                    valid_finish = event.get('delta', {}).get('stop_reason') in ('end_turn', 'stop_sequence')
+                                if event.get('type') == 'message_stop':
+                                    ended = True
+                                    break
+                            if not isinstance(part, str):
+                                raise AIServiceError('AI_RESPONSE_INVALID')
+                            output += len(part)
+                            if output > 16000:
+                                raise AIServiceError('AI_RESPONSE_INVALID')
+                            if part:
+                                yield {'type': 'delta', 'text': part}
+                        if not ended or not valid_finish or not output:
+                            raise AIServiceError('AI_RESPONSE_INVALID')
+        if fallback:
+            yield {'type': 'mode', 'value': 'full'}
+            answer = await request_claude(text, system, config, max_tokens)
+            yield {'type': 'delta', 'text': answer}
+    except AIServiceError:
+        raise
+    except (httpx.HTTPError, httpx.InvalidURL, TimeoutError):
+        raise AIServiceError('AI_UNAVAILABLE') from None
+    except (ValueError, TypeError, KeyError, IndexError, RecursionError):
+        raise AIServiceError('AI_RESPONSE_INVALID') from None

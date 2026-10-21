@@ -297,6 +297,22 @@ def _validate_conversations(tables):
         parent = sessions.get(message['session_id'])
         if parent is None or parent['owner_id'] != message['owner_id']:
             raise HTTPException(422, detail='备份中的消息归属与会话不一致')
+    messages = {row['id']: row for row in tables['assistant_messages']}
+    for run in tables['assistant_runs']:
+        payload = run['payload']
+        if not isinstance(payload, dict) or payload.get('kind') != 'conversation':
+            continue
+        if any(type(payload.get(key)) is not int for key in ('user_message_id', 'assistant_message_id', 'attempt')):
+            raise HTTPException(422, detail='备份中的会话回复标识无效')
+        user, output = messages.get(payload.get('user_message_id')), messages.get(payload.get('assistant_message_id'))
+        if (sessions.get(run['session_id'], {}).get('scope') != 'conversation' or
+            not user or not output or user['session_id'] != run['session_id'] or output['session_id'] != run['session_id'] or
+            user['role'] != 'user' or output['role'] != 'assistant' or user['text'] != run['text'] or user['client_message_id'] != run['client_message_id'] or
+            type(payload.get('attempt')) is not int or payload['attempt'] < 1 or
+            not isinstance(payload.get('token'), str) or not payload['token'] or
+            not isinstance(output['content'], dict) or output['content'].get('run_id') != run['id'] or
+            output['content'].get('attempt') != payload['attempt']):
+            raise HTTPException(422, detail='备份中的会话回复关联无效')
 
 
 def _protect_legacy_restore(db):
@@ -339,6 +355,10 @@ def restore_snapshot(db: Session, snapshot: dict) -> int:
             {AssistantRun.status: "interrupted", AssistantRun.phase: "interrupted"},
             synchronize_session=False,
         )
+        for run in db.scalars(select(AssistantRun).where(AssistantRun.status == 'interrupted')):
+            if run.payload.get('kind') == 'conversation':
+                output = db.get(AssistantMessage, run.payload['assistant_message_id'])
+                output.content = {**output.content, 'status': 'interrupted'}
         db.query(GrowthChangeDraft).filter(GrowthChangeDraft.status == "ready").update(
             {GrowthChangeDraft.status: "stale"}, synchronize_session=False
         )

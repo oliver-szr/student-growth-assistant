@@ -204,3 +204,7 @@ class ConversationMessageCreate(StrictModel):
         if not value.strip():
             raise ValueError('消息或请求标识不能为空')
         return value
+
+
+class ConversationRunAttempt(StrictModel):
+    expected_attempt: int = Field(strict=True, ge=1, le=1000000)
