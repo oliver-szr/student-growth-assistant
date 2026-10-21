@@ -1,0 +1,331 @@
+# Student Growth Assistant V2 开发主文档
+
+更新日期：2026-10-21。本文合并阶段0审计、架构建议与关键结构原型，后续V2开发直接更新本文，不再按阶段新增报告。
+产品规则以[《v2产品框架设计》](../v2产品框架设计.md)（2026-10-20版）为准；已完整对照其第1–14节及核心验收清单。产品原文独立保留，本文只记录技术约束、证据和实施边界。
+当前接口与数据库仍以[现行架构](../architecture.md)、[API契约](../api-contract.md)、[数据库说明](../database.md)为准。下文新增API、模型、组件、协议及选型均为建议，不能视为已实现功能。
+本次阶段0.5仅整理文档及明确安全的本地临时产物；不开发1A、不改业务源码、迁移、依赖或正式数据，不自动commit/push/merge/创建PR。
+
+## 1. 目录与维护边界
+
+```text
+student-growth-assistant/
+├── frontend/
+│   ├── src/                 React页面、组件、api.js、样式及纯函数
+│   └── tests/               前端测试与fixtures
+├── backend/
+│   ├── app/                 FastAPI路由、模型、契约与业务服务
+│   ├── alembic/             冻结基线与有效增量迁移
+│   ├── tests/               后端测试与匿名fixtures
+│   └── data/                正式本地数据库（忽略，保护）
+├── scripts/                 迁移、演示、验收及基准工具
+│   ├── .local/              本地验收/历史副本，逐项审计后处理
+│   └── .runtime/            运行状态、数据库与备份，保护
+├── docs/
+│   ├── v2产品框架设计.md    正式产品基线，保留原文
+│   ├── v2/
+│   │   └── v2-architecture-proposal.md  本开发主文档
+│   └── architecture.md、api-contract.md、database.md等现行文档及archive/
+├── .github/workflows/       CI
+└── codex/                   历史本地工具及运行资料，来源不明不删
+```
+
+目录链接/junction不跟随、不递归清理。数据库、备份、密钥、配置、测试源码、fixtures、迁移、锁文件和node_modules不是清理目标。
+源码与文档的当前未提交移动/修改必须保留，不能先清空工作区。Git标签保护代码，不替代数据库备份。
+
+## 2. Git基线与回退证据
+
+以下为2026-10-21首次阶段0审计的引用快照，整理时未重新fetch。阶段0.5开始时实际分支为 `feat/v2-workspace-redesign`，HEAD仍为已知阶段0提交，工作区有文档移动/修订及未跟踪文件，暂存区为空；不能宣称干净。
+
+| 引用 | 完整SHA / 结论 |
+|---|---|
+| 推荐完整开发基线：feat/planning-growth-upgrade | `5f953c91722408b484608e06c69280f9826e0080`；本地分支，无同名远程跟踪引用 |
+| 初始HEAD / release/course-submission / origin同名分支 | `cf8853dd0e08b06405b7b980c96b4e15285b51d1`，精简运行交付 |
+| 本地main / 既有v1标签解引用 | `acded0ae13b523ad16ca99b37cbd846e1081a0c2`；首次fetch后本地main落后远程13个可达提交 |
+| 首次fetch后的origin/main | `16acda6dbde8f1a355139c0aade3a0d9d56f6428`，合并PR #1，文件树与release一致 |
+| release与完整开发共同祖先 | `4d4a60b9a1ed102f043a6ff077c9cbaa84585023` |
+| V2工作分支上的阶段0文档提交 | `b8e57b0d4714a9cb5c83035a44af986d31062d5e`；其父提交为推荐基线 |
+| 本地注释回退标签 | `v1-v2-baseline-2026-10-21` → 推荐基线5f953c9；未推送，既有v1未移动 |
+
+origin为 `https://github.com/szt1107/student-growth-assistant.git`。首次执行status/remote/branch/log/rev-parse/merge-base/ls-tree/diff及安全fetch；fetch先因沙箱无法写FETCH_HEAD失败，获执行权限后成功，无自动合并。
+
+选择5f953c9的依据：
+- 对比完整开发与release的 `backend/app`、`frontend/src`、`backend/alembic`、前端锁文件，差异为空，业务与迁移一致。
+- release相对完整开发有83文件差异、152行新增/8804行删除，主要删测试、fixtures、CI、开发脚本及报告，同时删除npm test入口和pytest依赖声明。
+- 5f953c9在共同祖先后额外增加88行拆解Provider传输/失败隔离测试；不能用README或分支名替代这些文件证据。
+- 完整开发包含确认安全5366e0f、局部重规划0ccc719、任务层级e82e2b3、统计1c5b2cb、性能54684a7、备份6995175、CI e0ac6eb、目标/集成4de28b9等提交，保留团队作者历史。
+- 当时全部可达refs中，开发分支之外只见精简提交及合并，未发现遗漏业务；不覆盖不可见分支或他人未提交工作。
+
+未来与main集成须审查测试/fixtures/CI的精简删除，直接合并可能再次丢资产。回退先保存届时工作，从回退标签另建检查分支；不得reset --hard/clean/强制checkout/擅自stash。新schema回退要匹配旧应用和升级前数据库备份，不能只切Git标签。
+
+## 3. 当前能力与复用矩阵
+
+以下为首次审计源码证据，主路径均相对仓库根目录；本次整理未改这些实现。正式数据默认在 `backend/data/app.db`，`SGA_DATABASE_PATH`可显式覆盖。
+
+| 模块 | 入口、关键实现与存储 | 复用及V2缺口/风险 |
+|---|---|---|
+| 任务与父子层级 | frontend的TasksPage/TaskForm/TaskHierarchy，经api.js调用GET/POST /api/tasks、PATCH /api/tasks/{id}；backend/app/routers/tasks.py、services/task_hierarchy.py；tasks、task_growth_contexts | 复用CRUD/汇总；仅两级、每父最多20项、子DDL≤父DDL。无硬删除，取消不等于DELETE；父容器不直接执行/取消/排程，有计划/执行事实时限制类型转换 |
+| AI/手动拆解 | frontend/src/components/TaskBreakdown.jsx；/api/tasks/breakdown-drafts的创建、查询、PATCH、confirm/discard；services/task_breakdown.py；GrowthChangeDraft(scope=task_breakdown)、AssistantSession/Message | 合法编辑1.2秒自动保存、version/source_revision、幂等整树创建可复用；原始预期保留，顺序非依赖网络；确认创建任务后仍需另行确认日程 |
+| 排程、策略、局部重规划 | AssistantPage、ScopedChanges、assistant.js；routers/assistant.py的preview/confirm；services/assistant_state.py、assistant_scheduler.py、scoped_replanning.py；assistant_proposals、plans/items、task_scheduling_profiles | 本周剩余+下周、5分钟网格、三策略、有限分段、独立校验、局部范围和两周原子保存可复用；扩大范围须显式同意，锁定/已开始/历史不被移动 |
+| 旧单周兼容 | api.js的createCandidatePlan/getConfirmedPlan/confirmPlan；routers/plans.py、services/scheduler.py、validator.py、plan_safety.py；plans/items | 保留兼容/历史按周读；重复confirm返回409 PLAN_NOT_CANDIDATE，与Assistant重复applied幂等成功不同，不能统一假设所有确认同语义 |
+| 课程、保护时间、偏好 | TimeRulesPage、NaturalLanguageTimeRule、TimeRuleForm；/api/time-rules、/api/constraints/parse、taxonomy相关接口；services/course_import.py、taxonomy.py；time_rules、course_imports、preference_rules/categories | 复用CRUD/停用/周期展开/偏好编译。规则保存不自动修复正式日程；旧AI parser只支持周期课程，结构化可有单次课程；无学期/节假日字段，全年展示须说明依据 |
+| 执行反馈与计时 | TasksPage submitFeedback/timerAction；routers/execution.py、services/growth_tracking.py；task_feedback、task_work_sessions、tasks/context | 复用幂等反馈、暂停继续、更正/撤回及快照。计时结束/日历过去不自动完成，计时不叠加反馈耗时；直接done可能只有未知耗时事实 |
+| 统计、目标、旧周复盘 | GoalsGrowthPage、GrowthAnalytics；/api/growth/statistics?weeks=4/8/12及end_week、/api/growth/reviews、/api/goals；growth_statistics、growth_tracking、routers/growth_reviews.py | 复用有效反馈/去重/目标汇总、只读统计与周快照；4周不是自然月，旧周复盘生成即保存，无用户认可结论的正式记录流程。现前端反馈确认后会自动生成周说明，须与新记录流程拆开 |
+| 聊天与运行 | AssistantPage、WorkspaceChat、ChatMessages、SafeMessage；routers/assistant.py create/open session、create/get/cancel/retry run；assistant_sessions/messages/runs/proposals、growth_change_drafts | 消息/运行持久化、失败输入和确认边界可复用；无完整会话列表/重命名/搜索片段/置顶归档删除/分页/小结，缺统一自由聊与回复文本增量 |
+| 档案与记忆 | MyProfilePage、TimeRulesPage；/api/profile/context、growth/profile、goals、task-categories、assistant/preference-rules；growth_user_profiles/revisions、goals/revisions、偏好与时间规则 | 表单/来源/历史可复用；ai_note只是偏好说明，不是带来源、确认、失效与删除管理的通用长期记忆 |
+| 导出恢复与迁移 | MyProfilePage export/import；routers/data.py、services/growth_data.py build_snapshot/restore_snapshot/create_sqlite_backup、schema_migrations.py；backend/alembic | JSON v2严格26业务表，冻结v1转换、事务恢复、在线备份可复用；新表/列需同步升级JSON格式/转换器/fixtures，不能只加Alembic |
+
+现有会话的具体限制：planning按周，localStorage使用workspace_id+本周；旧会话GET可读，但require_current限制旧规划继续运行。review按周，profile用1970-01-05哨兵周，拆解有专用scope；不能只改scope名称实现独立长期聊天。profile/review上下文最多带最近8消息/20反馈，消息缺created_at和通用多业务引用，GET消息一次全取。
+异步worker在进程内，重启把running标interrupted，不是持久任务队列；GET run还可能因revision变化标失败。前端规划轮询700ms/270秒，WorkspaceChat轮询800ms无总期限，切页卸载/迟到响应须测试。
+api.js默认15秒，显式AI125秒、导出恢复60秒；Provider支持Anthropic Messages/OpenAI Chat Completions，超时1–120秒且脱敏，无通用流式协议。单策略20秒/50,000扩展/64状态不保证整个HTTP硬超时；15秒与多策略预算差异是静态风险，未证明发生用户环境故障。
+
+## 4. 总体架构与数据流
+
+保留React/Vite/JavaScript、FastAPI、SQLAlchemy/SQLite、Alembic和Provider。routers负责HTTP，services负责业务，models/schemas负责持久化/契约；现有assistant路由仍有编排，不为整理大规模搬代码。
+
+```mermaid
+flowchart LR
+  N[导航 / 会话列表] --> U[壳级UI状态]
+  C[唯一主聊天] --> A[消息与业务适配层]
+  W[固定三页签工作区] --> A
+  A --> R[统一只读服务端缓存]
+  A --> API[FastAPI白名单工具/路由]
+  API --> P[Provider理解 / 程序查询计算]
+  P --> D[持久草案 / 事实快照]
+  D --> Q[用户确认 + 版本/当前约束复验]
+  Q --> S[原服务 / Validator / 事务]
+  S --> DB[(正式SQLite数据)]
+  DB --> R
+```
+
+聊天是交流和引用，Task/Plan/Feedback/Goal等是正式事实源。AI可查询、解释、提草案，不能直接SQL、写PlanItem、确认操作或扩大调整授权。手动正式表单“保存”本身是明确提交，不额外层层确认。
+正式写入复用BEGIN IMMEDIATE、source_revision和Validator；Provider等待释放事务，部分同步排程路径仍持写事务。UTCDateTime保存UTC，业务日期/钟面为Asia/Shanghai，5分钟粒度不静默取整。
+启动main.lifespan会备份、升级、初始化与中断旧run；审计/演示不得指向个人库。正常启动不导入Mock工具。
+
+## 5. 关键结构原型与交互
+
+以下均为目标结构，数据为示意。颜色、像素、断点、动效、登录方式/部署商未冻结；引用Notion Calendar时间网格与滴答清单侧栏原则，不复制品牌资产/源码。
+
+### 5.1 默认首页与四区
+
+```text
+┌──────┬──────────────┬──────────────────────┬────────────────────────┐
+│ 导航 │ 会话 [收起]  │ 本次对话 [改名]       │ [日程●][复盘][档案]    │
+│ 首页●│ ＋新对话     │                      │ 今日 [收起][展开]      │
+│ 日程 │ 搜索标题/正文│ 你：看看今天怎么推进。 │ ‹ 日期 › [回到今天]   │
+│ 复盘 │ 置顶 / 最近  │ 助手：简短结果…       │ 09:00 课程             │
+│ 档案 │ 当前对话     │ [查看任务/草案]       │ 14:00 正式任务         │
+│      │ 其他对话     │                      │ 待确认调整 / 任务执行  │
+│ 账号 │ 已归档       │ [输入消息____][发送]  │                        │
+│ 预留 │              │ [停止/失败重试]       │                        │
+└──────┴──────────────┴──────────────────────┴────────────────────────┘
+```
+
+首次首页聊天为主、右侧今日，无复杂看板；之后聚焦聊天并恢复工作区，显式“回到今天”才重定位。账号区先留空。
+导航、顶部页签、聊天卡片打开同一套工作区，每类一页；详情/草案依附日程或相应页，不无限加页签。导航不创建会话、不清输入、不自动确认。
+用户点击或明确说“查看日程/复盘”就直接打开并简述；AI只认为可能有用时给“打开查看”入口。编辑中顺带提别话题不跳页；明确跳页也保留原编辑。
+
+### 5.2 展开日历与收起状态
+
+```text
+┌──────┬──────────────┬────────────────────────────────────────┐
+│ 导航 │ 窄聊天/返回  │ [日程●][复盘][档案] [普通][收起]      │
+│ 日程●│ 当前会话     │ [天][周●][月][年] ‹ 周范围 › [今天]  │
+│      │ 回复/草案入口│ 时间 │一│二│三│四│五│六│日          │
+│      │              │ 09   │课程│ │课程│ │ │ │           │
+│      │              │ 14   │ │任务│ ┄候选┄ │ │           │
+│      │ [输入/发送]  │ 正式/候选图例；事件点击打开详情抽屉    │
+└──────┴──────────────┴────────────────────────────────────────┘
+会话展开：[导航][列表][聊天][工作区]
+列表收起：[导航][›会话][聊天][工作区]
+工作区收起：[导航][列表/入口][主聊天占主要空间][‹工作区]
+```
+
+展开给周列主要空间，可暂收会话列表；退出恢复原偏好、会话、日期和编辑。两个收起状态独立；隐藏区不接受Tab焦点。窄窗口可用“返回聊天”，不强塞四列最小宽度。
+事件详情复用编辑/执行/生成调整入口，正式、候选、课程有文字及样式区分；父容器不占日历，未安排任务在列表。多段是多个事件但一项任务；计时结束不代表完成。
+日/周显示时间轴、空闲与冲突；月显示任务概览、真实截止/重要事项；年为12月概览及真实重要阶段/长期节点。年点月、月点日，切视图围绕selectedDate，“回到今天”定位所在日/周/月/年。浏览范围不扩大两周排程，无数据不造节点，加载失败不显示成空数据。
+
+### 5.3 会话与主聊天
+
+列表固定置顶/最近/归档/搜索，无复杂文件夹；跨多天，用户决定新建。形成话题生成短标题、允许改名，手动标题不被覆盖；最近按活动排序。搜索标题与正文，返回片段及匹配原消息；归档可搜索/恢复。
+删除说明不连带删正式任务/日程/反馈或独立记忆，运行/未决草案单独处理；具体保留期/最终销毁待定。阶段3按需会话小结附原消息跳转，不自动成为记忆或复盘。
+主聊天不让用户选规划/复盘/档案模式；先结果、依据按需展开。回复文本逐步显示，同时标理解/查询/计算，只有阶段轮询不算文本增量。停止/失败保留输入，重试不换幂等ID；已保存操作仍显示真实receipt。
+后续语音先“转文字→用户检查修改→发送”，不自动发送，连续语音/播报不列首轮验收。
+
+### 5.4 复盘与档案
+
+```text
+[日程] [复盘●] [档案]                  [展开/收起]
+[回顾●] [复盘记录]
+[日] [周●] [月] ‹ 范围 › [回到当前]       默认本周
+已记录完成 [查看]  已记录投入 [查看]  待反馈安排 [补录]
+时间分布 [按天/按类别] → 点击同范围来源事项
+事项 [全部/已完成/部分完成/待反馈] [查看全部]
+目标进展（有关联目标和记录才显示）
+[和AI复盘] [自己写几句]；详细比较按需展开
+
+复盘记录：[搜索标题/正文] [日/周/月] [时间范围]
+标题｜时间｜短摘要｜下一步 → 全文/编辑/关联任务与依据/返回聊天
+待保存草案另设入口；旧周说明标“历史生成”，不标用户已确认
+
+档案：[目标｜时间与课程｜偏好｜记忆｜数据管理]
+只显示所选分区；复用已有表单，不强迫首次填完
+```
+
+回顾先读事实不依赖AI；待反馈≠未完成≠缺耗时，未知不当零。完成、投入和安排分别按完成时间、发生时间、原安排时间，数字/图表可查来源且同范围；不重复计父子，不虚构历史完成率，不做效率评分/排名/人格或复杂情绪标签。
+“和AI复盘”带所选范围/必要记录进入同一主聊天，保留右侧；先事实再讨论具体问题。聊天主动点“整理为复盘记录”才给可编辑预览并确认；“自己写几句”无需AI/问卷，直接保存即提交。编辑字段包括标题/范围、回顾摘要、我的结论、下一步（可空）和关联来源；感受可原样保留。
+保存复盘保留当时快照/来源，不随数据变化暗改，编辑/再整理有版本及变更提示；应用任务/排程/档案调整是另一草案和确认，优先更新已有任务并回链结果。空白可补反馈或自由聊。
+档案区分当次聊天、正式事实、确认记忆；“今天很累”不自动成长期标签，长期偏好提议确认后生效。个人信息可查依据/修改；ai_note不能冒充通用记忆。数据管理说明导出/恢复影响与保护范围。
+
+### 5.5 手机与恢复规则
+
+```text
+[会话] 当前对话 [工作区]
+消息 / 业务卡片 / 新回复提示
+[输入][发送]；运行中可停止，失败可重试
+[首页][日程][复盘][档案]
+会话 → 全高列表；工作区 → 全屏工具/详情；返回对话恢复位置
+```
+
+手机切换列表/聊天/工作区，不挤四列；软键盘不遮保存/发送，返回关闭当前层再回来源，保留编辑。1A/1B保证基本可用，3完善触摸/无障碍等实测。
+切会话保留各自输入/草案，迟到响应只写所属会话；只停止观察，不默默取消后端。新回复沿用ChatMessages的“有新回复”，不强拉历史阅读者到底部。
+切页/收起/刷新恢复日期、视图、输入与编辑；本地缓存按workspace/资源/baseVersion分区，恢复先读服务器版本。存储失败需提示，未提交编辑不承诺跨设备恢复；服务器已保存草案才可继续。恢复数据库/切身份使正式缓存失效并隔离旧编辑，不能向新资料应用旧草案。
+
+## 6. 前端状态与复用设计
+
+| 状态 | 唯一归属 / 更新规则 |
+|---|---|
+| 当前会话、工具页、工作区三态 | 顶层UI状态，导航与会话选择独立；持久ID先经服务端验证 |
+| 日期/日历视图/滚动与二级分区 | 顶层可控状态，展开只改空间 |
+| 未提交编辑 | 按实体/ID/归属/baseVersion的编辑缓冲，dirty/error保留 |
+| 业务草案 | 服务端资源单一缓存，UI持type/id/version/status/source_revision引用 |
+| 正式业务数据 | 服务端事实；本地只读缓存，成功receipt触发相关查询失效，不多组件各改数组 |
+| 消息关联与run | 历史摘要+当前资源权限，按conversation/run隔离，generation token防迟到覆盖 |
+
+1A先用现有App的React state/reducer及回调，复用workbench.js纯函数；不默认建features/state/workspace目录。需要跨层共享再引入最小Context，状态库不是前提。后续若评估TanStack Query，必须成为唯一server cache，不能再保留另一份可变正式store；URL不放私人输入/密钥。
+
+双向草案：聊天与面板引用同draft → 手动dirty编辑协调 → 带expected_version保存 → 两边更新同缓存 → 用户确认 → 后端当前约束复验 → receipt刷新正式数据。
+AI继续操作该草案前，先保存有效手动编辑并等版本，或走明确临时预览契约；无效编辑保留并要求修正，不能用旧服务器草案覆盖。普通闲聊不强制保存。
+409保留本地对照/重建，确认先等保存结束；网络超时先按原ID查结果，不乐观宣布成功、不换ID重发。source_revision防正式数据变化，draft version防草案自身并发，不能替代彼此。
+
+## 7. 技术选型与依据
+
+| 方案 | 能力、成本与决定 |
+|---|---|
+| FullCalendar React标准插件 | React19/Vite适配；timeGridDay/Week、dayGridMonth、multiMonthYear，interaction支持点击选择和后续拖拽；首次适配中等、四视图维护较省。标准插件MIT，个人纵向时间网格不需资源Timeline。优先推荐，1B过渡周日历，2B独立接入 |
+| React Big Calendar | React19 peer、MIT，日周月/agenda、localizer和拖拽addon；无内置year，需自定义年视图和时区验证，作为备选 |
+| 扩展旧Calendar | 当前React/Vite已用、短期周视图改动最少；固定08–22、绝对定位，补日/月/年、重叠/触摸/键盘成本高。只作过渡，不能以周视图替代最终四视图 |
+| 复用聊天组件 | ChatMessages、SafeMessage及现有composer/run控制优先；保留中文错误、历史跟随、受控确认；需统一重复轮询、会话/卡片/消息增量，并非换布局即有自由聊 |
+| assistant-ui / 开源聊天UI借鉴 | ExternalStoreRuntime可桥接自有后端/store，React18/19、MIT；仍需202轮询/增量、会话和草案适配，增加依赖/样式成本。后续实证收益再引入，不要求Next.js/换FastAPI，不复制未核授权源码 |
+
+首次审计于2026-10-21核官方源码/npm元数据；文档站403后改核上游，不表示本次重查或本机集成通过：
+- FullCalendar React 6.1.21 [peer/许可证](https://github.com/fullcalendar/fullcalendar-react/blob/v6.1.21/package.json)、[标准MIT](https://github.com/fullcalendar/fullcalendar/blob/v6.1.21/LICENSE.md)、[年视图源码](https://github.com/fullcalendar/fullcalendar/blob/v6.1.21/packages/multimonth/src/index.ts)、[multimonth发布许可](https://registry.npmjs.org/@fullcalendar/multimonth/6.1.21)已核。
+- resource-timeline当次6.1.22发布包LICENSE列Commercial付费、CC BY-NC-ND 4.0、GPLv3三选一，[发布元数据](https://registry.npmjs.org/@fullcalendar/resource-timeline/6.1.22)不是MIT；未承诺课程自动免费或价格，当前仓库无GPL声明，选定方案不依赖Premium。
+- React Big Calendar当次仓库1.20.0：[package](https://github.com/jquense/react-big-calendar/blob/master/package.json)、[MIT](https://github.com/jquense/react-big-calendar/blob/master/LICENSE)、[内置视图](https://github.com/jquense/react-big-calendar/blob/master/src/Calendar.js)。
+- assistant-ui React当次0.15.30：[package](https://github.com/assistant-ui/assistant-ui/blob/main/packages/react/package.json)、[MIT](https://github.com/assistant-ui/assistant-ui/blob/main/LICENSE)、[ExternalStoreRuntime](https://github.com/assistant-ui/assistant-ui/blob/main/apps/docs/content/docs/runtimes/custom/external-store.mdx)。开源UI不等于云服务免费。
+
+后续安装锁定兼容精确版本并核实际发布包/转依赖，测试Vite、上海时区/浏览器不同时区、短块重叠/跨日/多段、键盘触摸。named timezone须使用受支持适配器或明确转换策略，不能误用UTC coercion。
+CalendarAdapter纯转换ref/plan_item_id/occurrence/draft_version/segment为稳定event键及extendedProps；候选用独立overlay。复用visibleSchedule的保留/移动语义，课程live occurrence与历史PlanItem快照明确来源并去重。截止/目标日期独立kind，不伪造安排分钟。
+初期editable=false；后续拖拽先还原视觉位置并生成有源版本草案，再确认，不能直接写PlanItem。课程移动与任务重规划分开。
+
+## 8. 后端与数据演进（仅设计）
+
+### 8.1 会话、消息、增量与工具
+
+1B优先扩展AssistantSession/Message而非另存复制正文。建议title/updated_at/pinned_at/archived_at/删除状态、created_at/schema_version、归属及索引；聊天不绑定week_start，规划周放tool context。旧scope/哨兵周只作兼容，历史确认继续require_current，不编造旧消息发生时间。
+列表/消息稳定分页；搜索后端按owner/归档过滤标题和正文并返回片段/原消息，不把全库交前端搜索。重命名保护手动标题；删除不级联正式事实，未决运行/草案和保留期另定。会话小结保留source_message_ids，不自动变为记忆。
+复用AssistantProposal/GrowthChangeDraft，统一只读envelope(type/id/version/status/source_revision/origin_message_id)和消息业务引用；多态引用必须校验存在、类型、归属。profile/review preview目前缺编辑version，需补；planning latest链、拆解version/created_task_ids与旧confirm差异保留。
+统一useAssistantRun并设计可恢复text delta/sequence/terminal/receipt；SSE或游标增量轮询待比较，不默认WebSocket。断线续读去重、停止不掩盖已保存结果，不转发密钥/原始推理/未校验工具。消息分纯reply/查询/needs_input/draft/receipt/导航，空闲交流不产生业务。
+导航只接受白名单page/date/period/resourceRef及用户明确请求标记；AI建议仅给入口。工具调用按需取事实和已确认相关记忆，避免全历史外发。
+
+| 建议接口 | 范围及阶段 |
+|---|---|
+| /api/conversations列表/创建、/{id}修改/删除、messages分页 | 1B会话管理、标题/正文片段搜索、置顶归档恢复；保留旧sessions兼容 |
+| conversations/{id}/runs及run增量events | 1B自由回复/停止重试，2A完整查询/业务白名单工具 |
+| conversations/{id}/summaries | 3按需小结与原消息引用 |
+| GET /api/calendar/events?start&end | 2B有界正式安排、当前周期课程、独立deadline/goal节点，end不含，不写数据或生成计划 |
+| GET /api/reviews/facts及来源明细 | 2B自然日/周/月范围、as_of/口径、按天/类别和状态筛选/下钻 |
+| /api/review-drafts创建/编辑/confirm；review-records列表/创建/详情/版本编辑 | 2B AI草案确认与手写直接保存共用服务；记录搜索/周期筛选/关联与版本 |
+
+范围读取用区间相交(start_at < end且end_at > start)，非只按week_start；限制跨度/条数，年可分月/季度加载。当前周期规则逐周有界展开，无学期/假期信息明确说明。Task.deadline、Goal.due_date等节点读真实记录，额外重要事件/里程碑模型另评估，不造数据。
+统计抽共享范围聚合复用growth_tracking有效反馈/完成去重，不能复制另一套口径。待反馈按原安排与有效反馈关联定义，先明确多段/部分反馈覆盖规则，不能用todo或actual_minutes空代替。所有下钻共用范围/as_of；回顾GET不需AI、不写复盘。
+
+### 8.2 复盘记录、记忆与兼容
+
+ReviewRecord可评估扩展GrowthWeeklyReview或新表：title/period/start/end/timezone、summary、user_conclusion、next_actions可空、facts_snapshot/schema_version/as_of、task/goal/source refs、conversation/message、version/confirmed_at/owner。手写无需会话/AI，事实不足不造依据；AI整理草案确认后共用保存服务。
+旧GrowthWeeklyReview没有用户确认证据，标legacy_generated，不能补造confirmed_at。正式记录按时间/搜索/周期筛选，编辑expected_version并留历史；再整理提示基础事实变化，旧快照不暗改。保存记录和应用行动独立，更新原任务避免重复并回链receipt；产品场景A不自动意味着拆解与排程必须合为新大事务。
+目标/偏好/课程继续在原表。后续MemoryEntry区分草案/确认、来源、版本、适用范围、失效/删除；只检索已确认未失效信息。先可管理列表/确定性筛选，再按证据评估向量检索，删聊天与删记忆范围分别说明。
+
+1A开始设计owner/workspace，1B首批新增模型/索引/查询预留本地owner映射；4实现身份与全部权限。当前PlanningState、GrowthUserProfile、AssistantPreference、WorkspaceMetadata等单例和唯一计时/每周正式计划索引都需按owner演进，不能只加user_id就宣称隔离。服务端解析身份，不能信请求体owner，禁止跨用户父子/目标/草案引用。
+新增结构用新Alembic revision，不改0001/0002及冻结baseline_models；SQLite重建、FK/索引、空库/旧库/重复升级/未知结构拒绝和备份均须测。JSON严格全表/列，扩展必须新格式及显式v1/v2转换，冻结旧v2契约和匿名fixtures，不能旧JSON恢复清空新表。恢复整事务，提高revision、旧草案stale、running interrupted，刷新/隔离UI缓存；重要备份独立于5份轮换。
+主要业务本地保存不等于数据不离机：外部模型会收到必要上下文，密钥只在服务端，个人信息可查依据与修改。4设计用户级导出/删除/恢复，当前整库恢复不能用于多用户自助。5验脱敏日志、费用承担/额度、灾备和试用，服务型数据库依实际并发决定。
+
+## 9. 首次阶段0验证与风险基线
+
+以下是首次实际运行证据，本次目录整理仅做静态检查，不重跑或冒充新结果：
+| 验证 | 结果与边界 |
+|---|---|
+| 环境/依赖 | app_env Python3.11.16，Node24.13.0/npm11.6.2；pip check通过；CI为Python3.11/Node22，本机通过不等于本次跑了远程CI |
+| 前端npm.cmd --prefix frontend test | 89通过/0失败/0跳过；原SVG title复合children有React警告 |
+| 前端npm.cmd --prefix frontend run build | 通过，Vite7.3.6、59 modules；JS344.12kB/CSS60.87kB，非加载性能/真实浏览器验收 |
+| 后端pytest | 首轮普通沙箱长期无输出后仅中断自建进程，不能记通过；隔离重试689通过/0失败/0跳过，208.18秒，1条Starlette TestClient/httpx弃用警告 |
+| 迁移/恢复/无Key核心链 | 包含在689项内，不重复计数：test_revision_migrations_dashboard、test_task_breakdown、test_growth_data、test_growth_migrations、test_engineering_quality；覆盖新/旧库、重复、未知结构拒绝、v1/v2与失败回滚、Mock拆解→排程→反馈→统计 |
+| 迁移CLI | 新空库连续2次scripts/migrate.py成功；head=0002_task_hierarchy、26业务表、integrity_check=ok、tasks=0 |
+| 文档/CI静态 | 首版scripts/check_repository.py和git diff --check通过；整理后的静态结果以本轮最终汇报为准 |
+| 未执行 | 真实付费AI、100任务压力、实际浏览器/移动触摸/全浏览器/多人并发与生产部署；不以自动测试替代 |
+
+后端实际命令为app_env解释器在backend目录运行 `-u -m pytest -q -p no:cacheprovider --basetemp=<本轮新隔离目录>/pytest`；当时目录是 `scripts/.local/v2-stage0-1792551943727-retry`，全局SGA_DATABASE_PATH指其bootstrap.db、SGA_BACKUP_DIR指其backups，SGA_AUTO_BACKUP=0、SGA_SKIP_IMPORT_BACKUP=1、PYTHONUTF8=1。conftest按项新建UUID库、覆写get_db/engine、禁.env/真实key及Mock传输，无付费调用/个人库启动。
+CLI只对上述隔离目录中新migration-cli-20261021.db运行；没有正式库迁移。首次及阶段0.5开始时app.db SHA256均为 `0DB97D1D9760B66C414F9E17C8C0369ECFC1D6DDDD0050972E18D68F3FC439CB`；哈希核对不是已替用户备份。7个轻量排程指纹回归不是10/30/100任务延迟实测。
+
+| 关键风险 | 进入相关阶段前的约束 |
+|---|---|
+| 精简main再次删回归资产 | 集成前审核测试/fixtures/CI；不自动合并分叉 |
+| scope/周耦合及多处可变事实 | 独立聊天+内部旧API适配；单一事实缓存、按会话请求隔离 |
+| 草案版本/dirty和确认契约不同 | 同draft引用、版本协调、原ID查询结果、独立Validator与原事务 |
+| 年浏览/回顾范围和事实混淆 | 有界范围API、真实节点、上海边界、来源下钻、零与未知分开 |
+| schema/JSON/单例/权限 | 新迁移与格式转换一起设计；早期预留归属，4权限通过后5部署 |
+
+## 10. 产品阶段与验收边界
+
+| 阶段 | 交付与验收 |
+|---|---|
+| 1 新工作台 | 1A四区/固定三页签/状态与归属设计；1B真实会话管理、无模式主聊天、逐步回复和既有能力接入，能聊天切工具不丢进度；空壳不算1完成 |
+| 2 AI办事 | 2A白名单工具/导航、双端最新草案、确认/receipt；2B四视图/范围查询、日周月回顾与手写/AI复盘记录，完整跑A聊天到日程、C复盘到调整 |
+| 3 秘书体验 | 按需上下文、小结、可管理记忆、异常恢复与手机完善；场景B自由交流不自动生成业务；基本输入/幂等恢复早期已有要求 |
+| 4 账号与隔离 | 登录/退出/必要账号恢复、单例/全查询/worker权限、用户级导出删除恢复，互不可见不可改 |
+| 5 小范围部署 | 公开上线前隔离/可靠性通过；服务、灾备、脱敏日志、费用额度与试用；主体开发可先验证环境，不预设供应商或数据库迁移 |
+| 后续扩展 | 语音转文字供检查发送；主动提醒/外部集成按试用安排，连续语音/播报非首轮 |
+
+基础可靠性不能全部推迟3：失败保留输入、取消/已保存结果、网络重试幂等、切页刷新恢复、stale复验和窄屏基本可用从1开始。任何阶段目标尚未实现都须明确标注，不用占位图通过验收。
+
+## 11. 阶段1A：基于现有文件的轻量实施建议
+
+这里只制定计划；审核通过后再开发。先核实际分支、未提交工作与测试资产，不为方便开发清空当前文档变动。
+
+| 当前文件 | 优先复用/调整方向 | 边界 |
+|---|---|---|
+| frontend/src/App.jsx | 现有tab、版本刷新、requestAdjustment与页面编排；承接主导航、固定工具页、布局三态与可控日期/输入状态 | 现条件挂载会卸载页面，须提升/保留编辑，不把所有请求/表单逻辑塞进App |
+| frontend/src/styles.css | 在现有容器/导航基础增带作用域的四区网格、收起/展开、移动单视面样式 | 旧模式保持可回退；不引新UI库，不依赖改后端 |
+| frontend/src/components/WorkbenchLayout.jsx | 现双列布局、view/onViewChange、窄屏聊天/结果开关及尺寸测量；优先兼容扩展可选导航/列表/工作区slots与布局模式 | 布局组件只管结构，保留旧chat/children/resultLabel调用；不承接Provider/业务确认；若兼容分支变复杂再拆独立薄壳 |
+| frontend/src/components/WorkspaceChat.jsx | 原消息/输入/run/draft能力保留；识别可控props及正文/聊天分离边界，继续复用ChatMessages/SafeMessage | 1A不重写异步业务，不重复挂两个发送器；旧scope仅内部兼容，不变用户模式选择 |
+| frontend/src/components/ChatMessages.jsx | 继续复用历史滚动、“有新回复”和可访问状态 | 不为四区布局重写消息系统/Provider，增量聊天属1B |
+| frontend/src/pages/ | 原Assistant/Tasks/GoalsGrowth/MyProfile/TimeRules按适配逐步复用；1A先壳/可控状态与正文接入边界 | 避免四区里再嵌旧双列聊天，不能卸载丢表单；完整接入在1B |
+
+默认不新建整套features/state/workspace目录。state/reducer先放App，纯布局转换用现有workbench.js；仅当独立职责降低复杂度时，允许在现有components下新增少量如ConversationSidebar或薄WorkspacePanel，逐项说明原因，不预生成空文件。跨层状态确实复杂再考虑一个hook/Context，避免为少文件制造超大App/WorkbenchLayout。
+1A步骤：先四区/三页签/账号预留和开发回退开关 → 保留会话/日期/输入/编辑与焦点 → 明确导航意图规则 → 设计本地workspace到未来owner、首批模型/索引/JSON兼容（只设计） → 用匿名环境验证旧入口。会话操作未接入时明确禁用，不假装真实列表。
+1A验收：1440/1280桌面、约390手机为建议验证尺寸；首次今日/聊天主体、展开周列可读、重复工具不增页签/会话；导航/收起/刷新保留编辑、旧版本不覆盖、隐藏区不获焦点；既有回归/构建及必要布局行为测试通过。现node --test多为纯函数/SSR/源码契约，不能冒充真实DOM行为。
+1A不改后端数据库、排程、业务API；不默认安装日历/聊天/状态库。独立布局提交+旧入口开关可回退，无schema变化就不需数据库恢复；1A不能单独算完整阶段1。
+
+## 12. 阶段1B与后续开发前提
+
+1B允许必要后端演进，不以“后端完全不改”推迟产品必需会话能力：
+1. 先冻结Conversation/Message、run增量与owner契约、Alembic及JSON新版本/旧v2转换，匿名空库/旧库/恢复/失败回滚验证后接API；不改冻结迁移。
+2. 真正实现跨天会话、新建、自动标题/改名、活动排序、标题正文片段搜索、置顶/归档恢复/删除；处理未决run/draft和独立业务/记忆范围。
+3. 接单一自由聊天、回复增量/阶段状态/停止重试/receipt，无用户选模式；无Key如实提示且手动业务可用，复杂工具在2A完善。
+4. api.js及原assistant服务最小扩展，统一useAssistantRun/查询失效；提取AssistantPage日历/策略/ScopedChanges，复用TaskForm/Hierarchy/Breakdown/执行；分离Review/Profile正文与旧WorkspaceChat，保留旧包装回退。
+5. 旧周日历过渡，四视图/范围/回顾记录独立到2B，小结/记忆/全面手机验收在3。首批新增模型预留owner，不提前实现完整账号。
+
+1B整体验收：真实会话/无模式跨天自由聊/回复增量、搜索恢复和删除范围、各入口同工作区、切页刷新不丢；匿名Mock目标→拆解审核→父子确认→局部排程/冲突→采用→反馈→统计/目标刷新可用；未确认不改正式事实。历史回归加新行为测试、旧API/JSON兼容均通过，89/689仅是旧基线数量，不预定后续通过数。
+必要测试：跨周续聊与旧确认限制并存、手动标题保护、搜索片段/归档恢复/删除、增量断线去重/取消receipt、迟到响应、无Key输入、draft双端编辑/无效dirty/409、重复确认响应丢失、新旧JSON与归属、上海午夜/分段去重；2A补完整工具和dirty协调。浏览器用新匿名库，业务测试Mock AI，不以真实付费API换通过。
+回退按模型/转换、API、聊天及各业务适配独立提交，涉及schema先独立备份/恢复演练，旧应用读兼容须证明。阶段2前固定范围/事实与草案版本契约，4前完成全链路权限设计，5前完成隔离/灾备/额度验收。
+
+本主文档已保留阶段0关键证据、技术决策、原型及1–5阶段边界；未来更新本文即可。阶段0.5结束后停止，等待审核，不自动开始1A。
