@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import sqlite3
 from typing import Any
-from uuid import uuid4
+from uuid import uuid4, uuid5, NAMESPACE_URL
 
 from fastapi import HTTPException
 from sqlalchemy import Boolean, Date, DateTime, Enum as SqlEnum, Integer, JSON, MetaData, String, Table, Time, delete, select, text
@@ -16,11 +16,11 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from ..database import UTCDateTime
-from ..models import AssistantProposal, AssistantRun, Base, GrowthChangeDraft, PlanningState, utc_now
+from ..models import AssistantProposal, AssistantRun, AssistantSession, AssistantMessage, Base, GrowthChangeDraft, PlanningState, utc_now
 from .planning_state import begin_planning_transaction, get_or_create_planning_state
 
 
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 MAX_SNAPSHOT_BYTES = 25 * 1024 * 1024
 RETAIN_BACKUPS = 5
 
@@ -171,9 +171,45 @@ def _convert_legacy_v1(snapshot):
         if not isinstance(tables[name], list) or any(not isinstance(row, dict) or set(row) != set(table.columns.keys()) for row in tables[name]):
             raise HTTPException(422, detail=f"旧v1备份数据表 {name} 的字段不匹配")
     converted = deepcopy(snapshot)
-    converted["format_version"] = FORMAT_VERSION
+    converted["format_version"] = 2
     for row in converted["tables"]["tasks"]:
         row.update(parent_task_id=None, task_kind="executable", sort_order=0)
+    return converted
+
+
+def _convert_legacy_v2(snapshot):
+    """v2 is frozen v1 plus the three 0002 task columns, not current metadata."""
+    from copy import deepcopy
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('sga_backup_v2_base', Path(__file__).resolve().parents[2] / 'alembic' / 'baseline_models.py')
+    baseline = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(baseline)
+    tables = snapshot['tables']
+    if set(tables) != set(baseline.Base.metadata.tables):
+        raise HTTPException(422, detail='旧v2备份的数据表与冻结版本不匹配')
+    for name, table in baseline.Base.metadata.tables.items():
+        expected = set(table.columns.keys()) | ({'parent_task_id', 'task_kind', 'sort_order'} if name == 'tasks' else set())
+        if not isinstance(tables[name], list) or any(not isinstance(row, dict) or set(row) != expected for row in tables[name]):
+            raise HTTPException(422, detail=f'旧v2备份数据表 {name} 的字段不匹配')
+    converted = deepcopy(snapshot)
+    converted['format_version'] = FORMAT_VERSION
+    rows = converted['tables']
+    identities = rows['workspace_metadata']
+    if not identities:
+        identities.append(dict(id=1, workspace_id=str(uuid5(NAMESPACE_URL, 'sga-legacy:' + snapshot['exported_at'])), created_at=utc_now().isoformat()))
+    if any(not isinstance(identity['workspace_id'], str) or not identity['workspace_id'].strip() for identity in identities):
+        raise HTTPException(422, detail='旧备份中的本地工作区标识无效')
+    owner = str(uuid5(NAMESPACE_URL, 'sga-owner:' + identities[0]['workspace_id']))
+    for identity in identities:
+        identity['owner_id'] = owner
+    for session in rows['assistant_sessions']:
+        if not isinstance(session['scope'], str):
+            raise HTTPException(422, detail='旧备份中的会话类型无效')
+        session.update(owner_id=owner, title={'planning':'历史规划会话','profile':'历史档案会话','review':'历史复盘会话'}.get(session['scope'], '历史工具会话'),
+            title_source='legacy', client_request_id=None, version=1, updated_at=None,
+            last_activity_at=None, pinned_at=None, archived_at=None, deleted_at=None)
+    for message in rows['assistant_messages']:
+        message.update(owner_id=owner, created_at=None)
     return converted
 
 
@@ -186,14 +222,22 @@ def _prepare_snapshot(snapshot: dict) -> tuple[list[tuple[Table, list[dict]]], i
         raise HTTPException(status_code=422, detail="备份文件包含无法读取的数据")
     if size > MAX_SNAPSHOT_BYTES:
         raise HTTPException(status_code=413, detail="备份文件超过 25 MB 限制")
-    if type(snapshot["format_version"]) is not int or snapshot["format_version"] not in (1, FORMAT_VERSION):
+    if type(snapshot["format_version"]) is not int or snapshot["format_version"] not in (1, 2, FORMAT_VERSION):
         raise HTTPException(status_code=422, detail="不支持此备份版本")
     if snapshot["timezone"] != "UTC" or not isinstance(snapshot["tables"], dict):
         raise HTTPException(status_code=422, detail="备份时区或数据表结构无效")
     if type(snapshot["revision"]) is not int or snapshot["revision"] < 0:
         raise HTTPException(status_code=422, detail="备份版本号无效")
+    try:
+        exported_at = datetime.fromisoformat(snapshot['exported_at'])
+        if exported_at.tzinfo is None or exported_at.utcoffset() is None:
+            raise ValueError('missing timezone')
+    except (TypeError, ValueError):
+        raise HTTPException(422, detail='备份导出时间必须为带时区的有效时间') from None
     if snapshot["format_version"] == 1:
         snapshot = _convert_legacy_v1(snapshot)
+    if snapshot['format_version'] == 2:
+        snapshot = _convert_legacy_v2(snapshot)
 
     metadata = Base.metadata
     expected = set(metadata.tables)
@@ -234,13 +278,47 @@ def _prepare_snapshot(snapshot: dict) -> tuple[list[tuple[Table, list[dict]]], i
             if any(row['duration_minutes']<=0 or row['duration_minutes']%GRID_MINUTES for row in rows):raise HTTPException(status_code=422,detail='备份任务时长不符合5分钟粒度')
     from .task_hierarchy import validate_backup_hierarchy
     validate_backup_hierarchy({table.name: rows for table, rows in prepared})
+    _validate_conversations({table.name: rows for table, rows in prepared})
     return prepared, snapshot["revision"]
+
+
+def _validate_conversations(tables):
+    identities = tables['workspace_metadata']
+    if len(identities) != 1 or identities[0]['id'] != 1 or not identities[0]['owner_id'].strip() or len(identities[0]['owner_id']) > 36:
+        raise HTTPException(422, detail='备份中的本地工作区归属映射无效')
+    sessions = {s['id']: s for s in tables['assistant_sessions']}
+    for session in sessions.values():
+        if (not session['owner_id'] or len(session['owner_id']) > 36 or session['version'] < 1 or
+            not session['title'].strip() or len(session['title']) > 160 or
+            session['title_source'] not in ('default', 'manual', 'auto', 'legacy') or
+            (session['scope'] == 'conversation') != (session['week_start'] is None)):
+            raise HTTPException(422, detail='备份中的会话元数据无效')
+    for message in tables['assistant_messages']:
+        parent = sessions.get(message['session_id'])
+        if parent is None or parent['owner_id'] != message['owner_id']:
+            raise HTTPException(422, detail='备份中的消息归属与会话不一致')
+
+
+def _protect_legacy_restore(db):
+    # Old formats have no representation for these records/fields. Refuse before
+    # any DELETE, even if their IDs happen to collide with an older snapshot.
+    session = db.scalar(select(AssistantSession.id).where(
+        (AssistantSession.scope == 'conversation') | (AssistantSession.version > 1) |
+        AssistantSession.updated_at.is_not(None) | AssistantSession.deleted_at.is_not(None) |
+        AssistantSession.archived_at.is_not(None) | AssistantSession.pinned_at.is_not(None) |
+        (AssistantSession.title_source.in_(['manual', 'auto']))).limit(1))
+    message = db.scalar(select(AssistantMessage.id).where(AssistantMessage.created_at.is_not(None)).limit(1))
+    if session is not None or message is not None:
+        raise HTTPException(409, detail={'code': 'LEGACY_RESTORE_CONVERSATIONS_PRESENT',
+            'message': '当前库已有升级后的会话内容，旧v1/v2备份无法表达这些数据，恢复已拒绝。请先导出v3，并在独立空库恢复旧备份。'})
 
 
 def restore_snapshot(db: Session, snapshot: dict) -> int:
     prepared, imported_revision = _prepare_snapshot(snapshot)
     begin_planning_transaction(db)
     try:
+        if snapshot['format_version'] in (1, 2):
+            _protect_legacy_restore(db)
         db.execute(text("PRAGMA defer_foreign_keys=ON"))
         state = get_or_create_planning_state(db)
         next_revision = max(state.revision, imported_revision) + 1
@@ -254,7 +332,7 @@ def restore_snapshot(db: Session, snapshot: dict) -> int:
         state.revision = next_revision
         db.flush()
         # A restored snapshot must never revive a pending plan based on an old state.
-        db.query(AssistantProposal).filter(AssistantProposal.status.notin_(["applied", "discarded"])).update(
+        db.query(AssistantProposal).filter(AssistantProposal.status.notin_(["applied", "discarded", "superseded"])).update(
             {AssistantProposal.status: "stale"}, synchronize_session=False
         )
         db.query(AssistantRun).filter(AssistantRun.status == "running").update(

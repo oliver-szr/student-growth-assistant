@@ -1,6 +1,6 @@
 from typing import Literal
 from datetime import time
-from pydantic import BaseModel, ConfigDict, AwareDatetime, Field, model_validator
+from pydantic import BaseModel, ConfigDict, AwareDatetime, Field, model_validator, field_validator
 
 
 class StrictModel(BaseModel):
@@ -162,3 +162,45 @@ class PreviewRequest(ParsedCommand):
     client_message_id: str | None = Field(default=None,min_length=1,max_length=100)
     alternative_index: int | None = Field(default=None,ge=0,le=1)
     candidate_id: str | None = Field(default=None,min_length=1,max_length=80)
+
+
+class ConversationCreate(StrictModel):
+    client_request_id: str = Field(min_length=1, max_length=100)
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+
+    @field_validator('title', 'client_request_id')
+    @classmethod
+    def nonblank(cls, value):
+        if value is not None and not value.strip():
+            raise ValueError('名称或请求标识不能为空')
+        return value.strip() if value is not None else value
+
+
+class ConversationPatch(StrictModel):
+    expected_version: int = Field(strict=True, ge=1)
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    pinned: bool | None = Field(default=None, strict=True)
+    archived: bool | None = Field(default=None, strict=True)
+
+    @model_validator(mode='after')
+    def changes(self):
+        fields = self.model_fields_set - {'expected_version'}
+        if not fields or any(getattr(self, field) is None for field in fields):
+            raise ValueError('请提供非空的会话修改')
+        if self.title is not None:
+            self.title = self.title.strip()
+            if not self.title:
+                raise ValueError('标题不能为空')
+        return self
+
+
+class ConversationMessageCreate(StrictModel):
+    client_message_id: str = Field(min_length=1, max_length=100)
+    text: str = Field(min_length=1, max_length=2000)
+
+    @field_validator('client_message_id', 'text')
+    @classmethod
+    def nonblank(cls, value):
+        if not value.strip():
+            raise ValueError('消息或请求标识不能为空')
+        return value

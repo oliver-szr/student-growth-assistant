@@ -23,6 +23,7 @@ from ..services.planning_window import expand_window_rules
 from ..services.claude_client import AIServiceError
 from ..schemas import GrowthDirectionUpdate, GrowthGoalCreate, GrowthGoalPatch, TaskFeedbackCreate
 from ..services.taxonomy import categories_payload, create_category, rule_payload, rules_from_legacy, rules_payload, update_category, validate_rule
+from ..services.conversations import ensure_available, local_owner
 
 router=APIRouter(prefix='/api/assistant',tags=['Assistant'])
 _run_tasks={}
@@ -36,6 +37,10 @@ def fail(code,message,status=409):
 def require(db,model,id):
     value=db.get(model,id)
     if value is None: fail('NOT_FOUND','记录不存在。',404)
+    if model is AssistantSession:
+        ensure_available(db,value,write=True)
+    elif model in (AssistantProposal,AssistantRun,GrowthChangeDraft):
+        ensure_available(db,db.get(AssistantSession,value.session_id),write=True)
     return value
 
 
@@ -81,7 +86,8 @@ def current_week():
 
 
 def require_current(s):
-    if s.week_start!=current_week(): fail('OUTSIDE_CURRENT_WEEK','会话不属于当前周，请新建本周会话。')
+    if s.scope!='planning': fail('INVALID_DRAFT','请使用对应会话类型的专用入口。',422)
+    if s.week_start!=current_week(): fail('OUTSIDE_CURRENT_WEEK','会话不属于当前规划周，请新建本周规划会话。')
 
 
 def base_actions(db,s,revision):
@@ -447,7 +453,8 @@ def open_workspace_session(payload:WorkspaceOpenRequest,db:Session=Depends(get_d
     week=date(1970,1,5) if payload.scope=='profile' else (payload.week_start or current_week())
     if week.weekday()!=0: fail('INVALID_WEEK','复盘周必须从周一开始。',422)
     if payload.scope=='planning' and week!=current_week(): fail('OUTSIDE_CURRENT_WEEK','规划只支持当前周。',422)
-    existing=db.scalar(select(AssistantSession).where(AssistantSession.scope==payload.scope,AssistantSession.week_start==week).order_by(AssistantSession.id.desc()))
+    existing=db.scalar(select(AssistantSession).where(AssistantSession.scope==payload.scope,AssistantSession.week_start==week,
+        AssistantSession.owner_id==local_owner(db),AssistantSession.archived_at.is_(None),AssistantSession.deleted_at.is_(None)).order_by(AssistantSession.id.desc()))
     if existing:return {'id':existing.id,'scope':existing.scope,'week_start':existing.week_start.isoformat()}
     session=AssistantSession(week_start=week,scope=payload.scope); db.add(session); db.commit(); db.refresh(session)
     return {'id':session.id,'scope':session.scope,'week_start':session.week_start.isoformat()}
@@ -455,6 +462,7 @@ def open_workspace_session(payload:WorkspaceOpenRequest,db:Session=Depends(get_d
 
 @router.post('/sessions/{id}/runs',status_code=202)
 async def create_run(id:int,payload:RunRequest,db:Session=Depends(get_db)):
+    begin_planning_transaction(db)
     s=require(db,AssistantSession,id)
     if s.scope not in ('planning','profile','review'): fail('INVALID_DRAFT','请使用任务拆解专用入口。',422)
     if s.scope=='planning': require_current(s)
@@ -509,6 +517,8 @@ def cancel_run(id:int,db:Session=Depends(get_db)):
 @router.post('/runs/{id}/retry',status_code=202)
 async def retry_run(id:int,db:Session=Depends(get_db)):
     run=require(db,AssistantRun,id)
+    session=require(db,AssistantSession,run.session_id)
+    if session.scope=='planning': require_current(session)
     if run.status=='running':return _run_response(run)
     if run.status=='completed' and require(db,AssistantSession,run.session_id).scope!='planning':
         fail('RUN_NOT_RETRYABLE','这条资料或复盘对话已经处理完成。')
@@ -527,6 +537,7 @@ async def retry_run(id:int,db:Session=Depends(get_db)):
 @router.get('/sessions/{id}')
 def get_session(id:int,db:Session=Depends(get_db)):
     s=require(db,AssistantSession,id)
+    if s.scope=='conversation': fail('CONVERSATION_API_REQUIRED','请使用真实会话接口读取此会话。',422)
     if s.scope!='planning':
         messages=[dict(id=m.id,role=m.role,text=m.text,content=m.content) for m in db.scalars(select(AssistantMessage).where(AssistantMessage.session_id==s.id).order_by(AssistantMessage.id)).all()]
         draft=db.scalar(select(GrowthChangeDraft).where(GrowthChangeDraft.session_id==s.id,GrowthChangeDraft.status=='ready').order_by(GrowthChangeDraft.id.desc()))

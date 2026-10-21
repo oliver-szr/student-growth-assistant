@@ -9,6 +9,7 @@ from . import assistant_ai, assistant_clock
 from .claude_client import AIServiceError
 from .planning_state import bump_revision, planning_transaction
 from .task_hierarchy import hierarchy_error
+from .conversations import local_owner, ensure_available
 
 SCOPE = "task_breakdown"
 
@@ -79,7 +80,9 @@ async def create_draft(db, request):
             return _response(db, existing)
         if _revision(db) != source_revision:
             hierarchy_error("STALE_DRAFT", "生成期间资料已变化，请重新生成。", 409)
-        session = db.scalar(select(AssistantSession).where(AssistantSession.scope == SCOPE).order_by(AssistantSession.id.desc()))
+        session = db.scalar(select(AssistantSession).where(AssistantSession.scope == SCOPE,
+            AssistantSession.owner_id == local_owner(db), AssistantSession.archived_at.is_(None),
+            AssistantSession.deleted_at.is_(None)).order_by(AssistantSession.id.desc()))
         if session is None:
             now = assistant_clock.assistant_now()
             session = AssistantSession(scope=SCOPE, week_start=now.date()-timedelta(days=now.weekday()))
@@ -98,6 +101,7 @@ def require_draft(db, draft_id):
     draft = db.get(GrowthChangeDraft, draft_id)
     if draft is None or draft.scope != SCOPE:
         hierarchy_error("DRAFT_NOT_FOUND", "任务拆解草案不存在。", 404)
+    ensure_available(db, db.get(AssistantSession, draft.session_id), write=True)
     return draft
 
 

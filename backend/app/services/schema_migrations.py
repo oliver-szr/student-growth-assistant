@@ -24,6 +24,6 @@ def upgrade_database(engine):
                     if column.type._type_affinity is not columns[column.name]['type']._type_affinity:raise RuntimeError(f'Incompatible type: {name}.{column.name}')
             return
         create_sqlite_backup(engine, force=True)
-    with engine.begin() as connection:
+    with engine.connect() as connection:
         config.attributes['connection']=connection
         command.upgrade(config,'head')

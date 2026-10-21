@@ -3,8 +3,8 @@
 更新日期：2026-10-21。本文合并阶段0审计、架构建议与关键结构原型，后续V2开发直接更新本文，不再按阶段新增报告。
 产品规则以[《v2产品框架设计》](../v2产品框架设计.md)（2026-10-20版）为准；已完整对照其第1–14节及核心验收清单。产品原文独立保留，本文只记录技术约束、证据和实施边界。
 2026-10-21用户最终确认交互修订：左导航提供中央完整功能，右侧始终是独立的极简预览；四主体共用辅助栏宽度、页签和三态，但主辅日期、视图、复盘范围及档案分区彼此独立。右侧日程固定单日，正式数据同源；四主体复用一个自动更新的北京时间。此规则覆盖原主辅同步日期/视图、异类辅助页签显示完整页面及未提交表单提示的设计；产品原文按要求保留。最近补丁基线04f8017，最新实现与验证见11.7；11.5/11.6是历史快照。
-当前接口与数据库仍以[现行架构](../architecture.md)、[API契约](../api-contract.md)、[数据库说明](../database.md)为准。下文新增API、模型、组件、协议及选型均为建议，不能视为已实现功能。
-阶段0.5仅整理文档和明确安全的本地临时产物，已于阶段1A开始前单独本地提交 `afa731d`。阶段1A的实际范围、验证和待办见第11节；未开发1B，未push/merge/创建PR。
+旧业务接口与数据库继续参考[现行架构](../architecture.md)、[API契约](../api-contract.md)、[数据库说明](../database.md)，本批会话扩展以12.1及实际新迁移为准。除第11节与12.1明确标注的已实现内容外，其余新增API、模型、组件、协议及选型仍为建议，不能视为已实现功能。
+阶段0.5仅整理文档和明确安全的本地临时产物，已于阶段1A开始前单独本地提交 `afa731d`。阶段1A的范围与验证见第11节；阶段1B-1A仅开发真实会话后端，实际契约与验证见12.1。前端接入、统一AI聊天及后续批次尚未开发，未push/merge/创建PR。
 
 ## 1. 目录与维护边界
 
@@ -453,11 +453,54 @@ WorkspaceApp保留原首页时间格式和北京时间，用一次settings读取
 
 完成后只创建本轮本地提交，停止等待审核，不push/merge/创建PR，不进入1B。
 
-## 12. 阶段1B与后续开发前提
+## 12. 阶段1B：真实会话后端与后续边界
+
+### 12.1 本批1B-1A实际实现
+
+起始分支feat/v2-workspace-redesign，HEAD为 `41bf8b89110190498d5bb526716b3d42dc9ada21`，工作区与暂存区干净。本批只做后端，阶段1A的中央完整主体、独立极简辅助预览、左右UI状态独立和正式数据同源规则不变，前端源码没有修改。
+
+**存储与归属**：扩展原AssistantSession/AssistantMessage，不另存聊天正文，不新增业务表。新scope=conversation，week_start=NULL，可跨天/跨周持续写入用户消息；旧planning/review/profile/task_breakdown的scope/周或兼容哨兵周保留。会话增加title/title_source、client_request_id、version、owner_id、updated_at/last_activity_at、pinned_at/archived_at/deleted_at；消息增加owner_id和可空created_at。历史正文、ID、proposal/draft/plan引用保留，历史消息created_at及旧会话last_activity_at/updated_at保持NULL，不伪造发生时间；历史列表只用既有created_at作排序回退。新消息保存时同事务更新活动时间，手动改名/置顶不冒充聊天活动。
+
+WorkspaceMetadata新增稳定的本地owner_id映射。会话owner由服务器读取该映射，消息继承父会话owner；列表、搜索、详情、写入都按当前本地owner过滤，客户端不能通过body指定user_id/owner_id/scope/角色/时间。owner是未来迁移到真实身份的准备，不是登录身份；未实现认证、全业务授权或多用户隔离，原单例业务表不在本批大改。
+
+| 实际API | 契约 |
+|---|---|
+| POST /api/conversations | 必填client_request_id，可选title；默认“新对话”，显式title标manual。按owner+请求标识幂等，重试返回原会话的当前元数据，改名后不被重试覆盖；同一标识不能再创建另一个会话 |
+| GET /api/conversations | scope默认conversation，可选planning/review/profile/task_breakdown/all；archive=active/archived/all，无q默认active，有q默认all。置顶优先，再按活动时间（历史缺失则created_at）及id降序；limit=1–100、offset=0–10000，返回items/next_offset |
+| GET /api/conversations?q=… | 标题或正文的字面子串搜索，q去空白后1–100字符；不解释%/_为通配符。每会话最多3条纯文本snippet及原message_id/session_id，另有more_message_matches；归档会话可查，已删除不参与 |
+| GET /api/conversations/{id} | 返回会话元数据，正文走独立分页接口；归档可读，删除返回410 |
+| PATCH /api/conversations/{id} | 必填expected_version；可改title/pinned/archived，未给字段保持原值；成功版本+1。手动title标manual，内部automatic_title契约使用SQL版本条件且永不覆盖manual；本批不调用AI生成标题 |
+| DELETE /api/conversations/{id}?expected_version=N | 逻辑删除，不物理抹除正文；返回deleted_at/version/deletion_mode=soft及明确保留说明。同一删除重试返回原结果，不复活、不连带删除正式事实 |
+| GET /api/conversations/{id}/messages | 按不可变id排序；limit=1–100，after_id前向或before_id后向，二者互斥，输出均按id升序，返回下一游标/has_more；可加q查完整匹配消息。旧消息时间未知仍能稳定分页 |
+| POST /api/conversations/{id}/messages | 仅对conversation scope持久保存user文本，必填client_message_id/text（1–2000字符），同标识同内容幂等，不同内容409。没有AI回复、工具执行或自动任务；旧工具会话仍用原业务接口 |
+
+列表/搜索为有界offset分页且有确定的次序，并非跨并发修改的冻结快照；后续前端应按id合并/去重。消息使用id游标，等时间戳、追加消息及历史NULL时间不影响顺序。搜索只返回纯文本，前端不得当HTML插入。新建和消息幂等、修改/删除版本冲突均在SQLite写事务内处理；会话元数据/纯文本保存不递增业务PlanningState revision、不使正式业务草案无故失效。
+
+**生命周期**：归档或删除遇到running请求，返回409 CONVERSATION_BUSY；任何非applied/discarded/superseded的规划或业务草案（包括stale）返回409 CONVERSATION_HAS_DRAFTS，保留原状态，须用户通过原入口明确处理。归档后新正文/旧业务执行被拒绝，恢复后才能继续。软删除后新旧入口返回410，正文及receipt仍在本地/整库备份；本批没有物理清除或自动到期策略，不将“删除”宣称为隐私数据彻底销毁。正式Task/Plan/Feedback/Goal/Review及独立资料均不级联删除。旧open/拆解入口跳过归档和已删除会话，不复用墓碑。
+
+错误语义包括404 CONVERSATION_NOT_FOUND、410 CONVERSATION_DELETED、409 CONVERSATION_ARCHIVED/CONVERSATION_VERSION_CONFLICT/IDEMPOTENCY_CONFLICT及上述运行/草案冲突；非法字段/范围为422，未初始化工作区为503。旧planning消息、候选确认及运行重试继续验证scope和当前规划周；新会话不能经旧API绕过周限制。
+
+**迁移与恢复**：仅新增0003_conversations，不修改0001/0002或baseline_models。为了使旧week_start可空，SQLite会话表以原ID复制重建；Alembic连接在事务外临时关闭FK执行检查，用显式BEGIN IMMEDIATE覆盖DDL/数据/版本表，提交前PRAGMA foreign_key_check，失败则整体回滚，finally恢复FK=ON；仅该升级连接受影响。已有升级前在线备份继续保留，禁止破坏性downgrade。空库/已有v1-v2库和无版本兼容库均走同一升级链，已到head重复启动不重建。
+
+JSON导出为v3，仍严格要求完整26张业务表及当前列；v1先按冻结baseline校验并补任务层级列成v2，v2按冻结baseline+0002三列校验，再显式补本地owner、标题和可空时间等v3字段。旧v1/v2恢复只允许目标没有升级后会话/元数据/消息的情况；目标存在新会话、编辑过的元数据、新消息或删除墓碑时，409 LEGACY_RESTORE_CONVERSATIONS_PRESENT，在任何DELETE前拒绝。不得静默丢弃新数据或自动合并冲突ID；用户应先导出v3，在独立空库恢复旧备份。v3恢复校验消息owner与父会话一致，整事务保留已有恢复的revision递增、待确认草案stale及running interrupted规则。
+
+实际新增文件仅0003迁移、conversations路由/服务及test_conversations.py；其余适度修改models/assistant_schemas、main注册及DELETE CORS、旧assistant/task_breakdown生命周期入口、Alembic env/schema_migrations、growth_data、原迁移/导出/拆解测试和本文。没有新依赖、前端接入、UI布局重构、报告或私人配置修改。
+
+本批最终验证（独立于阶段0的689项旧证据）：
+
+- 在backend目录执行app_env Python3.11的完整pytest tests，**734通过、0失败、0跳过**，89.83秒；仅原Starlette TestClient/httpx弃用警告。覆盖会话CRUD、跨天/跨周、活动排序、标题保护、字面搜索/片段/归档、双向消息分页、幂等/版本冲突、运行与草案阻断、正式数据保留、旧API/当前周确认及重试限制、服务端owner过滤、旧JSON转换/保护与v3恢复。
+- 迁移专项验证真实0002库升级、v1匿名fixture升级、空库与重复升级；保留原session/message/proposal/task/plan/feedback ID和引用，历史消息时间NULL。注入最后一个索引DDL失败，验证列、原数据、Alembic版本均回滚且无残留临时表，FK恢复ON，之后可正常重试。
+- 迁移CLI在全新匿名临时路径连续两次运行scripts/migrate.py成功；head=0003_conversations，26业务表，integrity_check=ok、foreign_key_check为空、foreign_keys=1、tasks=0。
+- 所有测试库、启动bootstrap路径及备份都显式指向匿名临时目录；conftest覆写get_db/engine、禁.env与真实模型。初次沙箱临时目录权限导致setup失败，改正常隔离临时路径；首次从仓库根目录全量运行723通过/2子进程导入失败，改在backend执行后消除，未把这些尝试记作通过。
+- scripts/check_repository.py通过（200文件、本地链接及CI语法），git diff --check通过。没有前端、依赖/锁文件、CI、0001/0002或冻结baseline变更；产品原文SHA256仍为69F03B739C66F58572960967247948D5574784B56F52ADA60359FEECB09BC020，正式app.db只读共享句柄SHA256仍为0DB97D1D9760B66C414F9E17C8C0369ECFC1D6DDDD0050972E18D68F3FC439CB。没有对正式库执行迁移/测试/启动，没有读取或修改.env及私人备份，未调用付费AI。
+
+本批可供1B-1B审核接入后端。前端仍未接真实会话列表/消息API；下一批需处理当前会话切换、分页/归档删除提示、版本冲突及刷新编辑恢复，尊重旧scope专用写入口。统一AI自由聊、流式回复、完整工具、登录隔离和新日历/复盘/记忆继续等待各自授权。仅本地提交后停止，不push/merge/rebase/reset/创建PR，不进入1B-1B或1B-2。
+
+### 12.2 后续批次前提（尚未实施）
 
 1B允许必要后端演进，不以“后端完全不改”推迟产品必需会话能力：
-1. 先冻结Conversation/Message、run增量与owner契约、Alembic及JSON新版本/旧v2转换，匿名空库/旧库/恢复/失败回滚验证后接API；不改冻结迁移。
-2. 真正实现跨天会话、新建、自动标题/改名、活动排序、标题正文片段搜索、置顶/归档恢复/删除；处理未决run/draft和独立业务/记忆范围。
+1. 会话存储、元数据API、owner准备与JSONv3由12.1实现；接入前端前固定这些实际契约。run增量/统一AI消息属于后续授权，不改冻结迁移。
+2. 1B-1B接入真实会话列表/搜索/置顶归档恢复删除、分页及当前会话选择，并做刷新编辑恢复与版本冲突UI；不能把现有规划助手换个scope就当自由聊天。自动标题只走受保护的内部契约，正文中的业务引用/独立记忆范围需后续设计。
 3. 接单一自由聊天、回复增量/阶段状态/停止重试/receipt，无用户选模式；无Key如实提示且手动业务可用，复杂工具在2A完善。
 4. api.js及原assistant服务最小扩展，统一useAssistantRun/查询失效；提取AssistantPage日历/策略/ScopedChanges，复用TaskForm/Hierarchy/Breakdown/执行；分离Review/Profile正文与旧WorkspaceChat，保留旧包装回退。
 5. 旧周日历过渡，四视图/范围/回顾记录独立到2B，小结/记忆/全面手机验收在3。首批新增模型预留owner，不提前实现完整账号。
@@ -466,4 +509,4 @@ WorkspaceApp保留原首页时间格式和北京时间，用一次settings读取
 必要测试：跨周续聊与旧确认限制并存、手动标题保护、搜索片段/归档恢复/删除、增量断线去重/取消receipt、迟到响应、无Key输入、draft双端编辑/无效dirty/409、重复确认响应丢失、新旧JSON与归属、上海午夜/分段去重；2A补完整工具和dirty协调。浏览器用新匿名库，业务测试Mock AI，不以真实付费API换通过。
 回退按模型/转换、API、聊天及各业务适配独立提交，涉及schema先独立备份/恢复演练，旧应用读兼容须证明。阶段2前固定范围/事实与草案版本契约，4前完成全链路权限设计，5前完成隔离/灾备/额度验收。
 
-本主文档保留阶段0关键证据、技术决策、原型及1–5阶段边界；未来继续更新本文。阶段1A完成后停止，等待审核，不自动进入1B。
+本主文档保留阶段0关键证据、技术决策、原型及1–5阶段边界；未来继续更新本文。本批1B-1A完成后停止，等待审核，不自动进入1B-1B或1B-2。
