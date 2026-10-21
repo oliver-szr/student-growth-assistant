@@ -39,10 +39,12 @@ function Calendar({data,offset=0,selectedDate}){
   </dialog></>
 }
 
-export default function AssistantPage({active, requestedAction, onActionHandled,onManagePreferences,taskTools,refreshVersion=0,onPlanConfirmed,renderWorkbench,onOpenSchedule,onFocusChat}){
+export default function AssistantPage({active, requestedAction, onActionHandled,onManagePreferences,taskTools,refreshVersion=0,onPlanConfirmed,renderWorkbench,onOpenSchedule,onFocusChat,fullCalendar=false}){
   const [weekOffset,setWeekOffset]=useState(0)
   const [selectedDate,setSelectedDate]=useState('')
   const [calendarView,setCalendarView]=useState('day')
+  const openedFullCalendar=useRef(false)
+  useEffect(()=>{if(fullCalendar&&!openedFullCalendar.current){openedFullCalendar.current=true;setCalendarView('week')}},[fullCalendar])
   const [data,setData]=useState(null),[text,setText]=useState(''),[pending,setPending]=useState(false),[error,setError]=useState(''),[manual,setManual]=useState(false),[view,setView]=useState('chat'),[explanation,setExplanation]=useState(null),[runState,setRunState]=useState(null),[attention,setAttention]=useState(undefined)
   const [form,setForm]=useState({target:'',title:'',minutes:'60',deadline:'',priority:'normal',task_type:'other'})
   const requestId=useRef(null),manualRequest=useRef(null),watchedRun=useRef(null)

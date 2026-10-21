@@ -5,34 +5,40 @@ import AssistantPage from './pages/AssistantPage.jsx'
 import ReviewPage from './pages/GoalsGrowthPage.jsx'
 import MyProfilePage from './pages/MyProfilePage.jsx'
 import WorkspaceShell from './components/WorkspaceShell.jsx'
-import { initialWorkbench, workbenchReducer } from './workbench.js'
+import { initialWorkbench, readSplitRatio, splitPreferenceKey, toolPlacement, workbenchPanel, workbenchReducer } from './workbench.js'
 
 export default function App() {
   return new URLSearchParams(window.location.search).get('layout') === 'legacy' ? <LegacyApp /> : <WorkspaceApp />
 }
 
 function WorkspaceApp() {
-  const [state, dispatch] = useReducer(workbenchReducer, initialWorkbench)
+  const [state, dispatch] = useReducer(workbenchReducer, initialWorkbench, initial => {
+    try { return { ...initial, splitRatio: readSplitRatio(window.localStorage) } } catch { return initial }
+  })
   const [settings, setSettings] = useState(null)
   const [taskVersion, setTaskVersion] = useState(0)
   const [planningVersion, setPlanningVersion] = useState(0)
   const [adjustment, setAdjustment] = useState(null)
   useEffect(() => { getAssistantSettings().then(setSettings).catch(() => {}) }, [])
+  useEffect(() => {
+    try { localStorage.setItem(splitPreferenceKey, String(state.splitRatio)) } catch { /* Optional device preference; layout remains usable. */ }
+  }, [state.splitRatio])
+  const toolActive = page => toolPlacement(state, page) === 'primary' || (state.auxiliaryPage === page && workbenchPanel(state) !== 'collapsed')
   function requestAdjustment(next) {
     setAdjustment({ ...next, requestKey: crypto.randomUUID() })
-    dispatch({ type: 'open', page: 'schedule' })
+    dispatch({ type: 'navigate', page: 'schedule' })
   }
-  return <AssistantPage active={state.page === 'schedule' || state.mobile === 'chat'} refreshVersion={planningVersion}
+  return <AssistantPage active={state.navigation === 'home' || toolActive('schedule')} fullCalendar={state.navigation === 'schedule'} refreshVersion={planningVersion}
     requestedAction={adjustment} onActionHandled={() => setAdjustment(null)}
     onPlanConfirmed={() => setTaskVersion(value => value + 1)}
-    onManagePreferences={() => dispatch({ type: 'open', page: 'profile' })}
-    onOpenSchedule={() => dispatch({ type: 'open', page: 'schedule' })}
-    onFocusChat={() => dispatch({ type: 'mobile', value: 'chat' })}
+    onManagePreferences={() => dispatch({ type: 'auxiliary', page: 'profile' })}
+    onOpenSchedule={() => dispatch({ type: 'auxiliary', page: 'schedule' })}
+    onFocusChat={() => dispatch({ type: 'navigate', page: 'home' })}
     taskTools={<TasksPage refreshVersion={taskVersion} onDataChanged={() => setPlanningVersion(value => value + 1)} onAdjustTask={requestAdjustment} />}
     renderWorkbench={({ chat, children, conversation }) => <WorkspaceShell state={state} dispatch={dispatch} chat={chat} conversation={conversation}
       clock={settings ? `${settings.demo ? '演示 · ' : ''}${settings.now?.slice(0, 16).replace('T', ' ')} 北京时间` : ''}
-      review={state.visited.includes('review') && <ReviewPage embedded active={state.page === 'review' && state.panel !== 'collapsed'} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}
-      profile={state.visited.includes('profile') && <MyProfilePage embedded active={state.page === 'profile' && state.panel !== 'collapsed'} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}>
+      review={state.visited.includes('review') && <ReviewPage embedded active={toolActive('review')} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}
+      profile={state.visited.includes('profile') && <MyProfilePage embedded active={toolActive('profile')} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}>
       {children}
     </WorkspaceShell>} />
 }
