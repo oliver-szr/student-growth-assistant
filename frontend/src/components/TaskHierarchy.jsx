@@ -3,7 +3,7 @@ import { displayDeadline } from '../datetime.js'
 
 export default function TaskHierarchy({ tasks, renderTask, renderContainer, onAddChild, onEditContainer, pending }) {
   return <div className="task-hierarchy">{groupTasks(tasks).map(({ task, children }) => task.task_kind === 'container' ?
-    <article className="item-card task-container" key={task.id}>
+    <article tabIndex={-1} data-resource-task={task.id} className="item-card task-container" key={task.id}>
       <div className="item-top"><h4>{task.title}</h4><span className="badge">父任务 · 汇总容器</span></div>
       {task.description && <p>{task.description}</p>}
       <p>截止 {displayDeadline(task.deadline)}</p>

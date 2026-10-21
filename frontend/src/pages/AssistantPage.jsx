@@ -42,7 +42,7 @@ function Calendar({data,offset=0,selectedDate,formalOnly=false}){
   </dialog></>
 }
 
-export default function AssistantPage({active, requestedAction, onActionHandled,onManagePreferences,taskTools,refreshVersion=0,onPlanConfirmed,renderWorkbench,onOpenSchedule,onFocusChat,fullCalendar=false,observeChat=true,recoveryWorkspace}){
+export default function AssistantPage({active, requestedAction, onActionHandled,onManagePreferences,taskTools,refreshVersion=0,onPlanConfirmed,renderWorkbench,onOpenSchedule,onFocusChat,fullCalendar=false,observeChat=true,recoveryWorkspace,resource,initialSettings}){
   const [weekOffset,setWeekOffset]=useState(0)
   const [selectedDate,setSelectedDate]=useState('')
   const [previewDate,setPreviewDate]=useState('')
@@ -71,7 +71,7 @@ export default function AssistantPage({active, requestedAction, onActionHandled,
     }})
   async function load(id){const [d,focus]=await Promise.all([getAssistantSession(id),getGrowthAttention().catch(()=>null)]);setData(d);setAttention(focus?focus.items||[]:null);return d}
   useEffect(()=>{let cancelled=false;async function init(){
-    const workspace=await getAssistantSettings(),key=`sga-assistant-session:${workspace.workspace_id}:${workspace.week_start}`
+    const workspace=initialSettings||await getAssistantSettings(),key=`sga-assistant-session:${workspace.workspace_id}:${workspace.week_start}`
     let id,d
     try{id=localStorage.getItem(key)}catch{setError('浏览器存储不可用，规划会话刷新恢复受限。')}
     if(id)d=await getAssistantSession(id)
@@ -130,7 +130,7 @@ export default function AssistantPage({active, requestedAction, onActionHandled,
   const auxiliaryDate=previewDate||data.settings.now.slice(0,10)
   const lastDate=shanghaiTime(new Date(`${data.week_start}T00:00:00+08:00`).getTime()+13*86400000).slice(0,10)
   const calendarOffset=date>=shanghaiTime(new Date(`${data.week_start}T00:00:00+08:00`).getTime()+7*86400000).slice(0,10)?7:0
-  const overview=<><TaskBreakdown recoveryWorkspace={workspace} onCreated={()=>{load(data.id).catch(e=>setError(e.message));onPlanConfirmed?.()}} />
+  const overview=<><TaskBreakdown active={renderWorkbench?fullCalendar:active} refreshVersion={refreshVersion} requestedResource={resource} recoveryWorkspace={workspace} onCreated={()=>{load(data.id).catch(e=>setError(e.message));onPlanConfirmed?.()}} />
     <section className="today-focus" aria-labelledby="today-focus-heading"><div className="today-focus-intro"><h3 id="today-focus-heading">优先处理</h3></div>{attention===undefined?<p className="today-focus-empty" role="status">正在整理任务轻重缓急…</p>:attention===null?<p className="today-focus-empty" role="status">动态优先级暂时不可用；可以继续查看下面的课程和任务安排。</p>:focusedTasks.length?<ol>{focusedTasks.map(item=><li key={item.task_id} className={`today-focus-item urgency-${item.urgency}`}><div><strong>{item.title}</strong><span className="today-urgency">{item.urgency_label}</span></div><p>截止 {stamp(item.deadline)}</p>{item.available_start_count===0 && <p className="risk-label">无法安排</p>}<p>剩余 {item.remaining_minutes ?? item.duration_minutes ?? data.tasks.find(t=>t.ref===`task:${item.task_id}`)?.duration_minutes ?? '待核对'} 分钟 · {item.importance_label}</p><details><summary>详情</summary><p>{item.reason}</p><small>{item.goal?.title}</small></details></li>)}</ol>:<p className="today-focus-empty">目前没有待处理任务。</p>}</section></>
   const chat=      <aside className="chat-panel"><EditRecovery recovery={chatRecovery} label="规划输入"/><EditRecovery recovery={manualRecovery} label="手动任务编辑"/><div className="panel-heading"><h3>{renderWorkbench?'本次对话':'规划助手'}</h3><button type="button" className="manual-link" disabled={pending} onClick={()=>act(()=>replanAssistant(data.id))}>局部重规划</button><button type="button" className="manual-link preference-entry" onClick={onManagePreferences}>安排偏好</button>{live&&<button type="button" className="manual-link" onClick={()=>{setView('result');onOpenSchedule?.();requestAnimationFrame(()=>document.getElementById('planning-proposal')?.scrollIntoView({block:'start'}))}}>查看调整</button>}</div>
         <ChatMessages className="chat-messages" revision={data.messages.at(-1)?.id}>{!data.messages.length&&<div className="assistant-bubble"><p>例如：周五20:00前交报告，预计两小时，尽量周四下午做。</p></div>}{data.messages.map(m=><div key={m.id} className={`${m.role}-bubble`}><small>{m.role==='user'?'你':'规划助手'}</small><SafeMessage text={m.text}/></div>)}</ChatMessages>

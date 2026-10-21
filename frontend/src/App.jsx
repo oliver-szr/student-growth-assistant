@@ -20,9 +20,23 @@ function WorkspaceApp() {
   const [settings, setSettings] = useState(null)
   const [clock, setClock] = useState('')
   const [settingsError,setSettingsError]=useState('')
-  const [taskVersion, setTaskVersion] = useState(0)
-  const [planningVersion, setPlanningVersion] = useState(0)
+  const [versions, setVersions] = useState({ planning: 0, tasks: 0, review: 0, profile: 0 })
   const [adjustment, setAdjustment] = useState(null)
+  const [resource, setResource] = useState(null)
+  const dataChanged = source => setVersions(current=>Object.fromEntries(Object.entries(current).map(([key,value])=>[key,value+(key===source?0:1)])))
+  function openResource(link) {
+    if (!['schedule','review','profile'].includes(link?.page)) return
+    dispatch({type:'navigate',page:link.page})
+    setResource({...link, requestKey:crypto.randomUUID()})
+    requestAnimationFrame(()=>{
+      const page=document.getElementById('v2-page-'+link.page)
+      page?.focus()
+      if(link.kind==='task'&&Number.isSafeInteger(link.id)) {
+        const details=page?.querySelector('.task-memory'); if(details)details.open=true
+        page?.querySelector(`[data-resource-task="${link.id}"]`)?.scrollIntoView({block:'center'})
+      }
+    })
+  }
   const layoutRecovery = useEditRecovery({ workspace: settings?.workspace_id, resource: 'layout', base: settings ? 'layout-v1' : undefined,
     value: { navigation: state.navigation, auxiliaryPage: state.auxiliaryPage, panel: state.panel, conversations: state.conversations, mobile: state.mobile }, dirty: true,
     automatic: true, restore: value => dispatch({ type: 'restore', value }) })
@@ -47,18 +61,18 @@ function WorkspaceApp() {
     dispatch({ type: 'navigate', page: 'schedule' })
   }
   if (!settings) return <p role="status">{settingsError||'正在读取工作区设置…'}{settingsError&&<button onClick={()=>location.reload()}>重试读取工作区</button>}</p>
-  return <ConversationManager key={settings?.workspace_id || 'loading'} workspace={settings?.workspace_id} onOpen={() => dispatch({ type: 'navigate', page: 'home' })}>{({ sidebar, chat: conversationChat, planning, openPlanning }) => <AssistantPage active={state.navigation === 'home' || toolActive('schedule')} observeChat={planning && state.navigation === 'home'} recoveryWorkspace={settings?.workspace_id} fullCalendar={state.navigation === 'schedule'} refreshVersion={planningVersion}
+  return <ConversationManager key={settings?.workspace_id || 'loading'} active={state.navigation==='home'} onNavigate={openResource} onBusinessSaved={()=>dataChanged()} onAdjustTask={requestAdjustment} workspace={settings?.workspace_id} onOpen={() => dispatch({ type: 'navigate', page: 'home' })}>{({ sidebar, chat: conversationChat, planning, openPlanning, openBusiness, openConversation }) => <AssistantPage initialSettings={settings} active={state.navigation === 'home' || toolActive('schedule')} resource={resource} observeChat={planning && state.navigation === 'home'} recoveryWorkspace={settings?.workspace_id} fullCalendar={state.navigation === 'schedule'} refreshVersion={versions.planning}
     requestedAction={adjustment} onActionHandled={() => setAdjustment(null)}
-    onPlanConfirmed={() => setTaskVersion(value => value + 1)}
+    onPlanConfirmed={()=>dataChanged('planning')}
     onManagePreferences={() => dispatch({ type: 'navigate', page: 'profile' })}
     onOpenSchedule={() => dispatch({ type: 'navigate', page: 'schedule' })}
     onFocusChat={openPlanning}
-    taskTools={<TasksPage recoveryWorkspace={settings?.workspace_id} refreshVersion={taskVersion} onDataChanged={() => setPlanningVersion(value => value + 1)} onAdjustTask={requestAdjustment} />}
-    renderWorkbench={({ chat, children, conversation, auxiliarySchedule }) => <WorkspaceShell state={state} dispatch={dispatch} chatNote={planning?'当前支持任务规划与调整，自由交流将在后续开放。':'当前会话用于保存和浏览消息，AI 回复尚未接入。'} conversationContent={<><EditRecovery recovery={layoutRecovery} label="界面状态" />{sidebar}</>} chat={<><div className="v2-chat-surface" hidden={!planning} inert={!planning}>{chat}</div><div className="v2-chat-surface" hidden={planning} inert={planning}>{conversationChat}</div></>} conversation={conversation} auxiliarySchedule={auxiliarySchedule}
+    taskTools={<TasksPage resource={resource} active={state.navigation==='schedule'} recoveryWorkspace={settings?.workspace_id} refreshVersion={versions.tasks} onDataChanged={()=>dataChanged('tasks')} onAdjustTask={requestAdjustment} />}
+    renderWorkbench={({ chat, children, conversation, auxiliarySchedule }) => <WorkspaceShell state={state} dispatch={dispatch} chatNote={planning?'规划操作沿用原草案与确认流程。':'自由交流与业务入口共用此工作台。'} conversationContent={<><EditRecovery recovery={layoutRecovery} label="界面状态" />{sidebar}</>} chat={<><div className="v2-chat-surface" hidden={!planning} inert={!planning}>{chat}</div><div className="v2-chat-surface" hidden={planning} inert={planning}>{conversationChat}</div></>} conversation={conversation} auxiliarySchedule={auxiliarySchedule}
       clock={clock}
-      review={state.visited.includes('review') && <ReviewPage embedded active={toolActive('review')} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}
-      profile={state.visited.includes('profile') && <MyProfilePage embedded recoveryWorkspace={settings?.workspace_id} active={toolActive('profile')} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}>
-      {children}
+      review={state.visited.includes('review') && <ReviewPage embedded onReturnChat={resource?.conversationId?()=>openConversation(resource.conversationId,resource.messageId):undefined} onDataChanged={()=>dataChanged('review')} onBusinessChat={()=>openBusiness('review')} active={toolActive('review')} refreshVersion={versions.review} onAdjustTask={requestAdjustment} />}
+      profile={state.visited.includes('profile') && <MyProfilePage embedded onReturnChat={resource?.conversationId?()=>openConversation(resource.conversationId,resource.messageId):undefined} onDataChanged={()=>dataChanged('profile')} onBusinessChat={()=>openBusiness('profile')} recoveryWorkspace={settings?.workspace_id} active={toolActive('profile')} refreshVersion={versions.profile} onAdjustTask={requestAdjustment} />}>
+      {resource?.conversationId&&<button className="button subtle" onClick={()=>openConversation(resource.conversationId,resource.messageId)}>返回相关对话</button>}{children}
     </WorkspaceShell>} />}</ConversationManager>
 }
 

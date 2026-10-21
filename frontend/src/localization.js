@@ -4,6 +4,9 @@ export const PRIORITY_LABELS = { low: '低', normal: '普通', high: '高' }
 export const RECURRENCE_LABELS = { weekly: '每周', once: '仅一次' }
 
 const CODE_MESSAGES = {
+  RUN_NOT_FOUND: '这次回复不存在，请重新读取会话。',
+  RUN_VERSION_CONFLICT: '回复已重新开始，请读取最新状态后操作。',
+  RUN_NOT_RETRYABLE: '这次回复已完成，不能重复生成。',
   CONVERSATION_NOT_FOUND: '会话不存在，当前选择已保留。请检查会话列表。',
   CONVERSATION_DELETED: '会话已删除，不能继续发送。正式任务和日程仍保留。',
   CONVERSATION_ARCHIVED: '会话已归档，请先恢复后再发送。',

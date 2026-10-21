@@ -24,7 +24,7 @@ function formatTimer(total) {
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
-export default function TasksPage({ onAdjustTask, refreshVersion=0,onDataChanged,recoveryWorkspace }) {
+export default function TasksPage({ onAdjustTask, refreshVersion=0,onDataChanged,recoveryWorkspace,active=true,resource }) {
   const [tasks, setTasks] = useState([])
   const [categories, setCategories] = useState([])
   const [contexts, setContexts] = useState({})
@@ -43,19 +43,32 @@ export default function TasksPage({ onAdjustTask, refreshVersion=0,onDataChanged
   const [formVersion, setFormVersion] = useState(0)
   const [tick, setTick] = useState(Date.now())
   const actionIds = useRef({})
+  const loaded = useRef(false), fetching = useRef(false), handledResource = useRef(null)
 
   async function load() {
-    setLoading(true); setLoadError('')
+    fetching.current=true
+    if(!loaded.current)setLoading(true)
+    setLoadError('')
     try {
       const snapshot=await getTasksDashboard()
       setTasks(snapshot.tasks);setCategories(snapshot.categories);setContexts(snapshot.contexts)
       setSessions(snapshot.sessions);setAdvice(snapshot.advice);setFeedbackCounts(snapshot.feedback_counts)
       setFeedbacks({})
+      loaded.current=true
     } catch (error) { setLoadError(error.message) }
-    finally { setLoading(false) }
+    finally { fetching.current=false;setLoading(false) }
   }
 
-  useEffect(() => { load() }, [refreshVersion])
+  useEffect(() => { if(active)load() }, [refreshVersion,active])
+  useEffect(()=>{
+    if(!active||loading||loadError||!loaded.current||fetching.current||resource?.kind!=='task'||!Number.isSafeInteger(resource.id)||handledResource.current===resource.requestKey)return
+    handledResource.current=resource.requestKey
+    requestAnimationFrame(()=>{
+      const target=document.querySelector(`[data-resource-task="${resource.id}"]`)
+      if(target){target.scrollIntoView({block:'center'});target.focus({preventScroll:true})}
+      else setActionError('这项任务已不存在，请查看当前任务列表。')
+    })
+  },[active,loading,loadError,tasks,resource?.requestKey])
   useEffect(() => { const timer = setInterval(() => setTick(Date.now()), 1000); return () => clearInterval(timer) }, [])
 
   async function save(data, id = null) {
@@ -151,7 +164,7 @@ export default function TasksPage({ onAdjustTask, refreshVersion=0,onDataChanged
           const session = sessions[task.id]
           const taskAdvice = advice[task.id]
           const form = formFor(task)
-          return <article className="item-card task-execution-card" key={task.id}>
+          return <article tabIndex={-1} data-resource-task={task.id} className="item-card task-execution-card" key={task.id}>
             <div className="item-top"><div><h4>{task.title}</h4><span className="task-context-label">{context.goal_id ? '已关联成长目标' : '未关联目标'}{context.family_confirmed ? ` · ${categories.find((item) => item.key === context.family)?.name || context.family}` : ' · 类型待确认'}</span></div><span className={`badge status-${task.status}`}>{STATUS_LABELS[task.status]}</span></div>
             {task.description && <p className="description">{task.description}</p>}
             <dl className="details"><div><dt>剩余时长</dt><dd>{task.duration_minutes} 分钟</dd></div><div><dt>截止时间</dt><dd>{displayDeadline(task.deadline)}</dd></div><div><dt>重要程度</dt><dd>{PRIORITY_LABELS[task.priority]}</dd></div><div><dt>初始估时</dt><dd>{context.initial_estimate_minutes || task.duration_minutes} 分钟</dd></div></dl>

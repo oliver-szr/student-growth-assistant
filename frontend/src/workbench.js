@@ -106,6 +106,13 @@ export function compatibleEdit(saved, example) {
 export function mergeMessages(previous, incoming) {
   return [...new Map([...previous, ...incoming].map(message => [message.id, message])).values()].sort((a, b) => a.id - b.id)
 }
+export function applyReply(previous, response) {
+  const old = previous.find(message => message.id === response.assistant_message_id)
+  const text = response.reset ? response.delta : (old?.text || '') + response.delta
+  if (!response.reset && Array.from(old?.text || '').length !== response.from_cursor) return previous
+  return mergeMessages(previous, [{ id: response.assistant_message_id, session_id: response.session_id,
+    role: 'assistant', text, content: response.content }])
+}
 export function requestGate() {
   let generation = 0
   return { next: () => ++generation, current: token => token === generation }

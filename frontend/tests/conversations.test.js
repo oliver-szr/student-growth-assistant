@@ -1,7 +1,27 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createConversation, getConversations, getConversation, getConversationMessages, saveConversationMessage, updateConversation, deleteConversation } from '../src/api.js'
-import { editKey, readEdit, writeEdit, compatibleEdit, mergeMessages, requestGate, restoredWorkbench, initialWorkbench } from '../src/workbench.js'
+import { editKey, readEdit, writeEdit, compatibleEdit, mergeMessages, applyReply, requestGate, restoredWorkbench, initialWorkbench } from '../src/workbench.js'
+import { startConversationRun, getConversationRun, stopConversationRun, retryConversationRun } from '../src/api.js'
+
+test('reply cursor uses server code points, handles reset and rejects duplicate deltas',()=>{
+  const first={assistant_message_id:5,session_id:1,reset:true,delta:'你好🙂',next_cursor:3,from_cursor:0,content:{status:'running'}}
+  let messages=applyReply([],first)
+  const tail={...first,reset:false,delta:'继续',from_cursor:3,next_cursor:5}
+  messages=applyReply(messages,tail);assert.equal(messages[0].text,'你好🙂继续')
+  assert.deepEqual(applyReply(messages,tail),messages)
+  assert.equal(applyReply(messages,{...first,delta:'新尝试'})[0].text,'新尝试')
+})
+
+test('chat runs use versioned attempt actions and bounded cursor reads, never planning',async context=>{
+  const calls=[]
+  context.mock.method(globalThis,'fetch',async(url,options)=>{calls.push({url:new URL(url),...options});return new Response('{}')})
+  await startConversationRun(2,{text:'你好',client_message_id:'once'})
+  await getConversationRun(2,9,15,2);await stopConversationRun(2,9,2);await retryConversationRun(2,9,2)
+  assert.ok(calls.every(c=>c.url.pathname.startsWith('/api/conversations/2/runs')))
+  assert.equal(calls[1].url.searchParams.get('after'),'15');assert.equal(calls[1].url.searchParams.get('attempt'),'2')
+  assert.deepEqual(JSON.parse(calls[3].body),{expected_attempt:2})
+})
 
 test('conversation operations use real versioned endpoints and never planning AI', async context => {
   const calls=[]

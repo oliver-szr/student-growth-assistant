@@ -26,7 +26,7 @@ function describeRule(rule) {
   return parameters.text || rule.description || '只供 AI 参考，不直接参与排程'
 }
 
-export default function MyProfilePage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null, recoveryWorkspace }) {
+export default function MyProfilePage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null, recoveryWorkspace, onDataChanged, onBusinessChat, onReturnChat }) {
   const Content = embedded ? Fragment : WorkspaceChat
   const [profile, setProfile] = useState(null)
   const [goals, setGoals] = useState([])
@@ -48,6 +48,7 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
   const [previewError, setPreviewError] = useState('')
   const [notice, setNotice] = useState('')
   const [backups, setBackups] = useState([])
+  const [courseVisited,setCourseVisited]=useState(false)
   const recovery=useEditRecovery({workspace:recoveryWorkspace,resource:'profile-editors',
     base:loading||previewError?undefined:JSON.stringify({goals,rules,categories}),
     value:{goalForm:Object.fromEntries(Object.keys(emptyGoal).map(key=>[key,goalForm[key]])),editingGoalId,showGoalEditor,ruleForm,editingRuleId,showRuleEditor,categoryName,editingCategoryKey},
@@ -76,7 +77,7 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
 
   async function runAction(action, success) {
     setBusy(true); setError(''); setNotice('')
-    try { await action(); await load(); setNotice(success) }
+    try { await action(); await load(); setNotice(success); onDataChanged?.() }
     catch (cause) { setError(cause.message) }
     finally { setBusy(false) }
   }
@@ -167,7 +168,8 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
 
   const weekdays = ruleForm.weekdays
   return <><section className="growth-page profile-page" aria-labelledby="profile-heading">
-    <div className="growth-page-heading"><div><h2 id="profile-heading">我的档案</h2></div></div>
+    {onReturnChat&&<button className="button subtle" onClick={onReturnChat}>返回相关对话</button>}
+    <div className="growth-page-heading"><div><h2 id="profile-heading">我的档案</h2></div>{onBusinessChat&&<button className="button secondary" onClick={onBusinessChat}>用 AI 整理目标或偏好</button>}</div>
     <Content {...(embedded ? {} : { scope: 'profile', onAdjustTask, onDraftConfirmed: load })}>
     <EditRecovery recovery={recovery} label="目标与偏好编辑"/>
     {error && <p className="error-box" role="alert">{error}</p>}{notice && <p className="success-box" role="status">{notice}</p>}
@@ -211,7 +213,7 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
       })}</div>}
     </details>
 
-    <details className="growth-section course-settings profile-wide"><summary><strong>课程与保护时间</strong></summary><TimeRulesPage /></details>
+    <details className="growth-section course-settings profile-wide" onToggle={event=>{if(event.currentTarget.open)setCourseVisited(true)}}><summary><strong>课程与保护时间</strong></summary>{courseVisited&&<TimeRulesPage onDataChanged={onDataChanged} />}</details>
     <details className="growth-section profile-wide"><summary>历史与备份</summary>
       <div className="growth-section-heading"><div><h3>档案历史与数据管理</h3></div></div>
       {!profile?.history?.length ? <p className="growth-empty">尚无资料历史版本。</p> : <details className="insight-history"><summary>查看资料修改版本（{profile.history.length}）</summary><ol className="revision-list">{[...profile.history].reverse().map((revision) => <li key={revision.version}><strong>版本 v{revision.version}</strong><time>{new Date(revision.changed_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</time><p>{revision.direction || '长期方向通过目标管理'}</p></li>)}</ol></details>}

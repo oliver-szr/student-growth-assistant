@@ -11,7 +11,7 @@ import WorkspaceChat from '../components/WorkspaceChat.jsx'
 import { minutesText } from '../analytics.js'
 
 
-export default function ReviewPage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null }) {
+export default function ReviewPage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null, onDataChanged, onBusinessChat, onReturnChat }) {
   const Content = embedded ? Fragment : WorkspaceChat
   const [parentTasks, setParentTasks] = useState([])
   const [analyticsVersion, setAnalyticsVersion] = useState(0)
@@ -54,7 +54,7 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
 
   async function generateReview() {
     setOperation('review'); setBusy(true); setError(''); setNotice('')
-    try { const next = await createGrowthReview(weekStart); setReview(next); setNotice('复盘已根据本周确认过的完成记录生成。') }
+    try { const next = await createGrowthReview(weekStart); setReview(next); setNotice('复盘已根据本周确认过的完成记录生成。'); onDataChanged?.() }
     catch (e) { setError(e.message) } finally { setBusy(false);setOperation('') }
   }
 
@@ -71,6 +71,7 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
       if (action === 'accept') { await acceptGrowthInsight(id); setNotice('建议已采用并保存为长期偏好。') }
       else await ignoreGrowthInsight(id)
       await refresh()
+      onDataChanged?.()
     } catch (e) { setError(e.message) } finally { setBusy(false);setOperation('') }
   }
 
@@ -81,9 +82,10 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
   }
 
   return <><section className="growth-page" aria-labelledby="growth-heading">
+    {onReturnChat&&<button className="button subtle" onClick={onReturnChat}>返回相关对话</button>}
     <div className="growth-page-heading">
       <div><h2 id="growth-heading">复盘</h2></div><span className="review-week muted">{weekStart} 周</span>
-      <button className="button primary" type="button" disabled={busy} onClick={generateReview}>{operation==='review'?'生成中…':'生成复盘'}</button>
+      <button className="button primary" type="button" disabled={busy} onClick={generateReview}>{operation==='review'?'生成中…':'生成复盘'}</button>{onBusinessChat&&<button className="button secondary" onClick={onBusinessChat}>用 AI 整理执行记录</button>}
     </div>
     <Content {...(embedded ? {} : { scope: 'review', weekStart: weekStart || undefined, onAdjustTask, onDraftConfirmed: afterChatDraftConfirmed })}>
     {error && <p className="error-box" role="alert">{error}</p>}{notice && <p className="success-box" role="status">{notice}</p>}

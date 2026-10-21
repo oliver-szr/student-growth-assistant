@@ -22,7 +22,7 @@ export function BreakdownEditor({ content, expected, disabled, onChange }) {
   </fieldset>
 }
 
-export default function TaskBreakdown({ onCreated, recoveryWorkspace }) {
+export default function TaskBreakdown({ onCreated, recoveryWorkspace, requestedResource, active=true, refreshVersion=0 }) {
   const [open, setOpen] = useState(false), [drafts, setDrafts] = useState([]), [goals, setGoals] = useState([])
   const [draft, setDraft] = useState(null), [content, setContent] = useState(null)
   const [pending, setPending] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [dirty, setDirty] = useState(false)
@@ -39,7 +39,21 @@ export default function TaskBreakdown({ onCreated, recoveryWorkspace }) {
 
   async function reload() { const rows = await getTaskBreakdowns(); setDrafts(rows); setLoaded(true); return rows }
   function select(row) { setDraft(row); setContent(editableContent(row.content)); setDirty(false); setRecovered(false); setOpen(true); setError(''); setNotice('已读取服务器草案，刷新后可以继续。') }
-  useEffect(() => { reload().catch(e => setError(e.message)); getGoals().then(data => setGoals(data.goals)).catch(e => setError(e.message)) }, [])
+  useEffect(() => { reload().catch(e => setError(e.message)) }, [])
+  useEffect(()=>{
+    if(active&&open)getGoals().then(data=>setGoals(data.goals)).catch(cause=>setError(cause.message))
+  },[active,open,refreshVersion])
+  const handledResource=useRef(null)
+  const dirtyRef=useRef(dirty);dirtyRef.current=dirty
+  useEffect(()=>{
+    if(!loaded||requestedResource?.kind!=='breakdown'||handledResource.current===requestedResource.requestKey)return
+    handledResource.current=requestedResource.requestKey
+    if(dirty){setNotice('当前草案有未保存修改，请先保存或明确放弃，再打开其他草案。');return}
+    getTaskBreakdown(requestedResource.id).then(current=>{
+      if(dirtyRef.current){setNotice('当前有未保存修改，已保留，请先处理后再打开草案。');return}
+      select(current)
+    }).catch(cause=>{setOpen(true);setError(cause.message)})
+  },[loaded,requestedResource?.requestKey])
 
   async function act(action) {
     if (busy.current) return

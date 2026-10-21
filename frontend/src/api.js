@@ -148,3 +148,8 @@ export const updateConversation = (id, data) => request(`/api/conversations/${id
 export const deleteConversation = (id, version) => request(`/api/conversations/${id}?expected_version=${encodeURIComponent(version)}`, { method: 'DELETE' })
 export const getConversationMessages = (id, values = {}) => request(`/api/conversations/${id}/messages?${conversationQuery(values)}`)
 export const saveConversationMessage = (id, data) => request(`/api/conversations/${id}/messages`, { method: 'POST', body: JSON.stringify(data) })
+export const getConversationRuns = id => request(`/api/conversations/${id}/runs`)
+export const startConversationRun = (id, data) => request(`/api/conversations/${id}/runs`, { method: 'POST', body: JSON.stringify(data) })
+export const getConversationRun = (id, run, cursor = 0, attempt) => request(`/api/conversations/${id}/runs/${run}?${conversationQuery({ after: cursor, attempt })}`)
+export const stopConversationRun = (id, run, attempt) => request(`/api/conversations/${id}/runs/${run}/stop`, { method: 'POST', body: JSON.stringify({ expected_attempt: attempt }) })
+export const retryConversationRun = (id, run, attempt) => request(`/api/conversations/${id}/runs/${run}/retry`, { method: 'POST', body: JSON.stringify({ expected_attempt: attempt }) })

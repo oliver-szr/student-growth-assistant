@@ -9,7 +9,7 @@ function describeRule(rule) {
   return rule.recurrence === 'weekly' ? `每${WEEKDAYS[rule.weekday - 1]}` : rule.date
 }
 
-export default function TimeRulesPage() {
+export default function TimeRulesPage({ onDataChanged }) {
   const [rules, setRules] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -51,6 +51,7 @@ export default function TimeRulesPage() {
         setRules((current) => current.map((item) => item.id === form.id ? updated : item))
       }
       setForm(null)
+      onDataChanged?.()
     } catch (error) {
       setActionError(error.message)
     } finally {
@@ -65,6 +66,7 @@ export default function TimeRulesPage() {
     try {
       const updated = await updateTimeRule(rule.id, { active: false })
       setRules((current) => current.map((item) => item.id === rule.id ? updated : item))
+      onDataChanged?.()
     } catch (error) {
       setActionError(error.message)
     } finally {
@@ -75,6 +77,7 @@ export default function TimeRulesPage() {
   async function applyProposal(data) {
     const created = await createTimeRule(data)
     setRules((current) => [...current, created].sort((a, b) => a.id - b.id))
+    onDataChanged?.()
   }
 
   function section(kind, heading, emptyText) {

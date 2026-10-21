@@ -11,6 +11,7 @@ from pathlib import Path
 import sys
 from urllib.parse import urlsplit
 from uuid import uuid4
+import asyncio
 
 ROOT = Path(__file__).resolve().parents[1]
 NOW = "2026-10-14T18:00:00+08:00"
@@ -39,6 +40,41 @@ def serve(port):
     for module in (assistant_ai, claude_client, constraint_parser, plan_explanation):
         module.request_claude = reject_live
     assistant_ai.decompose_task = mock_breakdown
+    async def mock_workspace(scope, text, context):
+        operations = []
+        if scope == 'profile' and text.startswith('匿名新增目标：'):
+            operations = [{'op': 'create_goal', 'title': text.split('：', 1)[1], 'metric_kind': 'count', 'weekly_target': 2}]
+        elif scope == 'review' and text.startswith('匿名记录反馈') and context.get('tasks'):
+            task = next((t for t in context['tasks'] if t['status'] == 'todo'), None)
+            if task:
+                operations = [{'op': 'record_feedback', 'task_id': task['id'], 'outcome': 'completed', 'actual_minutes': 30}]
+        return {'reply': '已整理为待确认建议，请核对后再保存。', 'questions': [], 'operations': operations}
+    assistant_ai.workspace_message = mock_workspace
+    from app.services import conversation_runs
+    from app.services.claude_client import AIServiceError
+    failed_once = set()
+    async def mock_reply(request):
+        text = request['message']
+        if '[无Key]' in text:
+            raise AIServiceError('AI_NOT_CONFIGURED')
+        yield {'type': 'mode', 'value': 'full' if '[完整]' in text else 'streaming'}
+        history = request['history']
+        reply = '你好，我们可以从你关心的事情慢慢聊。'
+        if history:
+            reply += '前面你说：' + history[-2 if len(history)>1 else -1]['text'][:60] + '。'
+        if request['context'].get('tasks'):
+            reply += '可从入口查看任务：' + request['context']['tasks'][0]['title'] + '。正式保存仍需你确认。'
+        if '[完整]' in text:
+            await asyncio.sleep(.6)
+            yield {'type': 'delta', 'text': reply}
+            return
+        for offset in range(0, len(reply), 5):
+            await asyncio.sleep(.22 if '[慢]' in text else .1)
+            yield {'type': 'delta', 'text': reply[offset:offset+5]}
+            if '[失败]' in text and offset>=5 and text not in failed_once:
+                failed_once.add(text)
+                raise AIServiceError('AI_UNAVAILABLE')
+    conversation_runs.reply_events = mock_reply
     growth_insights.launch_automatic_analysis = lambda *a, **k: None
     from app.main import app
 
