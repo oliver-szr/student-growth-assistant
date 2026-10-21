@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { nearBottom, reviewMetrics, progressPercent, initialWorkbench, workbenchReducer, workbenchVisibility, workbenchPanel, toolPlacement, defaultSplitRatio, clampSplitRatio, readSplitRatio, renderedSplitRatio, splitBounds } from '../src/workbench.js'
+import { nearBottom, reviewMetrics, progressPercent, initialWorkbench, workbenchReducer, workbenchVisibility, workbenchPanel, toolPlacement, defaultSplitRatio, clampSplitRatio, readSplitRatio, renderedSplitRatio, splitBounds, workspaceClock, shiftPreviewDate } from '../src/workbench.js'
 import { readFile } from 'node:fs/promises'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -57,7 +57,7 @@ test('same tool keeps one primary controller when the auxiliary tab matches', ()
   assert.equal(toolPlacement(state, 'profile'), 'primary')
   assert.deepEqual(state.visited, ['schedule', 'profile'])
   state = workbenchReducer(state, { type: 'navigate', page: 'home' })
-  assert.equal(toolPlacement(state, 'profile'), 'auxiliary')
+  assert.equal(toolPlacement(state, 'profile'), 'hidden')
 })
 
 test('expanded auxiliary pane temporarily hides the conversation list without changing its preference', () => {
@@ -124,12 +124,12 @@ test('unknown primary page, auxiliary page, size or mobile surface cannot corrup
 const shellSource = await readFile(new URL('../src/components/WorkspaceShell.jsx', import.meta.url), 'utf8')
 const compiledShell = await transformWithEsbuild(`import React from '${import.meta.resolve('react')}';\n${shellSource.replace("from 'react'", `from '${import.meta.resolve('react')}'`).replace('../workbench.js', new URL('../src/workbench.js', import.meta.url).href)}`, 'WorkspaceShell.jsx', { jsx: 'transform', jsxFactory: 'React.createElement' })
 const { default: WorkspaceShell } = await import(`data:text/javascript;base64,${Buffer.from(compiledShell.code).toString('base64')}`)
-const renderShell = state => renderToStaticMarkup(React.createElement(WorkspaceShell, { state, dispatch: () => {}, conversation: 7, chat: 'CHAT', review: 'REVIEW', profile: 'PROFILE' }, 'SCHEDULE'))
+const renderShell = state => renderToStaticMarkup(React.createElement(WorkspaceShell, { state, dispatch: () => {}, conversation: 7, chat: 'CHAT', review: 'REVIEW', profile: 'PROFILE', clock: '演示 · 2026-10-14 18:00 北京时间' }, 'SCHEDULE'))
 
 test('shell exposes exactly three linked tabs, real current conversation and honest unavailable controls', () => {
   const html = renderShell(initialWorkbench)
   assert.equal((html.match(/role="tab"/g) || []).length, 3)
-  for (const page of ['schedule', 'review', 'profile']) assert.ok(html.includes(`aria-controls="v2-page-${page}"`))
+  assert.equal((html.match(/role="tab"[^>]*aria-controls="v2-auxiliary-shared"/g) || []).length, 3)
   assert.ok(html.includes('本周规划对话'))
   assert.ok(html.includes('新建、搜索与归档将在后续开放'))
   assert.ok(html.includes('href="?layout=legacy"'))
@@ -171,7 +171,7 @@ test('matching profile keeps only one complete editing instance and a shared aux
   assert.equal((html.match(/id="v2-page-profile"/g) || []).length, 1)
   assert.equal((html.match(/>PROFILE</g) || []).length, 1)
   assert.equal((html.match(/id="v2-auxiliary-shared"/g) || []).length, 1)
-  assert.ok(html.includes('在主体编辑档案'))
+  assert.ok(!html.includes('在主体编辑档案'))
 })
 
 test('width edits on every primary page remain shared after navigation and safe storage recovery', () => {
@@ -187,4 +187,44 @@ test('width edits on every primary page remain shared after navigation and safe 
     const reloaded = { ...initialWorkbench, splitRatio: readSplitRatio({ getItem: () => String(value) }) }
     assert.equal(reloaded.splitRatio, value)
   }
+})
+
+
+test('every main page has its own full tool and an always minimal auxiliary host', () => {
+  for (const navigation of ['home', 'schedule', 'review', 'profile']) {
+    const state = { ...initialWorkbench, navigation, auxiliaryPage: 'schedule' }
+    const html = renderToStaticMarkup(React.createElement(WorkspaceShell, { state, dispatch: () => {}, auxiliarySchedule: 'SINGLE_DAY_PREVIEW' }, 'FULL_WEEK_CALENDAR'))
+    assert.match(html, /id="v2-auxiliary-shared"[^>]*role="tabpanel"[^>]*aria-labelledby="v2-tab-schedule">/)
+    assert.ok(html.includes('SINGLE_DAY_PREVIEW'))
+    for (const page of ['schedule', 'review', 'profile']) {
+      assert.equal(toolPlacement(state, page), navigation === page ? 'primary' : 'hidden')
+      assert.ok(!html.includes(`id="v2-page-${page}" class="v2-tool-page" data-placement="auxiliary"`))
+    }
+  }
+})
+
+test('four main headings share one clock and only the auxiliary header owns collapse controls', () => {
+  for (const page of ['home', 'schedule', 'review', 'profile']) {
+    const html = renderShell({ ...initialWorkbench, navigation: page })
+    assert.equal((html.match(/演示 · 2026-10-14 18:00 北京时间/g) || []).length, 4)
+    assert.equal((html.match(/aria-label="收起辅助栏"/g) || []).length, 1)
+    for (const [heading] of html.matchAll(/<header class="v2-primary-page-heading">.*?<\/header>/g)) assert.ok(!heading.includes('<button'))
+  }
+})
+
+test('shared workspace clock advances server time in Shanghai without losing the demo prefix', () => {
+  const settings = { demo: true, now: '2026-10-14T15:59:30Z' }
+  assert.equal(workspaceClock(settings), '演示 · 2026-10-14 23:59 北京时间')
+  assert.equal(workspaceClock(settings, 31000), '演示 · 2026-10-15 00:00 北京时间')
+  assert.equal(workspaceClock({ ...settings, demo: false }, 91000), '2026-10-15 00:01 北京时间')
+  assert.equal(workspaceClock(null), '')
+  assert.equal(workspaceClock({ now: 'invalid' }), '')
+})
+
+test('preview date changes are bounded and handle month boundaries', () => {
+  assert.equal(shiftPreviewDate('2026-10-14', 1, '2026-10-12', '2026-10-25'), '2026-10-15')
+  assert.equal(shiftPreviewDate('2026-10-12', -1, '2026-10-12', '2026-10-25'), '2026-10-12')
+  assert.equal(shiftPreviewDate('2026-10-25', 1, '2026-10-12', '2026-10-25'), '2026-10-25')
+  assert.equal(shiftPreviewDate('2026-10-31', 1, '2026-10-26', '2026-11-08'), '2026-11-01')
+  assert.equal(shiftPreviewDate('bad', 1, '2026-10-12', '2026-10-25'), 'bad')
 })

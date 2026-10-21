@@ -8,6 +8,7 @@ import SafeMessage from '../components/SafeMessage.jsx'
 import ScopedChanges from '../components/ScopedChanges.jsx'
 import TaskBreakdown from '../components/TaskBreakdown.jsx'
 import '../assistant.css'
+import { shiftPreviewDate } from '../workbench.js'
 
 const STATUS={ready:'待确认',needs_input:'需要补充信息',conflict:'时间冲突',no_plan:'未找到完整方案',stale:'资料已变化，请重新生成',applied:'已采用方案',discarded:'已放弃方案',superseded:'已有更新方案'}
 const PHASE={understanding:'AI 正在理解任务和要求',arranging:'正在计算并校验不同安排',recommending:'AI 正在比较并推荐',finished:'本轮处理完成',cancelled:'本轮已取消'}
@@ -16,12 +17,12 @@ const stamp=value=>shanghaiTime(value).replace('T',' ')
 const short=value=>shanghaiTime(value).slice(11)
 const CALENDAR_PIXELS_PER_MINUTE=.7
 
-function Calendar({data,offset=0,selectedDate}){
+function Calendar({data,offset=0,selectedDate,formalOnly=false}){
   const detailId=useId()
   const [selected,setSelected]=useState(null)
   const dialog=useRef(null)
   useEffect(()=>{if(selected && !dialog.current.open)dialog.current.showModal()},[selected])
-  const p=data.proposal
+  const p=formalOnly?null:data.proposal
   const changes=new Set(p?.status==='ready'?p.changes.map(c=>c.ref):[])
   const items=[...data.courses,...visibleSchedule(data.confirmed_items,p)]
   const taskSegments=new Map(),segmentLabels=new Map()
@@ -43,6 +44,7 @@ function Calendar({data,offset=0,selectedDate}){
 export default function AssistantPage({active, requestedAction, onActionHandled,onManagePreferences,taskTools,refreshVersion=0,onPlanConfirmed,renderWorkbench,onOpenSchedule,onFocusChat,fullCalendar=false}){
   const [weekOffset,setWeekOffset]=useState(0)
   const [selectedDate,setSelectedDate]=useState('')
+  const [previewDate,setPreviewDate]=useState('')
   const [calendarView,setCalendarView]=useState('day')
   const openedFullCalendar=useRef(false)
   useEffect(()=>{if(fullCalendar&&!openedFullCalendar.current){openedFullCalendar.current=true;setCalendarView('week')}},[fullCalendar])
@@ -98,6 +100,7 @@ export default function AssistantPage({active, requestedAction, onActionHandled,
   const focusedTasks=focusCards(attention)
   const categoryName=(key)=>data.task_categories?.find((item)=>item.key===key)?.name||key||'其他'
   const date=selectedDate||data.settings.now.slice(0,10)
+  const auxiliaryDate=previewDate||data.settings.now.slice(0,10)
   const lastDate=shanghaiTime(new Date(`${data.week_start}T00:00:00+08:00`).getTime()+13*86400000).slice(0,10)
   const calendarOffset=date>=shanghaiTime(new Date(`${data.week_start}T00:00:00+08:00`).getTime()+7*86400000).slice(0,10)?7:0
   const overview=<><TaskBreakdown onCreated={()=>{load(data.id).catch(e=>setError(e.message));onPlanConfirmed?.()}} />
@@ -131,10 +134,14 @@ export default function AssistantPage({active, requestedAction, onActionHandled,
       {p.notices.length>0&&<details><summary>任务与安排提示</summary>{[...new Set(p.notices)].map((n,i)=><p key={i}>{n}</p>)}</details>}
     </section>}</>
   const tasks=<details className="task-memory workspace-details"><summary>任务与执行 · {data.tasks.filter(t=>t.status==='todo').length} 项未完成任务 {live?'· 待确认':''}</summary><h3>任务概览</h3><div className="memory-list">{data.tasks.map(t=><div key={t.ref}><strong>{t.title}</strong><span>{categoryName(t.task_type)}　截止 {stamp(t.deadline)}　剩余 {t.duration_minutes} 分钟　{PRIORITIES[t.priority]}　{t.status==='done'?'已完成':t.status==='cancelled'?'已取消':'待完成'}　{t.profile?.locked?'已锁定':''}</span><button disabled={pending} onClick={()=>edit(t)}>修改</button><button disabled={pending||t.status!=='todo'||t.profile?.locked} onClick={()=>act(()=>replanAssistant(data.id,t.ref))}>重新安排</button><button disabled={pending} onClick={()=>act(()=>sendAssistantMessage(data.id,{client_message_id:crypto.randomUUID(),text:`${t.title}：${t.profile?.locked?'解锁':'锁定'}安排`,actions:[{op:'update',target:t.ref,fields:{profile:{locked:!t.profile?.locked}}}]}))}>{t.profile?.locked?'解锁':'锁定'}</button><button disabled={pending||t.status!=='todo'} onClick={()=>act(()=>sendAssistantMessage(data.id,{client_message_id:crypto.randomUUID(),text:`完成 ${t.title}`,actions:[{op:'update',target:t.ref,fields:{status:'done'}}]}))}>完成</button></div>)}</div><h3>执行记录</h3>{taskTools}</details>
-  const auxiliarySchedule=<section className="schedule-panel" aria-label="同步日程辅助视图">
-    <div className="panel-heading v2-calendar-heading"><h3>日程</h3><div className="v2-calendar-view" role="group" aria-label="辅助日程显示"><button type="button" aria-pressed={calendarView==='day'} onClick={()=>setCalendarView('day')}>单日</button><button type="button" aria-pressed={calendarView==='week'} onClick={()=>setCalendarView('week')}>本周 / 下周</button></div><label>查看日期<input type="date" min={data.week_start} max={lastDate} value={date} onChange={e=>{if(e.target.value>=data.week_start&&e.target.value<=lastDate)setSelectedDate(e.target.value)}}/></label></div>
-    <Calendar data={data} offset={calendarOffset} selectedDate={calendarView==='day'?date:undefined}/>
-    {p&&<p className="v2-calendar-note">{STATUS[p.status]||p.status} · 在主体查看与确认方案</p>}
+  const auxiliarySchedule=<section className="schedule-panel v2-day-preview" aria-label="单日日程预览">
+    <div className="panel-heading v2-preview-heading"><h3>{auxiliaryDate===data.settings.now.slice(0,10)?'今日日程':'单日日程'}</h3>
+      <div className="v2-preview-date"><button type="button" aria-label="辅助日程上一天" disabled={auxiliaryDate<=data.week_start} onClick={()=>setPreviewDate(shiftPreviewDate(auxiliaryDate,-1,data.week_start,lastDate))}>‹</button><label><input aria-label="辅助日程日期" type="date" min={data.week_start} max={lastDate} value={auxiliaryDate} onChange={e=>{if(e.target.value>=data.week_start&&e.target.value<=lastDate)setPreviewDate(e.target.value)}}/></label><button type="button" aria-label="辅助日程下一天" disabled={auxiliaryDate>=lastDate} onClick={()=>setPreviewDate(shiftPreviewDate(auxiliaryDate,1,data.week_start,lastDate))}>›</button></div>
+      <button type="button" className="button subtle" onClick={()=>setPreviewDate(data.settings.now.slice(0,10))}>回到今天</button>
+    </div>
+    <Calendar data={data} selectedDate={auxiliaryDate} formalOnly/>
+    {live&&<p className="v2-calendar-note">有待确认方案，请在主体日程查看。</p>}
+    <p className="v2-calendar-note">仅显示正式课程与任务；可查看本周及下周已有安排。</p>
   </section>
   const layout=<WorkbenchLayout view={view} onViewChange={setView} resultLabel="日程" chat={chat} renderLayout={renderWorkbench} conversation={data.id} auxiliarySchedule={auxiliarySchedule}>
     {renderWorkbench?<div className="assistant-workspace v2-planning-content">{content}{overview}{tasks}</div>:content}

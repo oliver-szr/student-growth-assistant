@@ -58,13 +58,23 @@
 .compact-shell.v2-shell .v2-tool-page {min-width:0;min-height:0;overflow:auto;padding:20px;overscroll-behavior:contain;scrollbar-gutter:stable;background:#fff}
 .compact-shell.v2-shell .v2-tool-page[data-placement=primary] {grid-column:3;grid-row:1 / span 2;padding:24px 32px;background:#f5f7f8}
 .compact-shell.v2-shell .v2-tool-page[data-placement=auxiliary] {grid-column:5;grid-row:2;border-left:1px solid #d9e4e7}
-.compact-shell.v2-shell .v2-primary-page-heading {display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:20px}
+.compact-shell.v2-shell .v2-primary-page-heading {display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin-bottom:20px}
 .compact-shell.v2-shell .v2-primary-page-heading h1 {font-size:26px;margin:0}
+.compact-shell.v2-shell .v2-primary-page-heading .workspace-clock {font-size:12px;margin-left:auto}
 .compact-shell.v2-shell .v2-readonly-summary {display:grid;gap:12px;overflow-wrap:anywhere}
 .compact-shell.v2-shell .v2-readonly-summary h3 {margin:8px 0 0}
 .compact-shell.v2-shell .v2-readonly-summary p {margin:4px 0}
 .compact-shell.v2-shell .v2-readonly-summary article {padding:12px;border:1px solid var(--line);border-radius:8px}
-.compact-shell.v2-shell .v2-unsaved-note {padding:10px;background:#fff8e8;border-left:3px solid #b98a32}
+.compact-shell.v2-shell .v2-readonly-summary dl {margin:0;display:grid;gap:12px}
+.compact-shell.v2-shell .v2-readonly-summary dl>div {padding:12px;border-bottom:1px solid var(--line)}
+.compact-shell.v2-shell .v2-readonly-summary dt {font-size:13px;color:var(--muted)}
+.compact-shell.v2-shell .v2-readonly-summary dd {margin:6px 0 0;font-size:18px;font-weight:600}
+.compact-shell.v2-shell .v2-preview-heading {display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:12px}
+.compact-shell.v2-shell .v2-preview-heading h3 {margin:0 auto 0 0;font-size:16px}
+.compact-shell.v2-shell .v2-preview-date {display:flex;align-items:center;gap:4px;max-width:100%}
+.compact-shell.v2-shell .v2-preview-date label {min-width:0}
+.compact-shell.v2-shell .v2-preview-date input {width:148px;max-width:100%;min-height:44px;font-size:13px}
+.compact-shell.v2-shell .v2-preview-date button {border:0;background:transparent;min-height:44px;min-width:32px;color:var(--ink);font-size:22px}
 .compact-shell.v2-shell .v2-planning-content {display:grid;gap:20px;min-width:0}
 .compact-shell.v2-shell .v2-planning-content .today-focus {margin:0}
 .compact-shell.v2-shell .v2-planning-content .today-focus ol {grid-template-columns:minmax(0,1fr)}

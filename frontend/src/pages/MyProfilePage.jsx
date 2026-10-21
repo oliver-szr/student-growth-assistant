@@ -44,11 +44,14 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [previewError, setPreviewError] = useState('')
   const [notice, setNotice] = useState('')
   const [backups, setBackups] = useState([])
 
   async function load() {
-    const [snapshot,backupData]=await Promise.all([getProfileContext(),getLocalBackups()])
+    let snapshot,backupData
+    try { [snapshot,backupData]=await Promise.all([getProfileContext(),getLocalBackups()]);setPreviewError('') }
+    catch (cause) { setPreviewError(cause.message);throw cause }
     setProfile(snapshot.profile);setBackups(backupData.backups||[]);setGoals(snapshot.goals)
     setCategories(snapshot.categories);setRules(snapshot.rules);setTasks(snapshot.tasks.filter(task=>task.status==='todo'))
     setContexts(snapshot.contexts)
@@ -151,7 +154,7 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
         <details><summary>详情</summary>{goal.motivation && <p>{goal.motivation}</p>}<span>版本 v{goal.version}</span></details><div className="goal-metric"><span>{({ time: '投入时间', count: '完成次数', deliverable: '明确交付' })[goal.metric_kind]}：每周 {goal.weekly_target} {goal.unit_label}</span>{goal.due_date && <span>目标日期：{goal.due_date}</span>}</div>
         <div className="button-row"><button className="button subtle" disabled={busy} onClick={() => { setEditingGoalId(goal.id); setGoalForm({ ...goal, priority: String(goal.priority), weekly_target: String(goal.weekly_target), due_date: goal.due_date || '' }); setShowGoalEditor(true); requestAnimationFrame(()=>{const el=document.getElementById('goal-editor');el?.scrollIntoView({block:'nearest',behavior:'smooth'});el?.querySelector('input')?.focus({preventScroll:true})}) }}>修改目标</button><select aria-label={`${goal.title}状态`} disabled={busy} value={goal.status} onChange={(event) => runAction(() => updateGoal(goal.id, { status: event.target.value }), '目标状态已更新。')}><option value="active">进行中</option><option value="paused">暂停</option><option value="completed">完成</option><option value="archived">归档</option></select></div>
       </article>
-  if (loading) return <p className="state-box">正在读取档案、目标和已确认偏好…</p>
+  if (loading) return <><p className="state-box">正在读取档案、目标和已确认偏好…</p>{auxiliaryTarget && createPortal(<p role="status">正在读取档案摘要…</p>,auxiliaryTarget)}</>
 
   const weekdays = ruleForm.weekdays
   return <><section className="growth-page profile-page" aria-labelledby="profile-heading">
@@ -209,16 +212,15 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
     </Content>
   </section>
     {auxiliaryTarget && createPortal(<section className="v2-readonly-summary" aria-label="档案辅助视图">
-      {error && <p className="error-box" role="alert">{error}</p>}
+      {previewError && <p role="status">档案摘要暂时无法更新。</p>}
       <h3>长期目标</h3>
-      {goals.filter(goal => goal.status === 'active').map(goal => <article key={goal.id}><strong>{goal.title}</strong><p>每周 {goal.weekly_target} {goal.unit_label}</p>{goal.due_date && <small>目标日期：{goal.due_date}</small>}</article>)}
+      {goals.filter(goal => goal.status === 'active').slice(0,3).map(goal => <article key={goal.id}><strong>{goal.title}</strong><p>每周 {goal.weekly_target} {goal.unit_label}</p></article>)}
+      {goals.filter(goal => goal.status === 'active').length > 3 && <p className="helper">另有 {goals.filter(goal => goal.status === 'active').length-3} 项进行中的目标。</p>}
       {!goals.some(goal => goal.status === 'active') && <p>暂无进行中的目标。</p>}
       <h3>安排偏好</h3>
-      {rules.filter(rule => rule.enabled).map(rule => <article key={rule.id}><strong>{rule.name}</strong><p>{describeRule(rule)}</p></article>)}
+      {rules.filter(rule => rule.enabled).slice(0,3).map(rule => <article key={rule.id}><strong>{rule.name}</strong><p>{describeRule(rule)}</p></article>)}
+      {rules.filter(rule => rule.enabled).length > 3 && <p className="helper">另有 {rules.filter(rule => rule.enabled).length-3} 项已启用偏好。</p>}
       {!rules.some(rule => rule.enabled) && <p>暂无已启用偏好。</p>}
-      {showGoalEditor && <p className="v2-unsaved-note">目标未提交：{goalForm.title || '尚未命名'}</p>}
-      {showRuleEditor && <p className="v2-unsaved-note">偏好未提交：{ruleForm.name || '尚未命名'}</p>}
-      <p className="helper">在主体编辑目标、偏好与其他档案。</p>
     </section>, auxiliaryTarget)}
   </>
 }

@@ -5,7 +5,7 @@ import AssistantPage from './pages/AssistantPage.jsx'
 import ReviewPage from './pages/GoalsGrowthPage.jsx'
 import MyProfilePage from './pages/MyProfilePage.jsx'
 import WorkspaceShell from './components/WorkspaceShell.jsx'
-import { initialWorkbench, readSplitRatio, splitPreferenceKey, toolPlacement, workbenchPanel, workbenchReducer } from './workbench.js'
+import { initialWorkbench, readSplitRatio, splitPreferenceKey, toolPlacement, workbenchPanel, workbenchReducer, workspaceClock } from './workbench.js'
 
 export default function App() {
   return new URLSearchParams(window.location.search).get('layout') === 'legacy' ? <LegacyApp /> : <WorkspaceApp />
@@ -16,10 +16,22 @@ function WorkspaceApp() {
     try { return { ...initial, splitRatio: readSplitRatio(window.localStorage) } } catch { return initial }
   })
   const [settings, setSettings] = useState(null)
+  const [clock, setClock] = useState('')
   const [taskVersion, setTaskVersion] = useState(0)
   const [planningVersion, setPlanningVersion] = useState(0)
   const [adjustment, setAdjustment] = useState(null)
-  useEffect(() => { getAssistantSettings().then(setSettings).catch(() => {}) }, [])
+  useEffect(() => { getAssistantSettings().then(next => setSettings({ ...next, receivedAt: Date.now() })).catch(() => {}) }, [])
+  useEffect(() => {
+    if (!settings || !Number.isFinite(Date.parse(settings.now))) return
+    let timer
+    const tick = () => {
+      const elapsed = Math.max(0, Date.now() - settings.receivedAt)
+      setClock(workspaceClock(settings, elapsed))
+      timer = setTimeout(tick, 60000 - (Date.parse(settings.now) + elapsed) % 60000)
+    }
+    tick()
+    return () => clearTimeout(timer)
+  }, [settings])
   useEffect(() => {
     try { localStorage.setItem(splitPreferenceKey, String(state.splitRatio)) } catch { /* Optional device preference; layout remains usable. */ }
   }, [state.splitRatio])
@@ -31,12 +43,12 @@ function WorkspaceApp() {
   return <AssistantPage active={state.navigation === 'home' || toolActive('schedule')} fullCalendar={state.navigation === 'schedule'} refreshVersion={planningVersion}
     requestedAction={adjustment} onActionHandled={() => setAdjustment(null)}
     onPlanConfirmed={() => setTaskVersion(value => value + 1)}
-    onManagePreferences={() => dispatch({ type: 'auxiliary', page: 'profile' })}
-    onOpenSchedule={() => dispatch({ type: 'auxiliary', page: 'schedule' })}
+    onManagePreferences={() => dispatch({ type: 'navigate', page: 'profile' })}
+    onOpenSchedule={() => dispatch({ type: 'navigate', page: 'schedule' })}
     onFocusChat={() => dispatch({ type: 'navigate', page: 'home' })}
     taskTools={<TasksPage refreshVersion={taskVersion} onDataChanged={() => setPlanningVersion(value => value + 1)} onAdjustTask={requestAdjustment} />}
     renderWorkbench={({ chat, children, conversation, auxiliarySchedule }) => <WorkspaceShell state={state} dispatch={dispatch} chat={chat} conversation={conversation} auxiliarySchedule={auxiliarySchedule}
-      clock={settings ? `${settings.demo ? '演示 · ' : ''}${settings.now?.slice(0, 16).replace('T', ' ')} 北京时间` : ''}
+      clock={clock}
       review={state.visited.includes('review') && <ReviewPage embedded active={toolActive('review')} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}
       profile={state.visited.includes('profile') && <MyProfilePage embedded active={toolActive('profile')} refreshVersion={taskVersion} onAdjustTask={requestAdjustment} />}>
       {children}

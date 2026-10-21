@@ -8,12 +8,15 @@ import GrowthAnalytics from '../components/GrowthAnalytics.jsx'
 import '../analytics.css'
 import SafeMessage from '../components/SafeMessage.jsx'
 import WorkspaceChat from '../components/WorkspaceChat.jsx'
+import { minutesText } from '../analytics.js'
 
 
 export default function ReviewPage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null }) {
   const Content = embedded ? Fragment : WorkspaceChat
   const [parentTasks, setParentTasks] = useState([])
   const [analyticsVersion, setAnalyticsVersion] = useState(0)
+  const [overview, setOverview] = useState(null)
+  const [overviewError, setOverviewError] = useState('')
   const [categories, setCategories] = useState([])
   const [contexts, setContexts] = useState({})
   const [insufficient,setInsufficient]=useState(false)
@@ -85,7 +88,7 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
     <Content {...(embedded ? {} : { scope: 'review', weekStart: weekStart || undefined, onAdjustTask, onDraftConfirmed: afterChatDraftConfirmed })}>
     {error && <p className="error-box" role="alert">{error}</p>}{notice && <p className="success-box" role="status">{notice}</p>}
 
-    <GrowthAnalytics refreshVersion={analyticsVersion} parentTasks={parentTasks} onRefresh={()=>refresh().catch(cause=>setError(cause.message))} />
+    <GrowthAnalytics refreshVersion={analyticsVersion} parentTasks={parentTasks} onOverview={setOverview} onOverviewError={setOverviewError} onRefresh={()=>refresh().catch(cause=>setError(cause.message))} />
     <section className="growth-section">
       <div className="growth-section-heading"><div><h3>保存的周复盘说明</h3></div></div>
       <p className="helper">以下是已保存的复盘版本；上方图表基于当前有效记录。更正反馈后可重新生成复盘说明。</p>
@@ -107,10 +110,13 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
     </Content>
   </section>
     {auxiliaryTarget && createPortal(<section className="v2-readonly-summary" aria-label="复盘辅助视图">
-      <h3>已保存周复盘说明</h3><p className="muted">{weekStart ? `${weekStart} 周` : '正在读取复盘…'}</p>
-      {error && <p className="error-box" role="alert">{error}</p>}
-      {review ? <><SafeMessage text={review.narrative || '此版本没有文字说明。'}/><p className="helper">已保存版本 v{review.version}</p></> : weekStart && <p>尚未生成周复盘说明。</p>}
-      <p className="helper">完整统计与复盘操作在主体中查看。</p>
+      <h3>本周回顾</h3>
+      {overviewError && <p role="status">摘要暂时无法更新{overview ? '，以下为上次读取的记录。' : '。'}</p>}
+      {overview ? <><p className="muted">{overview.start_date} 起的一周</p><dl>
+        <div><dt>已确认完成</dt><dd>{overview.completed_count} 项</dd></div>
+        <div><dt>已记录投入</dt><dd>{minutesText(overview.actual_minutes,overview.known_actual_minutes,overview.unknown_actual_count)}</dd></div>
+        <div><dt>有效反馈</dt><dd>{overview.feedback_count} 条</dd></div>
+      </dl></> : !overviewError && <p role="status">正在读取本周记录…</p>}
     </section>, auxiliaryTarget)}
   </>
 }

@@ -1,3 +1,17 @@
+import { shanghaiTime } from './assistant.js'
+
+export function workspaceClock(settings, elapsed = 0) {
+  const time = Date.parse(settings?.now) + Math.max(0, elapsed)
+  return Number.isFinite(time) ? `${settings.demo ? '演示 · ' : ''}${shanghaiTime(time).replace('T', ' ')} 北京时间` : ''
+}
+
+export function shiftPreviewDate(date, days, min, max) {
+  const time = Date.parse(`${date}T00:00:00+08:00`) + days * 86400000
+  if (!Number.isFinite(time)) return date
+  const next = shanghaiTime(time).slice(0, 10)
+  return next < min ? min : next > max ? max : next
+}
+
 export const nearBottom = ({ scrollHeight, clientHeight, scrollTop }) => scrollHeight - clientHeight - scrollTop <= 64
 export const reviewMetrics = facts => ['completed_count', 'confirmed_actual_minutes', 'planned_minutes'].map(key => Number.isFinite(facts?.[key]) ? facts[key] : null)
 export function progressPercent(actual, target) {
@@ -66,6 +80,5 @@ export function workbenchVisibility(state, narrow) {
 }
 
 export function toolPlacement(state, page) {
-  if (state.navigation === page) return 'primary'
-  return state.auxiliaryPage === page ? 'auxiliary' : 'hidden'
+  return state.navigation === page ? 'primary' : 'hidden'
 }

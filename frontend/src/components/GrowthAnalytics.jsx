@@ -74,18 +74,22 @@ export function AnalyticsState({ loading, error, onRetry }) {
   return null
 }
 
-export default function GrowthAnalytics({ refreshVersion = 0, parentTasks = [], onRefresh }) {
+export default function GrowthAnalytics({ refreshVersion = 0, parentTasks = [], onRefresh, onOverview, onOverviewError }) {
   const [weeks, setWeeks] = useState(4), [data, setData] = useState(null), [loading, setLoading] = useState(true)
   const [error, setError] = useState(''), [retry, setRetry] = useState(0)
   useEffect(() => {
     let active = true
-    setLoading(true); setError(''); setData(null)
-    getGrowthStatistics(weeks).then(result => { if (active) setData(result) }).catch(cause => { if (active) setError(cause.message) }).finally(() => { if (active) setLoading(false) })
+    setLoading(true); setError('')
+    getGrowthStatistics(weeks).then(result => {
+      if (active) { setData(result); onOverview?.(result.overview); onOverviewError?.('') }
+    }).catch(cause => {
+      if (active) { setError(cause.message); onOverviewError?.(cause.message) }
+    }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [weeks, refreshVersion, retry])
-  return <section className="growth-analytics" aria-labelledby="analytics-heading">
+  }, [weeks, refreshVersion, retry, onOverview, onOverviewError])
+  return <section className="growth-analytics" aria-labelledby="analytics-heading" aria-busy={loading}>
     <div className="growth-section-heading"><h3 id="analytics-heading">成长统计</h3><div className="analytics-controls"><label>统计范围<select value={weeks} onChange={event => setWeeks(Number(event.target.value))}>{[4, 8, 12].map(value => <option key={value} value={value}>最近 {value} 周</option>)}</select></label><button type="button" className="button subtle" disabled={loading} onClick={() => onRefresh ? onRefresh() : setRetry(value => value + 1)}>刷新统计</button></div></div>
     <AnalyticsState loading={loading || Boolean(data && data.weeks !== weeks)} error={error} onRetry={() => setRetry(value => value + 1)} />
-    {!loading && data?.weeks === weeks && <AnalyticsContent data={data} parentTasks={parentTasks} />}
+    {data?.weeks === weeks && <AnalyticsContent data={data} parentTasks={parentTasks} />}
   </section>
 }

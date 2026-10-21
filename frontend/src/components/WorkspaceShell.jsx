@@ -3,7 +3,7 @@ import { defaultSplitRatio, renderedSplitRatio, splitBounds, toolPlacement, work
 
 const labels = { home: '首页', schedule: '日程', review: '复盘', profile: '档案' }
 
-// One controller/edit buffer per tool; matching auxiliary views read that controller's data.
+// Full tools stay in the primary area; auxiliary previews only read their formal data.
 export default function WorkspaceShell({ state, dispatch, chat, children, review, profile, clock, conversation, auxiliarySchedule }) {
   const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches)
   const [gridWidth, setGridWidth] = useState(1440)
@@ -17,8 +17,7 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
   const ratio = renderedSplitRatio(state.splitRatio, available)
   const bounds = splitBounds(available)
   const resizable = !narrow && panel === 'normal'
-  const samePage = state.navigation === state.auxiliaryPage
-  const controls = samePage ? 'v2-auxiliary-shared' : 'v2-page-' + state.auxiliaryPage
+  const controls = 'v2-auxiliary-shared'
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 1023px)')
@@ -116,7 +115,7 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
       <aside id="v2-workspace" className="v2-workspace" aria-label="辅助栏控制" hidden={narrow && !visible.auxiliary} inert={narrow && !visible.auxiliary}>
         <button id="v2-restore-workspace" className="v2-workspace-restore" type="button" hidden={visible.auxiliary} aria-label="恢复辅助栏" aria-expanded="false" onClick={() => changePanel('normal')}>‹<span>辅助栏</span></button>
         <header className="v2-workspace-heading" hidden={!visible.auxiliary} inert={!visible.auxiliary}>
-          <div className="v2-workspace-tabs" role="tablist" aria-label="辅助栏页签">{workspacePages.map(page => <button key={page} id={'v2-tab-' + page} type="button" role="tab" aria-selected={state.auxiliaryPage === page} aria-controls={state.navigation === page ? 'v2-auxiliary-shared' : 'v2-page-' + page} tabIndex={state.auxiliaryPage === page ? 0 : -1} onKeyDown={event => tabKey(event, page)} onClick={() => dispatch({ type: 'auxiliary', page })}>{labels[page]}</button>)}</div>
+          <div className="v2-workspace-tabs" role="tablist" aria-label="辅助栏页签">{workspacePages.map(page => <button key={page} id={'v2-tab-' + page} type="button" role="tab" aria-selected={state.auxiliaryPage === page} aria-controls={controls} tabIndex={state.auxiliaryPage === page ? 0 : -1} onKeyDown={event => tabKey(event, page)} onClick={() => dispatch({ type: 'auxiliary', page })}>{labels[page]}</button>)}</div>
           <div className="v2-panel-controls">
             {!narrow && <button type="button" onClick={() => dispatch({ type: 'split', value: defaultSplitRatio })}>恢复默认宽度</button>}
             <button type="button" aria-label={panel === 'expanded' ? '恢复普通辅助栏' : '展开辅助栏'} aria-pressed={panel === 'expanded'} onClick={() => changePanel(panel === 'expanded' ? 'normal' : 'expanded')}>{panel === 'expanded' ? '普通' : '展开'}</button>
@@ -128,15 +127,15 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
         const placement = toolPlacement(state, page)
         const shown = placement !== 'hidden' && visible[placement]
         const content = page === 'schedule' ? children : page === 'review' ? review : profile
-        const target = samePage && page === state.auxiliaryPage ? auxiliaryTarget : null
-        return <section key={page} id={'v2-page-' + page} className="v2-tool-page" data-placement={placement} role={placement === 'primary' ? 'main' : 'tabpanel'} tabIndex={placement === 'primary' ? -1 : 0} aria-labelledby={placement === 'primary' ? 'v2-primary-' + page : 'v2-tab-' + page} hidden={!shown} inert={!shown}>
-          <header className="v2-primary-page-heading" hidden={placement !== 'primary'}><h1 id={'v2-primary-' + page}>{labels[page]}</h1><button type="button" className="button subtle" onClick={() => changePanel(panel === 'collapsed' ? 'normal' : 'collapsed')}>{panel === 'collapsed' ? '打开辅助栏' : '收起辅助栏'}</button></header>
+        const target = page === state.auxiliaryPage ? auxiliaryTarget : null
+        return <section key={page} id={'v2-page-' + page} className="v2-tool-page" data-placement={placement} role="main" tabIndex={-1} aria-labelledby={'v2-primary-' + page} hidden={!shown} inert={!shown}>
+          <header className="v2-primary-page-heading"><h1 id={'v2-primary-' + page}>{labels[page]}</h1><span className="workspace-clock">{clock}</span></header>
           {page !== 'schedule' && isValidElement(content) ? cloneElement(content, { auxiliaryTarget: target }) : content}
         </section>
       })}
-      <div id="v2-auxiliary-shared" className="v2-tool-page" data-placement="auxiliary" role="tabpanel" aria-labelledby={'v2-tab-' + state.auxiliaryPage} hidden={!samePage || !visible.auxiliary} inert={!samePage || !visible.auxiliary}>
-        <div ref={setAuxiliaryTarget}>{samePage && state.auxiliaryPage === 'schedule' ? auxiliarySchedule : null}</div>
-        <button className="button subtle" type="button" onClick={() => { dispatch({ type: 'mobile', value: 'primary' }); requestAnimationFrame(() => root.current?.querySelector('#v2-page-' + state.navigation)?.focus()) }}>在主体编辑{labels[state.navigation]}</button>
+      <div id="v2-auxiliary-shared" className="v2-tool-page" data-placement="auxiliary" role="tabpanel" aria-labelledby={'v2-tab-' + state.auxiliaryPage} hidden={!visible.auxiliary} inert={!visible.auxiliary}>
+        <div hidden={state.auxiliaryPage !== 'schedule'} inert={state.auxiliaryPage !== 'schedule'}>{auxiliarySchedule}</div>
+        <div ref={setAuxiliaryTarget} />
       </div>
     </div>
   </div>
