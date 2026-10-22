@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 import httpx
 from dotenv import load_dotenv
+from . import ai_diagnostics as trace
 
 
 TIMEOUT_SECONDS = 120.0
@@ -142,9 +143,11 @@ def _wire(text, system, config, max_tokens):
 
 
 async def request_claude(text: str, system: str, config: ClaudeConfig, max_tokens: int = 600) -> str:
+    trace.record('provider.request',protocol=config.api_format,stream=False,max_tokens=max_tokens)
     timeout_seconds=_request_timeout()
     try:
         endpoint, headers, payload = _wire(text, system, config, max_tokens)
+        trace.record('provider.budget',max_tokens=payload['max_tokens'])
         # Both per-operation and total request deadlines are bounded.
         async with asyncio.timeout(timeout_seconds):
             async with httpx.AsyncClient(timeout=timeout_seconds) as client:
@@ -154,18 +157,39 @@ async def request_claude(text: str, system: str, config: ClaudeConfig, max_token
                     json=payload,
                 )
                 response.raise_for_status()
-    except (httpx.HTTPError, httpx.InvalidURL, TimeoutError, ValueError):
+                trace.record('provider.http',status=response.status_code,stream=False)
+    except (httpx.HTTPError, httpx.InvalidURL, TimeoutError, ValueError) as exc:
+        trace.record('provider.network_failed',status=getattr(getattr(exc,'response',None),'status_code',None),error_type=type(exc).__name__)
         # Do not expose provider errors, headers, request text, or secrets.
         raise AIServiceError("AI_UNAVAILABLE") from None
     try:
         body = response.json()
-    except (ValueError, RecursionError):
+    except (ValueError, RecursionError) as exc:
+        trace.record('provider.body_invalid',error_type=type(exc).__name__)
         raise AIServiceError("AI_RESPONSE_INVALID") from None
+    reason=(body.get('choices') or [{}])[0].get('finish_reason') if config.api_format=='openai' and isinstance(body,dict) and isinstance(body.get('choices'),list) and body['choices'] and isinstance(body['choices'][0],dict) else body.get('stop_reason') if isinstance(body,dict) else None
+    trace.record('provider.body',structure=type(body).__name__,finish_reason=reason if reason in ('stop','length','tool_calls','content_filter','end_turn','stop_sequence','max_tokens','tool_use',None) else 'unknown')
     if config.api_format == "openai":
         return extract_openai_text(body)
     if isinstance(body,dict) and body.get('stop_reason')=='max_tokens':
         raise AIServiceError('AI_RESPONSE_INVALID')
     return extract_text(body)
+
+
+async def _sse_frames(response):
+    """HTTP chunks/CRLF are handled by httpx; dispatch an EOF-terminated frame.
+
+    EOF alone does not establish success: the consumer still requires a real
+    provider finish reason. A network exception never dispatches a partial frame.
+    """
+    data=[];size=0
+    async for line in response.aiter_lines():
+        size+=len(line)
+        if size>1024*1024:raise AIServiceError('AI_RESPONSE_INVALID')
+        if line.startswith('data:'):data.append(line[5:].lstrip())
+        if not line and data:
+            yield '\n'.join(data);data=[]
+    if data:yield '\n'.join(data)
 
 
 async def stream_claude(text: str, system: str, config: ClaudeConfig, max_tokens: int = 2000):
@@ -175,13 +199,16 @@ async def stream_claude(text: str, system: str, config: ClaudeConfig, max_tokens
     stream is never silently reissued. Callers persist actual received text.
     """
     timeout = _request_timeout()
+    trace.record('provider.request',protocol=config.api_format,stream=True,max_tokens=max_tokens)
     try:
         endpoint, headers, payload = _wire(text, system, config, max_tokens)
+        trace.record('provider.budget',max_tokens=payload['max_tokens'])
         payload['stream'] = True
         fallback = False
         async with asyncio.timeout(timeout):
             async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream('POST', endpoint, headers=headers, json=payload) as response:
+                    trace.record('provider.http',status=response.status_code,stream=True)
                     if response.status_code in (400, 404, 405, 415, 422, 501):
                         fallback = True
                     else:
@@ -198,20 +225,14 @@ async def stream_claude(text: str, system: str, config: ClaudeConfig, max_tokens
                             yield {'type': 'delta', 'text': answer}
                             return
                         yield {'type': 'mode', 'value': 'streaming'}
-                        data, size, ended, valid_finish, output = [], 0, False, False, 0
-                        async for line in response.aiter_lines():
-                            size += len(line)
-                            if size > 1024 * 1024:
-                                raise AIServiceError('AI_RESPONSE_INVALID')
-                            if line.startswith('data:'):
-                                data.append(line[5:].lstrip())
-                            if line or not data:
-                                continue
-                            raw, data = '\n'.join(data), []
+                        ended, valid_finish, output = False, False, 0
+                        reason=None
+                        async for raw in _sse_frames(response):
                             if raw == '[DONE]':
                                 ended = True
                                 break
                             event = json.loads(raw)
+                            if not isinstance(event,dict):raise AIServiceError('AI_RESPONSE_INVALID')
                             part = ''
                             if config.api_format == 'openai':
                                 choices = event.get('choices', [])
@@ -220,6 +241,7 @@ async def stream_claude(text: str, system: str, config: ClaudeConfig, max_tokens
                                 choice = choices[0]
                                 if choice.get('finish_reason') is not None:
                                     valid_finish = choice['finish_reason'] == 'stop'
+                                    reason=choice['finish_reason']
                                 part = choice.get('delta', {}).get('content') or ''
                             else:
                                 if event.get('type') == 'error':
@@ -227,7 +249,8 @@ async def stream_claude(text: str, system: str, config: ClaudeConfig, max_tokens
                                 if event.get('type') == 'content_block_delta' and event.get('delta', {}).get('type') == 'text_delta':
                                     part = event['delta'].get('text', '')
                                 if event.get('type') == 'message_delta':
-                                    valid_finish = event.get('delta', {}).get('stop_reason') in ('end_turn', 'stop_sequence')
+                                    reason=event.get('delta', {}).get('stop_reason')
+                                    valid_finish = reason in ('end_turn', 'stop_sequence')
                                 if event.get('type') == 'message_stop':
                                     ended = True
                                     break
@@ -238,7 +261,10 @@ async def stream_claude(text: str, system: str, config: ClaudeConfig, max_tokens
                                 raise AIServiceError('AI_RESPONSE_INVALID')
                             if part:
                                 yield {'type': 'delta', 'text': part}
-                        if not ended or not valid_finish or not output:
+                        complete=valid_finish and bool(output) and (ended or config.api_format=='openai')
+                        trace.record('provider.stream_end',terminal_seen=ended,normal_finish=valid_finish,complete=complete,
+                            output_characters=output,finish_reason=reason if reason in ('stop','length','tool_calls','content_filter','end_turn','stop_sequence','max_tokens',None) else 'unknown')
+                        if not complete:
                             raise AIServiceError('AI_RESPONSE_INVALID')
         if fallback:
             yield {'type': 'mode', 'value': 'full'}
@@ -246,7 +272,9 @@ async def stream_claude(text: str, system: str, config: ClaudeConfig, max_tokens
             yield {'type': 'delta', 'text': answer}
     except AIServiceError:
         raise
-    except (httpx.HTTPError, httpx.InvalidURL, TimeoutError):
+    except (httpx.HTTPError, httpx.InvalidURL, TimeoutError) as exc:
+        trace.record('provider.stream_network_failed',status=getattr(getattr(exc,'response',None),'status_code',None),error_type=type(exc).__name__)
         raise AIServiceError('AI_UNAVAILABLE') from None
-    except (ValueError, TypeError, KeyError, IndexError, RecursionError):
+    except (ValueError, TypeError, KeyError, IndexError, RecursionError,AttributeError) as exc:
+        trace.record('provider.stream_parse_failed',error_type=type(exc).__name__)
         raise AIServiceError('AI_RESPONSE_INVALID') from None

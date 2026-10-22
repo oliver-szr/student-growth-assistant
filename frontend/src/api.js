@@ -59,6 +59,13 @@ async function request(path, options = {}, timeoutMs = 15000) {
 }
 
 export const getTasks = () => request('/api/tasks')
+export async function ensureConversationRuntime(){
+  const health=await request('/api/health')
+  if(health.runtime?.protocol!=='draft-recovery-v3'||health.runtime?.skills_available!==true){
+    throw new Error('后端尚未加载当前草案修复。请重启后端后再发送；本次消息尚未发送，输入已保留。')
+  }
+  return health.runtime
+}
 export const createTask = (data) => request('/api/tasks', { method: 'POST', body: JSON.stringify(data) })
 export const updateTask = (id, data) => request(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 export const createTaskBreakdown = data => request('/api/tasks/breakdown-drafts', { method: 'POST', body: JSON.stringify(data) }, 125000)

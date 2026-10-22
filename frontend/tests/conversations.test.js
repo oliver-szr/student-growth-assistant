@@ -1,7 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createConversation, getConversations, getConversation, getConversationMessages, saveConversationMessage, updateConversation, deleteConversation } from '../src/api.js'
-import { editKey, readEdit, writeEdit, compatibleEdit, mergeMessages, applyReply, requestGate, restoredWorkbench, initialWorkbench, visibleChatMessages, toolNotices } from '../src/workbench.js'
+import { editKey, readEdit, writeEdit, compatibleEdit, mergeMessages, applyReply, requestGate, restoredWorkbench, initialWorkbench, visibleChatMessages, toolNotices,messageResourceLinks } from '../src/workbench.js'
+
+test('generic chat navigation has one header entry while genuine resource links remain visible',()=>{
+  const task={page:'schedule',kind:'task',id:7,label:'真实任务'}
+  assert.deepEqual(messageResourceLinks([{page:'schedule',kind:'schedule',label:'查看正式日程与任务'},task,task]),[task])
+  assert.deepEqual(messageResourceLinks(null),[])
+  assert.deepEqual(toolNotices([{tool:'tasks'}]),['已查询：任务。'])
+})
 import { startConversationRun, getConversationRun, stopConversationRun, retryConversationRun } from '../src/api.js'
 import { getCalendarEvents, getReviewFacts, saveReviewRecord, editWorkspaceDraft, actWorkspaceDraft, createReviewDraft } from '../src/api.js'
 import { calendarEvent, reviewRange } from '../src/calendar.js'

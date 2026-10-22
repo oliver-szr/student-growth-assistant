@@ -350,7 +350,7 @@ def test_tools_never_loop_unbounded_and_cannot_continue_after_a_write(client,mon
     monkeypatch.setattr(conversation_tools,'plan',query)
     sid=call(client,'POST','/api/conversations',json={'client_request_id':'bounds'})['id']
     run=call(client,'POST',f'/api/conversations/{sid}/runs',json={'client_message_id':'bounds','text':'查询'})
-    assert len(wait(client,sid,run['id'])['content']['tools'])==4 and len(calls)==4
+    assert len(wait(client,sid,run['id'])['content']['tools'])==1 and len(calls)==2
 
 
 def test_invalid_shared_edit_returns_422_without_replacing_draft(client,monkeypatch,mock_reply):

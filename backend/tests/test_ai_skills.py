@@ -199,8 +199,9 @@ def test_total_tool_limit_includes_read_steps_and_repair(client,chat,monkeypatch
     async def only_reads(request):decisions.append(1);return ToolPlan(calls=[{'name':'tasks'} for _ in range(4)])
     monkeypatch.setattr(conversation_tools,'plan',only_reads)
     result=send(client,chat,'帮我安排一下')
-    assert len(decisions)==1 and len(result['content']['tools'])==4
-    assert '没有生成' in result['delta']
+    assert len(decisions)==2 and len(result['content']['tools'])==2
+    assert result['content']['tools'][0]['tool']=='tasks'
+    assert result['content']['tools'][1]['draft']['id']>0
 
 
 def test_failed_reserved_redecision_uses_deterministic_preview_without_more_provider_calls(client,chat,monkeypatch):

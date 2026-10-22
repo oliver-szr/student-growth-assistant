@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState,lazy,Suspense } from 'react'
-import { getConversation, getConversationMessages, getConversationRuns, getConversationRun, startConversationRun, stopConversationRun, retryConversationRun, createReviewDraft, getWorkspaceDraft } from '../api.js'
-import { applyReply, mergeMessages, requestGate, visibleChatMessages, toolNotices } from '../workbench.js'
+import { getConversation, getConversationMessages, getConversationRuns, getConversationRun, startConversationRun, stopConversationRun, retryConversationRun, createReviewDraft, getWorkspaceDraft,ensureConversationRuntime } from '../api.js'
+import { applyReply, mergeMessages, requestGate, visibleChatMessages, toolNotices,messageResourceLinks } from '../workbench.js'
 import { localizedError } from '../localization.js'
 import EditRecovery, { useEditRecovery } from './EditRecovery.jsx'
 import ChatMessages from './ChatMessages.jsx'
@@ -121,6 +121,7 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
     const payload = { client_message_id: input.requestId || crypto.randomUUID(), text: input.text }
     setInput({ text: input.text, requestId: payload.client_message_id })
     action(async () => {
+      await ensureConversationRuntime()
       const draft_versions=await coordinateDrafts()
       // Read visible persisted cards after editors settle. This supplies an
       // optimistic version even when the user continues directly in chat.
@@ -163,7 +164,7 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
           {message.content?.status && message.content.status !== 'completed' && message.id!==run?.assistant_message_id && <small>{statuses[message.content.status] || '正在生成…'}</small>}
           {(message.content?.tools||[]).filter(result=>result.memory||result.draft).map((result,index)=>result.memory?<Suspense key={index} fallback={<p role="status">正在读取记忆建议…</p>}><MemoryCard id={result.memory.id} active={active} onOpen={onNavigate}/></Suspense>:<DraftCard key={index} reference={result.draft} active={active} onOpen={link=>onNavigate?.({...link,conversationId:id,messageId:message.id})}/>)}
           {toolNotices(message.content?.tools,message.content?.questions).map(notice=><p className="helper" key={notice}>{notice}</p>)}
-          <div className="button-row">{(Array.isArray(message.content?.links)?message.content.links:[]).filter(link=>link&&typeof link.label==='string'&&['schedule','review','profile'].includes(link.page)).map((link, i) => <button className="button subtle" key={i} onClick={() => onNavigate?.({...link,conversationId:id,messageId:message.id})}>{link.label}</button>)}</div>
+          <div className="button-row">{messageResourceLinks(message.content?.links).map((link, i) => <button className="button subtle" key={i} onClick={() => onNavigate?.({...link,conversationId:id,messageId:message.id})}>{link.label}</button>)}</div>
         </article>)}
         {windowStart+120<displayMessages.length&&<button className="button subtle" onClick={()=>setWindowStart(Math.max(0,displayMessages.length-120))}>显示最新已加载消息</button>}
         {next !== null && <button className="button subtle" disabled={busy || loading} onClick={() => loadMore()}>加载后续消息</button>}
@@ -175,7 +176,7 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
       {run.error_code && <p role="alert">{run.content?.tools?.some(result=>result.draft)?'已保存的初稿与查询结果仍可查看；本次AI文字回复失败，重试不会重复创建正式任务。':localizedError(503, { code: run.error_code })}</p>}
       {run.status === 'running' && <><button className="button subtle" disabled={busy} onClick={() => action(async () => { const response = await stopConversationRun(id, run.id, run.attempt); if (alive.current) receive(response) })}>停止生成</button>
         <button className="button subtle" onClick={() => setObserving(value => !value)}>{observing ? '停止等待' : '继续读取'}</button></>}
-      {['failed', 'cancelled', 'interrupted'].includes(run.status) && <button className="button secondary" disabled={busy} onClick={() => action(async () => { const response = await retryConversationRun(id, run.id, run.attempt); if (alive.current) { receive(response); setObserving(true) } })}>重试回复</button>}
+      {['failed', 'cancelled', 'interrupted'].includes(run.status) && <button className="button secondary" disabled={busy} onClick={() => action(async () => { await ensureConversationRuntime();const response = await retryConversationRun(id, run.id, run.attempt); if (alive.current) { receive(response); setObserving(true) } })}>重试回复</button>}
       {!observing && run.status === 'running' && <p className="helper">已停止此界面的观察，后台回复可能继续；点击继续读取恢复。</p>}
     </section>}
     {meta?.scope==='conversation'&&<><button className="button subtle conversation-review-action" aria-expanded={reviewOpen} disabled={busy||loading||unavailable||Boolean(meta.archived_at)||run?.status==='running'} onClick={()=>setReviewOpen(!reviewOpen)}>整理为复盘记录</button>

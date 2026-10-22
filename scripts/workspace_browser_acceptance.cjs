@@ -96,6 +96,14 @@ async function verifyDefaultDraftUI(){
     const sid=(await call('/api/conversations')).items[0].id;
     const input=page.getByRole('textbox',{name:'会话输入',exact:true});
     const nav=page.getByRole('navigation',{name:'主导航'});
+    const blockedRequests=[];
+    const observe=request=>{if(request.method()==='POST'&&request.url().endsWith(`/api/conversations/${sid}/runs`))blockedRequests.push(request)};
+    page.on('request',observe);
+    await page.route(api+'/api/health',route=>route.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':web},body:JSON.stringify({status:'ok'})}));
+    await input.fill('旧后端检查：输入必须保留');await page.getByRole('button',{name:'发送',exact:true}).click();
+    await expect(page.getByRole('alert')).toContainText('请重启后端');await expect(input).toHaveValue('旧后端检查：输入必须保留');
+    assert.equal(blockedRequests.length,0);await page.unroute(api+'/api/health');page.off('request',observe);
+    checked('runtime_mismatch_blocks_paid_send_and_keeps_input');
     async function send(text){
       await expect(input).toBeEnabled();await input.fill(text);
       const pending=page.waitForResponse(r=>r.url().endsWith(`/api/conversations/${sid}/runs`)&&r.request().method()==='POST');
@@ -110,6 +118,8 @@ async function verifyDefaultDraftUI(){
     assert.equal(initial.status,'completed');assert.equal(draft.content.schedule.title,'操作系统作业');
     assert.equal(draft.content.schedule.duration_minutes,90);assert.equal(draft.content.schedule.deadline,null);
     assert.equal(draft.field_sources.start_time,'system_default');assert.ok(draft.items.length);
+    await expect(page.getByRole('button',{name:'查看正式日程与任务',exact:true})).toHaveCount(0);
+    await expect(page.getByRole('button',{name:'日程与任务',exact:true})).toHaveCount(1);
     assert.deepEqual(await call('/api/tasks'),[]);
     await expect(page.locator('.workspace-message.assistant').last()).toContainText('硬截止时间：未设置');
     checked('defaults_OS_homework_invalid_ToolPlan_repair_to_real_persisted_preview_without_DDL');

@@ -34,7 +34,7 @@ def test_stream_parses_only_final_text_and_requires_a_real_terminal(monkeypatch,
     async def collect():return [event async for event in claude_client.stream_claude('history','system',config)]
     output=asyncio.run(collect())
     assert output==[{'type':'mode','value':'streaming'},{'type':'delta','text':'甲🙂'},{'type':'delta','text':'乙'}]
-    broken=body.replace(ending,'') if ending else body[:body.rfind('data:')]
+    broken=''.join('data: '+json.dumps(event,ensure_ascii=False)+'\n\n' for event in events[:2])
     monkeypatch.setattr(claude_client.httpx,'AsyncClient',lambda **kw:real_client(transport=httpx.MockTransport(lambda r:httpx.Response(200,headers={'content-type':'text/event-stream'},text=broken)),**kw))
     with pytest.raises(AIServiceError):asyncio.run(collect())
 

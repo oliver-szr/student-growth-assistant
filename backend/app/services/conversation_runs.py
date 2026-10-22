@@ -8,9 +8,11 @@ import json
 from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from ..models import AssistantRun, AssistantMessage, Task, GrowthGoal, GrowthChangeDraft
 from . import claude_client
+from . import ai_diagnostics as trace
 from .assistant_clock import assistant_now
 from .conversations import require_conversation, error, automatic_title
 from .planning_state import planning_transaction
@@ -109,14 +111,18 @@ def update_output(engine, run_id, token, *, text='', mode=None, terminal=None, f
 
 async def process(engine, run_id, token):
     buffer = ''
+    trace_token=None;stage='context'
     try:
         with Session(engine) as db:
             run = db.get(AssistantRun, run_id)
             if not run or run.status != 'running' or run.payload.get('token') != token:
                 return
+            trace_token=trace.begin(run_id,run.payload['attempt'])
             request, links = context_for(db, run)
+            trace.record('context.ready',history_count=len(request.get('history',[])))
         update_output(engine, run_id, token, links=links)
         from .conversation_tools import prepare
+        stage='tool_preparation'
         async with asyncio.timeout(360):
             request=await prepare(engine,run_id,token,request)
         from .conversation_context import bounded_request
@@ -135,6 +141,7 @@ async def process(engine, run_id, token):
             return
         # Flush real received chunks at most every ~80ms (or 128 characters).
         # No text is manufactured; final text is stored only in the message.
+        stage='final_reply'
         loop = asyncio.get_running_loop(); flushed = loop.time() - .08
         async with asyncio.timeout(245):
             async for event in reply_events(request):
@@ -156,7 +163,23 @@ async def process(engine, run_id, token):
         raise
     except Exception as cause:
         code = cause.code if isinstance(cause, claude_client.AIServiceError) else 'AI_UNAVAILABLE'
+        trace.record('run.failed',phase=stage,code=code,error_type=type(cause).__name__)
         update_output(engine, run_id, token, text=buffer[:16000], terminal='failed', failure=code)
+    finally:
+        if trace_token is not None:
+            try:
+                with Session(engine) as db,planning_transaction(db):
+                    row=db.get(AssistantRun,run_id)
+                    if row and row.payload.get('token')==token:
+                        trace.record('run.terminal',status=row.status,phase=stage)
+                        row.payload={**row.payload,'diagnostics':trace.snapshot()}
+                        output=db.get(AssistantMessage,row.payload['assistant_message_id'])
+                        output.content={**output.content,'diagnostics':trace.snapshot()}
+            except SQLAlchemyError:
+                # Diagnostic persistence must not replace the original outcome
+                # or dump SQL parameters/private content through a task error.
+                pass
+            finally:trace.end(trace_token)
 
 
 def output_nonempty(engine, run_id):

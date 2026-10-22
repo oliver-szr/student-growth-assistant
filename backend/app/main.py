@@ -21,6 +21,7 @@ from .services.planning_state import get_or_create_planning_state
 
 class HealthResponse(BaseModel):
     status: str
+    runtime: dict
 
 
 @asynccontextmanager
@@ -76,4 +77,16 @@ app.include_router(data.router)
 
 @app.get("/api/health", response_model=HealthResponse, tags=["Health"])
 def health() -> HealthResponse:
-    return HealthResponse(status="ok")
+    # Code objects identify loaded code, not newer source bytes on disk. This
+    # endpoint never reads configuration, a database or provider credentials.
+    import hashlib
+    import marshal
+    from .services import conversation_tools,ai_skills
+    available=True;hashes={}
+    try:
+        for name in ('core',*ai_skills.CAPABILITIES):
+            hashes[name]=hashlib.sha256(ai_skills.load_skill(name).encode()).hexdigest()[:12]
+    except Exception:available=False
+    return HealthResponse(status="ok",runtime={'protocol':getattr(conversation_tools,'RUNTIME_PROTOCOL',None),
+        'process_id':os.getpid(),'code_hash':hashlib.sha256(marshal.dumps(conversation_tools.prepare.__code__)).hexdigest()[:12],
+        'skills_available':available,'skill_hashes':hashes})

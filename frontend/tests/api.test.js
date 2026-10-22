@@ -1,6 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, confirmPlan, createCandidatePlan, getConfirmedPlan, getPlan, getTasks, createTask, readableDetail } from '../src/api.js'
+import { ApiError, confirmPlan, createCandidatePlan, getConfirmedPlan, getPlan, getTasks, createTask, readableDetail,ensureConversationRuntime } from '../src/api.js'
+
+test('old backend is detected by read-only health before an AI message can be sent',async context=>{
+  const calls=[]
+  context.mock.method(globalThis,'fetch',async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify({status:'ok'}))})
+  await assert.rejects(ensureConversationRuntime(),/请重启后端/)
+  assert.equal(calls.length,1);assert.equal(new URL(calls[0].url).pathname,'/api/health')
+  assert.equal(calls[0].options.body,undefined)
+  globalThis.fetch=async()=>new Response(JSON.stringify({status:'ok',runtime:{protocol:'draft-recovery-v3',skills_available:true}}))
+  assert.equal((await ensureConversationRuntime()).protocol,'draft-recovery-v3')
+})
 
 test('FastAPI validation messages include readable field paths', () => {
   assert.equal(readableDetail([

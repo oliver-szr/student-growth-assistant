@@ -6,6 +6,7 @@ of run attempt, so retry cannot duplicate an already produced suggestion.
 import json
 import logging
 import asyncio
+import hashlib
 from datetime import timedelta
 from pydantic import ValidationError
 from fastapi import HTTPException
@@ -23,9 +24,15 @@ from .planning_state import planning_transaction
 from .workspace_views import revision,calendar_events,review_facts
 from . import workspace_drafts
 from . import ai_skills
+from . import ai_diagnostics as trace
 from .assistant_clock import assistant_now
 
 logger=logging.getLogger(__name__)
+RUNTIME_PROTOCOL='draft-recovery-v3'
+
+
+def call_key(call):
+    return hashlib.sha256(json.dumps([call.name,call.arguments],sort_keys=True,ensure_ascii=False).encode()).hexdigest()[:20]
 PLANNER='''工具选择协议：只返回符合schema的JSON，不输出解释。只能选择allowed_tools。
 tasks/goals/memories使用lookup_schema的id/q/offset/limit；calendar/review使用start,end（上海日期，end不含）。
 planning_draft使用planning_schema；breakdown_draft使用breakdown_schema；review_draft使用review_schema。
@@ -73,8 +80,18 @@ async def plan(request):
     if len(serialized)+len(system)>48000:raise claude_client.AIServiceError('AI_CONTEXT_TOO_LARGE')
     raw=await claude_client.request_claude(serialized,system,claude_client.get_claude_config(),2400)
     from .constraint_parser import normalize_fence,unique_object,reject_constant
-    try:return ToolPlan.model_validate(json.loads(normalize_fence(raw),object_pairs_hook=unique_object,parse_constant=reject_constant))
-    except (ValueError,ValidationError,RecursionError):raise claude_client.AIServiceError('AI_RESPONSE_INVALID') from None
+    try:
+        parsed=json.loads(normalize_fence(raw),object_pairs_hook=unique_object,parse_constant=reject_constant)
+        trace.record('tool_plan.json',structure=type(parsed).__name__)
+        result=ToolPlan.model_validate(parsed)
+        trace.record('tool_plan.valid',calls=[c.name for c in result.calls],questions=len(result.questions))
+        return result
+    except ValidationError as exc:
+        trace.record('tool_plan.schema_failed',errors=trace.schema_errors(exc))
+        raise claude_client.AIServiceError('AI_RESPONSE_INVALID') from None
+    except (ValueError,RecursionError) as exc:
+        trace.record('tool_plan.json_failed',error_type=type(exc).__name__)
+        raise claude_client.AIServiceError('AI_RESPONSE_INVALID') from None
 
 
 def tool_session(db,conversation,scope):
@@ -197,6 +214,10 @@ async def execute(db,run,call,index,*,fallback=False):
             if base and not any(r['kind']=='planning' and r['id']==base['id'] and r['version']==base['version'] for r in run.payload.get('draft_versions',[])):
                 error('DRAFT_COORDINATION_REQUIRED','请先读取最新草案并协调未保存编辑，再继续修改。')
             result=await asyncio.to_thread(create,db,run,request,key,tool_session,base_ref=base)
+            value=result['content']['schedule']
+            trace.record('planning_draft.persisted',draft_id=result['id'],status=result['status'],
+                defaults_applied=sorted(k for k,v in result['field_sources'].items() if v=='system_default'),
+                duration_minutes=value['duration_minutes'],hard_deadline_present=bool(value['deadline']),items=len(result['items']))
             return {'draft':{'kind':'planning','id':result['id']},'summary':result['summary'],'status':result['status']}
         request=PlanningArgs.model_validate(args)
         if request.questions:return {'questions':request.questions}
@@ -248,6 +269,7 @@ async def prepare(engine,rid,token,request):
         stored=run.payload.get('tool_plan')
     selection=ai_skills.select_skills(request['message'],request.get('history',[]))
     _,audit=ai_skills.compose(selection)
+    trace.record('skills.selected',names=audit['names'],hashes=audit['hashes'],expected=selection.expected)
     logger.info('ai_skills %s',json.dumps(audit,sort_keys=True))
     if not persist(engine,rid,token,skill_diagnostics=audit):return None
     batch_index=0
@@ -278,7 +300,14 @@ async def prepare(engine,rid,token,request):
                 except claude_client.AIServiceError as repaired:
                     request['planner_failure']=repaired.code;selected=ToolPlan()
             else:request['planner_failure']=exc.code;selected=ToolPlan()
-        if len(selected.calls)>4-len(results):
+        seen_reads={r.get('call_key') for r in results if not r.get('error')}
+        cost=0
+        for candidate in selected.calls:
+            key=call_key(candidate)
+            if candidate.name in ai_skills.READ_TOOLS and key in seen_reads:continue
+            cost+=1
+            if candidate.name in ai_skills.READ_TOOLS:seen_reads.add(key)
+        if cost>4-len(results):
             request['tool_questions']=['本轮工具次数已达上限，请核对已有结果后继续。']
             break
         if not saved:
@@ -296,7 +325,17 @@ async def prepare(engine,rid,token,request):
                 'message':'本次请求未授权这类操作，未执行草案或正式修改。'})
             if not persist(engine,rid,token,tool_results=results):return None
             break
+        batch_start=len(results)
+        reserved=False
         for call in selected.calls:
+            identity=call_key(call)
+            if call.name in ai_skills.READ_TOOLS:
+                if any(r.get('call_key')==identity and not r.get('error') for r in results):
+                    trace.record('tool.read_reused',tool=call.name)
+                    continue
+                if selection.expected and not ai_skills.fulfilled(selection,results) and len(results)>=3:
+                    trace.record('tool.budget_reserved',expected=selection.expected)
+                    reserved=True;break
             index=len(results)
             with Session(engine) as db:
                 run=db.get(AssistantRun,rid)
@@ -310,17 +349,22 @@ async def prepare(engine,rid,token,request):
                     result=await execute(db,run,call,index)
                     if 'draft' in result:
                         ref=result['draft'];result['draft']=workspace_drafts.envelope(db,ref['kind'],ref['id'])
-                    results.append(jsonable_encoder({'tool':call.name,**result}))
+                    results.append(jsonable_encoder({'tool':call.name,'call_key':identity,**result}))
+                    trace.record('tool.returned',tool=call.name,index=index,draft=bool(result.get('draft')),questions=len(result.get('questions',[])))
                 except HTTPException as exc:
                     detail=exc.detail if isinstance(exc.detail,dict) else {}
                     results.append({'tool':call.name,'error':detail.get('code','TOOL_FAILED'),'message':detail.get('message','工具未完成，正式资料未改变。')})
-                except (ValidationError,ValueError,KeyError,TypeError):
+                except (ValidationError,ValueError,KeyError,TypeError) as exc:
+                    trace.record('tool.arguments_failed',tool=call.name,error_type=type(exc).__name__,errors=trace.schema_errors(exc) if isinstance(exc,ValidationError) else [])
                     results.append({'tool':call.name,'error':'INVALID_TOOL_ARGUMENTS','message':'信息不完整或参数无效，请补充后再试。'})
                 except claude_client.AIServiceError as exc:
                     results.append({'tool':call.name,'error':exc.code,'message':'草案生成未完成，请重试；未保存正式资料。'})
                 except SQLAlchemyError:
                     results.append({'tool':call.name,'error':'DRAFT_STORAGE_FAILED','message':'初稿未保存：无法完成数据库读取或持久化，不能确认冲突检查。请稍后重试。'})
             if not persist(engine,rid,token,tool_results=results):return None
+        if reserved or selected.continue_after_read and len(results)==batch_start:
+            trace.record('tool.read_loop_stopped',reason='reserved_budget' if reserved else 'repeated_read_batch')
+            break
         if any(r.get('questions') for r in results):break
         if not selected.continue_after_read:
             if request.get('planner_failure'):break

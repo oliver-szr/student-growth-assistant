@@ -122,6 +122,17 @@ export function toolNotices(results = [], shownQuestions = []) {
   if(queried.length)notices.push(`已查询：${[...new Set(queried)].join('、')}。`)
   return [...new Set(notices)]
 }
+export function messageResourceLinks(links=[]){
+  // Generic navigation already lives above chat. It is not a tool receipt and
+  // repeating it on every attempt misleadingly looks like another query.
+  const seen=new Set()
+  return (Array.isArray(links)?links:[]).filter(link=>{
+    if(!link||typeof link.label!=='string'||!['schedule','review','profile'].includes(link.page))return false
+    if(!link.id&&['schedule','review','profile'].includes(link.kind))return false
+    const key=JSON.stringify([link.page,link.kind,link.id]);if(seen.has(key))return false
+    seen.add(key);return true
+  })
+}
 export function applyReply(previous, response) {
   const old = previous.find(message => message.id === response.assistant_message_id)
   const text = response.reset ? response.delta : (old?.text || '') + response.delta
