@@ -76,6 +76,13 @@ def select_skills(text, history=()):
     hypothetical = bool(re.search(r'^(如果|假如|假设|举例|比如)|(?:如果|假如|假设).*(会怎样|会怎么样|会如何|是否可行)|(?:解释|分析).{0,8}(这句话|这段话)', current))
     readonly = bool(re.search(r'(只|仅)(想|要|是)?(查|看|问|了解)|看看|看一下|查一下|查询|最新任务|有什么|多少|在哪|忙不忙|是什么|记得', current))
     operation = _operation(current)
+    if not negative and not hypothetical and (re.search(r'^(改成|改为|时间改成|分成|分为|截止|最晚|就用这个方案|按这个方案|就这样)',current) or re.search(r'^(今天|今晚|明天|明晚).{0,12}点前完成',current)):
+        for item in list(history)[-8:][::-1]:
+            if item.get('role')=='user':
+                prior=select_skills(item.get('text',''))
+                if prior.expected in ('planning','review_record'):
+                    operation=prior.operation;break
+                if re.search(r'不安排|先不要|换个话题',item.get('text','')):break
     if negative or hypothetical:
         return Selection(('query',) if readonly else ('chat',), 'query' if readonly else 'chat',
             READ_TOOLS if readonly else frozenset(), reason='negated_or_hypothetical')
@@ -147,7 +154,7 @@ def fulfilled(selection, results):
 
 def outcome(selection, results, questions):
     if questions:return 'needs_input'
-    if any(r.get('error') for r in results):return 'tool_failed'
     if fulfilled(selection, results):return 'awaiting_confirmation'
+    if any(r.get('error') for r in results):return 'tool_failed'
     if selection.expected:return 'not_created'
     return 'queried' if results else 'chat'

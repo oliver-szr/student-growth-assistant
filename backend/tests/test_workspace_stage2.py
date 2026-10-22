@@ -133,13 +133,16 @@ def test_explicit_ai_review_is_only_a_draft_and_confirms_once(client,monkeypatch
 def test_review_generation_errors_and_source_revision_guard(client,monkeypatch):
     sid=call(client,'POST','/api/conversations',json={'client_request_id':'review-errors'})['id']
     body=dict(client_request_id='r',start_date='2026-10-12',end_date='2026-10-19')
-    assert client.post(f'/api/conversations/{sid}/review-drafts',json=body).json()['detail']['code']=='AI_NOT_CONFIGURED'
+    blank=call(client,'POST',f'/api/conversations/{sid}/review-drafts',json=body)
+    assert blank['content']['conclusion']=='' and blank['notices']
     monkeypatch.setattr(claude_client,'get_claude_config',lambda:None)
     async def invalid(*args):return '[]'
     monkeypatch.setattr(claude_client,'request_claude',invalid)
-    assert client.post(f'/api/conversations/{sid}/review-drafts',json=body).status_code==502
+    body['client_request_id']='r-invalid'
+    assert call(client,'POST',f'/api/conversations/{sid}/review-drafts',json=body)['notices']
     async def valid(*args):return '{"title":"旧事实","summary":"","conclusion":""}'
     monkeypatch.setattr(claude_client,'request_claude',valid)
+    body['client_request_id']='r-valid'
     draft=call(client,'POST',f'/api/conversations/{sid}/review-drafts',json=body)
     call(client,'POST','/api/tasks',json={'title':'事实已变','duration_minutes':30,'deadline':'2026-10-16T20:00:00+08:00'})
     response=client.post(f"/api/workspace/drafts/review_record/{draft['id']}/confirm",json={'expected_version':draft['version']})
@@ -187,12 +190,11 @@ def test_scheduling_clarification_survives_reply_and_continues_to_confirm(client
         assert any(item['text']=='大概1个半小时，你帮我安排一下' for item in request['history'])
         action={'op':'add','fields':{**actions[0]['fields'],'deadline':'2026-10-14T22:00:00+08:00'}}
         pending=next((d for d in request.get('current_drafts',[]) if d['kind']=='planning' and d['status']=='needs_input'),None)
-        if pending:action['target']=pending['content']['actions'][0]['target']
+        if pending and pending['content'].get('actions'):action['target']=pending['content']['actions'][0]['target']
         return ToolPlan(calls=[{'name':'planning_draft','arguments':{'actions':[action]}}])
     monkeypatch.setattr(conversation_tools,'plan',choose)
     async def reply(request):
         # A model must not replace a required clarification with informal advice.
-        assert request['message']=='今晚22点前完成'
         yield {'type':'delta','text':'已生成待审核日程方案，请打开草案确认采用。'}
     monkeypatch.setattr(conversation_runs,'reply_events',reply)
     sid=call(client,'POST','/api/conversations',json={'client_request_id':'clarify'})['id']
@@ -202,17 +204,17 @@ def test_scheduling_clarification_survives_reply_and_continues_to_confirm(client
     pending=wait(client,sid,run['id'])
     assert pending['status']=='completed',pending
     questions=pending['content']['questions']
-    assert questions and all(q in pending['delta'] for q in questions)
-    if question_source!='validator':assert questions==[question]
-    else:assert any('具体截止时间' in q for q in questions)
-    assert pending['delivery']=='full'
-    assert '审核' in pending['delta'] and '正式' in pending['delta']
+    assert not questions
+    partial=pending['content']['tools'][-1]['draft']
+    assert partial['unresolved'] and partial['content']['schedule']['deadline'] is None
+    assert partial['items']
     assert call(client,'GET','/api/tasks')==[]
     assert not any(e['kind']=='formal_task' for e in call(client,'GET','/api/calendar/events?start=2026-10-14&end=2026-10-15')['events'])
     repeated=call(client,'POST',f'/api/conversations/{sid}/runs',json=body)
     assert repeated['id']==run['id'] and repeated['content']['questions']==questions
     assert len(requests)==1
-    following=call(client,'POST',f'/api/conversations/{sid}/runs',json={'client_message_id':'deadline','text':'今晚22点前完成'})
+    following=call(client,'POST',f'/api/conversations/{sid}/runs',json={'client_message_id':'deadline','text':'今晚22点前完成',
+        'draft_versions':[{'kind':'planning','id':partial['id'],'version':partial['version']}]})
     done=wait(client,sid,following['id'])
     assert done['status']=='completed',done
     ref=done['content']['tools'][0]['draft']

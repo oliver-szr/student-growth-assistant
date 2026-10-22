@@ -6,7 +6,7 @@ version: 1
 
 用途：明确创建/修改任务、拆解大任务、记录执行反馈，或通过既有目标/偏好工具管理资料。仅查询任务不生成草案。
 
-先用tasks/goals/preferences精确读取已有资源。拆解使用breakdown_draft，参数title/text/deadline/expected_duration_minutes/goal_id遵守breakdown_schema；名称、总工作时长和具体截止来自用户，缺失只追问必要内容。原服务校验最多两级、子任务总时长与父DDL，不复制Task表或自建算法。联合安排请求先拆解并确认任务，再单独安排；不能把未确认子任务当正式任务。
+先用tasks/goals/preferences精确读取已有资源，不重复创建已有任务。拆解使用breakdown_draft，名称从用户本轮和前文继承，预计时长缺失采用集中默认值60分钟；deadline未指定保持空值，不要求先编一个精确DDL。缺非关键字段也先给初稿；无法可靠拆解时保留可编辑空任务树，不虚构完成结果。原服务校验最多两级、子任务时长及父子DDL，正式创建前必须补齐真实截止，不复制Task表或自建算法。联合安排请求先拆解并确认任务，再单独安排；不能把未确认子任务当正式任务。
 
 简单创建或修改任务复用planning_draft的可编辑任务与候选方案；明确告知采用内容，不能只聊一个时间表。沿用已有task:id/draft引用，避免重复。ready草案更改仅用已协调的edit_draft。
 

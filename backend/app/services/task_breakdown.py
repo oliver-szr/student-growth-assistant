@@ -27,7 +27,7 @@ def _goal(db, goal_id):
 
 
 def _dates(content, now):
-    if content.parent.deadline <= now or any(child.deadline <= now for child in content.children):
+    if content.parent.deadline and content.parent.deadline <= now or any(child.deadline and child.deadline <= now for child in content.children):
         hierarchy_error("BREAKDOWN_DEADLINE_INVALID", "父子任务截止时间必须在未来，请修改草案。")
 
 
@@ -37,7 +37,7 @@ def _response(db, draft):
     original = BreakdownCreate.model_validate(data["input"])
     status = draft.status
     now = assistant_clock.assistant_now()
-    if status == "ready" and (draft.source_revision != _revision(db) or content.parent.deadline <= now or any(child.deadline <= now for child in content.children)):
+    if status == "ready" and (draft.source_revision != _revision(db) or content.parent.deadline and content.parent.deadline <= now or any(child.deadline and child.deadline <= now for child in content.children)):
         status = "stale"
     total = sum(child.duration_minutes for child in content.children)
     ids = data.get("created_task_ids", [])
@@ -70,8 +70,14 @@ async def create_draft(db, request):
             _dates(content, assistant_clock.assistant_now())
             if content.parent.deadline != request.deadline:
                 raise ValueError("AI changed user deadline")
+            if request.deadline is None and any(child.deadline is not None for child in content.children):
+                raise ValueError('AI invented a child deadline without a user deadline')
+        except AIServiceError:
+            if request.deadline is not None:raise
+            content = BreakdownContent(parent={"title":request.title,"deadline":None},children=[])
         except (ValidationError, ValueError, HTTPException):
-            raise AIServiceError("AI_RESPONSE_INVALID") from None
+            if request.deadline is not None:raise AIServiceError("AI_RESPONSE_INVALID") from None
+            content = BreakdownContent(parent={"title":request.title,"deadline":None},children=[])
     else:
         content = BreakdownContent(parent={"title": request.title, "deadline": request.deadline}, children=[])
     with planning_transaction(db):
@@ -140,6 +146,8 @@ def confirm_draft(db, draft_id, request):
         except ValidationError:
             hierarchy_error("INVALID_BREAKDOWN", "请保留至少一个合法子任务，并检查标题、时长与DDL。")
         _dates(content, assistant_clock.assistant_now())
+        if not content.parent.deadline or any(not child.deadline for child in content.children) or content.parent.title=='待命名任务':
+            hierarchy_error('DRAFT_FIELDS_REQUIRED','正式任务需要真实名称和父子截止时间；请补充后确认。',422)
         original = BreakdownCreate.model_validate(draft.payload["input"])
         _goal(db, original.goal_id)
         parent = Task(title=content.parent.title, description=content.parent.description, deadline=content.parent.deadline,

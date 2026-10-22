@@ -115,7 +115,7 @@ export function toolNotices(results = [], shownQuestions = []) {
   const labels={tasks:'任务',goals:'目标',preferences:'偏好',calendar:'日程',review:'回顾事实',memories:'已确认记忆'}
   const notices=[],queried=[]
   for(const result of results){
-    if(result.error){if(result.message)notices.push(result.message);continue}
+    if(result.error){if(result.recovered_by)notices.push('模型处理未完成，已使用已知信息生成默认初稿，请审核。');else if(result.message)notices.push(result.message);continue}
     if(result.questions?.length){notices.push(...result.questions.filter(question=>!shownQuestions.includes(question)));continue}
     if(labels[result.tool])queried.push(labels[result.tool])
   }

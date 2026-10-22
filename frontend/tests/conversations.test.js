@@ -23,6 +23,11 @@ test('query results produce one truthful notice, preserving distinct errors and 
   assert.deepEqual(toolNotices([{tool:'planning_draft',draft:{id:1}}]),[])
   assert.deepEqual(toolNotices([{tool:'planning_draft',questions:['几点前完成？']}],['几点前完成？']),[])
 })
+
+test('recovered model errors retain a truthful fallback notice and completed query receipts',()=>{
+  assert.deepEqual(toolNotices([{tool:'tasks'},{tool:'planning_draft',error:'INVALID_TOOL_ARGUMENTS',message:'无效参数',recovered_by:'trusted_defaults'},
+    {tool:'planning_draft',draft:{id:1}}]),['模型处理未完成，已使用已知信息生成默认初稿，请审核。','已查询：任务。'])
+})
 test('later success hides obsolete empty failed placeholders without deleting partial replies or cards',()=>{
   const messages=[{id:1,role:'assistant',text:'',content:{status:'failed',links:[{page:'schedule'}]}},
     {id:2,role:'assistant',text:'已收到的部分内容',content:{status:'failed'}},

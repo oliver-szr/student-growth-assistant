@@ -4,6 +4,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 from .schemas import TaskResponse, required_title
 
 MAX_CHILDREN = 20
+DEFAULT_WORK_MINUTES = 60
 Minutes = Annotated[int, Field(strict=True, ge=5, le=10080)]
 
 
@@ -11,7 +12,7 @@ class BreakdownParent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(max_length=200)
     description: str | None = Field(default=None, max_length=4000)
-    deadline: AwareDatetime
+    deadline: AwareDatetime | None = None
 
     _title = field_validator("title")(required_title)
 
@@ -38,7 +39,7 @@ class BreakdownContent(BaseModel):
         orders = [child.sort_order for child in self.children]
         if len(set(orders)) != len(orders):
             raise ValueError("建议顺序不能重复")
-        if any(child.deadline > self.parent.deadline for child in self.children):
+        if any(child.deadline and self.parent.deadline and child.deadline > self.parent.deadline for child in self.children):
             raise ValueError("子任务截止时间不能晚于父任务")
         return self
 
@@ -53,8 +54,8 @@ class BreakdownCreate(BaseModel):
     source: Literal["ai", "manual"] = "ai"
     text: str = Field(min_length=1, max_length=4000)
     title: str = Field(max_length=200)
-    deadline: AwareDatetime
-    expected_duration_minutes: Minutes
+    deadline: AwareDatetime | None = None
+    expected_duration_minutes: Minutes = DEFAULT_WORK_MINUTES
     goal_id: Annotated[int, Field(strict=True, gt=0)] | None = None
 
     _titles = field_validator("title", "text", "client_request_id")(required_title)

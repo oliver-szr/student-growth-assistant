@@ -16,7 +16,7 @@ export function editableContent(content) {
 }
 
 export function breakdownPayload(content) {
-  const backend = item => ({ ...item, deadline: toBackendDeadline(item.deadline) })
+  const backend = item => ({ ...item, deadline: item.deadline?toBackendDeadline(item.deadline):null })
   return {
     parent: backend(content.parent),
     children: content.children.map((child, sort_order) => ({ ...backend(child), duration_minutes: Number(child.duration_minutes), sort_order })),

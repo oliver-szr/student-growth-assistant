@@ -1,9 +1,12 @@
 """Strict range, record and AI tool contracts; no arbitrary write tools."""
 from datetime import date
 from typing import Annotated, Literal
-from pydantic import Field, model_validator
+from pydantic import AwareDatetime, Field, model_validator
 from .assistant_schemas import StrictModel, Action, ConversationMessageCreate
-from .task_breakdown_schemas import BreakdownCreate, BreakdownContent
+from .task_breakdown_schemas import BreakdownCreate, BreakdownContent, DEFAULT_WORK_MINUTES
+
+DRAFT_DEFAULTS = {'duration_minutes':DEFAULT_WORK_MINUTES,'start_time':'09:00','title':'待命名任务',
+    'priority':'normal','segments':1,'break_minutes':0,'deadline':None}
 
 
 class ReviewContent(StrictModel):
@@ -78,6 +81,27 @@ class PlanningArgs(StrictModel):
     actions: list[Action] = Field(default_factory=list,max_length=3)
     questions: list[str] = Field(default_factory=list,max_length=5)
     replan: bool = True
+
+
+class SchedulePreview(StrictModel):
+    """Editable intent; a completion window is never a formal deadline."""
+    title: str = Field(default=DRAFT_DEFAULTS['title'], min_length=1, max_length=200)
+    duration_minutes: int = Field(default=DRAFT_DEFAULTS['duration_minutes'], strict=True, ge=5, le=840, multiple_of=5)
+    day: date
+    start_time: str = Field(default=DRAFT_DEFAULTS['start_time'], pattern=r'^([01]\d|2[0-3]):[0-5]\d$')
+    start_exact: bool = False
+    deadline: AwareDatetime | None = None
+    priority: Literal['high', 'normal', 'low'] = 'normal'
+    segments: int = Field(default=1, strict=True, ge=1, le=8)
+    break_minutes: int = Field(default=0, strict=True, ge=0, le=120, multiple_of=5)
+    task_id: int | None = Field(default=None, strict=True, ge=1)
+
+    @model_validator(mode='after')
+    def valid_segments(self):
+        if not self.title.strip():raise ValueError('请填写任务名称')
+        if self.duration_minutes % self.segments or (self.duration_minutes // self.segments) % 5:
+            raise ValueError('每段工作时长须为5分钟整数倍')
+        return self
 
 
 class BusinessArgs(StrictModel):

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState,lazy,Suspense } from 'react'
-import { getConversation, getConversationMessages, getConversationRuns, getConversationRun, startConversationRun, stopConversationRun, retryConversationRun, createReviewDraft } from '../api.js'
+import { getConversation, getConversationMessages, getConversationRuns, getConversationRun, startConversationRun, stopConversationRun, retryConversationRun, createReviewDraft, getWorkspaceDraft } from '../api.js'
 import { applyReply, mergeMessages, requestGate, visibleChatMessages, toolNotices } from '../workbench.js'
 import { localizedError } from '../localization.js'
 import EditRecovery, { useEditRecovery } from './EditRecovery.jsx'
@@ -122,6 +122,15 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
     setInput({ text: input.text, requestId: payload.client_message_id })
     action(async () => {
       const draft_versions=await coordinateDrafts()
+      // Read visible persisted cards after editors settle. This supplies an
+      // optimistic version even when the user continues directly in chat.
+      const known=new Set(draft_versions.map(ref=>`${ref.kind}:${ref.id}`))
+      const cards=[...new Map(messages.flatMap(message=>(message.content?.tools||[]).filter(result=>result.draft).map(result=>[`${result.draft.kind}:${result.draft.id}`,result.draft]))).values()].slice(-10)
+      for(const ref of cards){
+        if(known.has(`${ref.kind}:${ref.id}`))continue
+        const latest=await getWorkspaceDraft(ref.kind,ref.id)
+        if(!['applied','discarded','superseded','stale'].includes(latest.status))draft_versions.push({kind:latest.kind,id:latest.id,version:latest.version})
+      }
       const response = await startConversationRun(id, {...payload,draft_versions,review_range:{start:reviewDates.start_date,end:reviewDates.end_date}})
       if (!alive.current) return
       setMessages(current => mergeMessages(current, [{ id: response.user_message_id, session_id: id, role: 'user', text: payload.text }]))
@@ -162,8 +171,8 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
       </>}
     </ChatMessages>
     {run && <section aria-label="回复状态" className="reply-status">
-      <p role="status">{run.status === 'running' ? run.phase==='querying'?'正在查询正式记录…':run.phase==='calculating'?'正在计算待审核草案…':run.delivery === 'full' ? '服务使用完整回复模式，正在等待结果…' : run.delivery === 'streaming' ? '正在接收回复…' : '正在理解并读取必要上下文…' : statuses[run.status]}</p>
-      {run.error_code && <p role="alert">{localizedError(503, { code: run.error_code })}</p>}
+      <p role="status">{run.status === 'running' ? run.phase==='querying'?'正在查询正式记录…':run.phase==='calculating'?'正在计算待审核草案…':run.delivery === 'full' ? '服务使用完整回复模式，正在等待结果…' : run.delivery === 'streaming' ? '正在接收回复…' : '正在理解并读取必要上下文…' : run.status==='failed'&&run.content?.tools?.some(result=>result.draft)?'草案已生成；文字回复未正常结束，可重试':statuses[run.status]}</p>
+      {run.error_code && <p role="alert">{run.content?.tools?.some(result=>result.draft)?'已保存的初稿与查询结果仍可查看；本次AI文字回复失败，重试不会重复创建正式任务。':localizedError(503, { code: run.error_code })}</p>}
       {run.status === 'running' && <><button className="button subtle" disabled={busy} onClick={() => action(async () => { const response = await stopConversationRun(id, run.id, run.attempt); if (alive.current) receive(response) })}>停止生成</button>
         <button className="button subtle" onClick={() => setObserving(value => !value)}>{observing ? '停止等待' : '继续读取'}</button></>}
       {['failed', 'cancelled', 'interrupted'].includes(run.status) && <button className="button secondary" disabled={busy} onClick={() => action(async () => { const response = await retryConversationRun(id, run.id, run.attempt); if (alive.current) { receive(response); setObserving(true) } })}>重试回复</button>}

@@ -55,6 +55,8 @@ def serve(port):
     from app.workspace_schemas import ToolPlan
     async def mock_tools(request):
         text=request['message']
+        if text=='大概一个半小时，你帮我安排一下。':
+            raise claude_client.AIServiceError('AI_RESPONSE_INVALID')  # Default-first acceptance: two invalid plans.
         skill_fixture=text.startswith('技能验收：') or any(m['text'].startswith('技能验收：今晚写') for m in request.get('history',[]) if m['role']=='user')
         if skill_fixture:
             if '先不要帮我安排' in text:
@@ -75,7 +77,7 @@ def serve(port):
         if text.startswith('匿名最新任务'):
             return ToolPlan(calls=[{'name':'tasks','arguments':{'q':'需求分析'}}])
         if text.startswith('匿名拆解'):
-            return ToolPlan(calls=[{'name':'breakdown_draft','arguments':{'title':'匿名交付','text':text,'deadline':'2026-10-16T20:00:00+08:00','expected_duration_minutes':120}}])
+            return ToolPlan(calls=[{'name':'breakdown_draft','arguments':{'title':'另一份匿名交付' if '另一个' in text else '匿名交付','text':text,'deadline':'2026-10-16T20:00:00+08:00','expected_duration_minutes':120}}])
         if text.startswith('匿名修改草案') and request.get('current_drafts'):
             draft=next((d for d in request['current_drafts'] if d['kind']=='breakdown'),None)
             if draft:

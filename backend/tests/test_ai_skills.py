@@ -182,7 +182,7 @@ def test_one_redecision_creates_real_draft_and_retry_does_not_duplicate(client,c
 
 
 @pytest.mark.parametrize('text',['帮我安排一下','帮我复盘一下今天'])
-def test_no_draft_after_one_redecision_is_honest_not_fake_text_or_card(client,chat,monkeypatch,test_engine,text):
+def test_empty_plan_after_one_redecision_uses_real_default_draft(client,chat,monkeypatch,test_engine,text):
     attempts=[]
     async def empty(request):attempts.append(1);return ToolPlan()
     async def dishonest(request):raise AssertionError('no unsupported success narration');yield
@@ -190,8 +190,8 @@ def test_no_draft_after_one_redecision_is_honest_not_fake_text_or_card(client,ch
     monkeypatch.setattr(conversation_runs,'reply_events',dishonest)
     result=send(client,chat,text)
     assert len(attempts)==2 and result['status']=='completed'
-    assert '没有生成' in result['delta'] and result['content']['tools']==[]
-    with Session(test_engine) as db:assert db.get(AssistantRun,result['id']).payload['skill_diagnostics']['outcome']=='not_created'
+    assert '默认值' in result['delta'] and result['content']['tools'][0]['draft']['id']>0
+    with Session(test_engine) as db:assert db.get(AssistantRun,result['id']).payload['skill_diagnostics']['outcome']=='awaiting_confirmation'
 
 
 def test_total_tool_limit_includes_read_steps_and_repair(client,chat,monkeypatch,test_engine):
@@ -203,7 +203,7 @@ def test_total_tool_limit_includes_read_steps_and_repair(client,chat,monkeypatch
     assert '没有生成' in result['delta']
 
 
-def test_failed_reserved_redecision_resumes_same_batch_on_explicit_retry(client,chat,monkeypatch):
+def test_failed_reserved_redecision_uses_deterministic_preview_without_more_provider_calls(client,chat,monkeypatch):
     calls=[]
     async def choose(request):
         calls.append(request.get('decision_feedback'))
@@ -212,14 +212,10 @@ def test_failed_reserved_redecision_resumes_same_batch_on_explicit_retry(client,
         return ToolPlan(calls=[planning_call()])
     monkeypatch.setattr(conversation_tools,'plan',choose)
     result=send(client,chat,'帮我安排90分钟匿名作业，今晚22点前完成')
-    assert result['status']=='failed'
-    call(client,f"/api/conversations/{chat}/runs/{result['id']}/retry",{'expected_attempt':1})
-    for _ in range(100):
-        current=call(client,f"/api/conversations/{chat}/runs/{result['id']}")
-        if current['status']!='running':break
-        time.sleep(.015)
-    assert current['status']=='completed' and current['content']['tools'][0]['draft']['status']=='ready'
-    assert len(calls)==3 and calls[1]['code']==calls[2]['code']=='MISSING_DRAFT'
+    assert result['status']=='completed' and result['content']['tools'][0]['draft']['status']=='ready'
+    assert len(calls)==2 and calls[1]['code']=='MISSING_DRAFT'
+    repeated=call(client,f'/api/conversations/{chat}/runs',{'client_message_id':'send','text':'帮我安排90分钟匿名作业，今晚22点前完成'})
+    assert repeated['id']==result['id'] and len(calls)==2
     assert call(client,'/api/tasks')==[]
 
 
