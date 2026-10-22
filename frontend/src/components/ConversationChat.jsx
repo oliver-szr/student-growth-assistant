@@ -20,6 +20,7 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
   const [unavailable, setUnavailable] = useState(false), [input, setInput] = useState({ text: '', requestId: null })
   const [reviewDates,setReviewDates]=useState(()=>{const [start,end]=reviewRange(today||new Date().toISOString().slice(0,10),'week');return {start_date:start,end_date:end,period:'week'}})
   const [reviewOpen,setReviewOpen]=useState(false),[intentPending,setIntentPending]=useState(null)
+  const [summaryTarget,setSummaryTarget]=useState(null)
   const reviewRequest=useRef(null),seenIntent=useRef(null)
   useEffect(()=>{
     if(!intent||seenIntent.current===intent.key)return
@@ -130,9 +131,9 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
     })
   }
   return <section className="workspace-chat conversation-chat" aria-label="持久会话">
-    <div className="workspace-chat-heading"><h2>{meta?.title || '读取会话'}</h2></div>
-    <p className="helper">{meta?.scope && meta.scope !== 'conversation' ? '历史工具会话只读；业务草案请从对应入口处理。' : '可以自由交流；业务变更需打开相应入口并由你确认。相关历史与所需记录会发送给配置的模型服务。'}</p>
-    <div className="button-row" aria-label="聊天业务入口">
+    <div className="workspace-chat-heading"><h2 title={meta?.title}>{meta?.title || '读取会话'}</h2><div className="conversation-summary-trigger" ref={setSummaryTarget}/></div>
+    <p className="helper conversation-intro" title="相关历史与所需资料会发送给你配置的模型服务。">{meta?.scope && meta.scope !== 'conversation' ? '历史工具会话只读；业务草案请从对应入口处理。' : '从一个想法开始，重要修改由你确认。'}</p>
+    <div className="button-row conversation-shortcuts" role="group" aria-label="聊天业务入口">
       <button className="button subtle" onClick={() => onNavigate?.({ page: 'schedule', kind: 'schedule' })}>日程与任务</button>
       <button className="button subtle" onClick={() => onNavigate?.({ page: 'review', kind: 'review' })}>查看复盘</button>
       <button className="button subtle" onClick={() => onNavigate?.({ page: 'profile', kind: 'profile' })}>目标与档案</button>
@@ -142,7 +143,7 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
     {error && <p className="error-box" role="alert">{error}<button className="button subtle" onClick={() => setReload(value => value + 1)}>重新读取</button></p>}
     {meta?.archived_at && !unavailable && <p role="status">当前会话已归档，请在会话栏恢复后再发送。</p>}
     <EditRecovery recovery={recovery} label="聊天输入" /><EditRecovery recovery={reviewRecovery} label="复盘整理请求" />
-    <ConversationSummary workspace={workspace} id={id} active={active} unavailable={unavailable||meta?.scope!=='conversation'} onLocate={onLocate}/>
+    <ConversationSummary workspace={workspace} id={id} active={active} unavailable={unavailable||meta?.scope!=='conversation'} onLocate={onLocate} triggerTarget={summaryTarget}/>
     <ChatMessages storageKey={workspace?`sga-chat-scroll:${workspace}:${id}`:null} revision={`${windowStart}:${messages[0]?.id}:${messages.length}:${messages.at(-1)?.id}:${messages.at(-1)?.text?.length}`}>
       {!unavailable && <>
         {messages.length > 0 && <button className="button subtle" disabled={busy || loading} onClick={() => loadMore(true)}>加载更早消息</button>}

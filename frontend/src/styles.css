@@ -37,17 +37,13 @@
 .compact-shell.v2-shell .v2-nav-bottom {margin-top:auto;display:grid;gap:16px;text-align:center;font-size:12px}
 .compact-shell.v2-shell .v2-nav-bottom a {color:#365e55;padding:8px 0}
 .compact-shell.v2-shell .v2-account {color:#526974;border-top:1px solid #d2dfd9;padding-top:12px}
-.compact-shell.v2-shell .v2-conversations {grid-column:2;grid-row:1 / span 2;padding:16px 12px;background:#f3f6f4;border-right:1px solid #d9e4e7;min-width:0;overflow-y:auto;overflow-x:hidden}
-.compact-shell.v2-shell .v2-list-toggle {border:0;background:transparent;color:#365c52;min-height:44px;width:100%;text-align:left;font-weight:600;padding:6px 0;margin-bottom:12px}
+.compact-shell.v2-shell .v2-conversations {grid-column:2;grid-row:1 / span 2;padding:12px 10px;background:#f3f6f4;border-right:1px solid #d9e4e7;min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+.compact-shell.v2-shell .v2-list-toggle {border:0;background:transparent;color:#365c52;min-height:32px;width:100%;text-align:left;font-weight:600;padding:4px 6px;margin-bottom:8px;flex-shrink:0}
 .compact-shell.v2-shell[data-conversations=closed] .v2-conversations {padding:16px 4px}
 .compact-shell.v2-shell[data-conversations=closed] .v2-list-toggle {text-align:center;font-size:22px}
-.compact-shell.v2-shell #v2-conversation-content>.button {width:100%}
-.compact-shell.v2-shell .v2-search {display:grid;gap:6px;margin:20px 0 8px}
-.compact-shell.v2-shell .v2-search input {background:#e9efec;font-size:13px}
-.compact-shell.v2-shell .v2-conversations h2 {font-size:13px;color:#526974;margin:28px 0 10px}
+.compact-shell.v2-shell #v2-conversation-content {display:flex;flex:1;min-height:0;min-width:0}
+.compact-shell.v2-shell .v2-conversations h2 {font-size:12px;font-weight:500;color:#526974;margin:14px 6px 6px}
 .compact-shell.v2-shell .v2-conversations .helper,.compact-shell.v2-shell .v2-session-empty {font-size:12px;line-height:1.7;color:#526974}
-.compact-shell.v2-shell .v2-current-conversation {display:grid;gap:6px;width:100%;text-align:left;border:1px solid #c5d9ce;background:#e4eee8;color:#234f40;border-radius:8px;padding:12px 10px;font-size:14px}
-.compact-shell.v2-shell .v2-current-conversation small {font-size:12px;font-weight:400}
 .compact-shell.v2-shell .v2-chat {grid-column:3;grid-row:1 / span 2;min-width:0;min-height:0;overflow:auto;padding:24px;display:flex;flex-direction:column;scrollbar-gutter:stable}
 .compact-shell.v2-shell .v2-chat-heading {display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .compact-shell.v2-shell .v2-chat-heading h1 {font-size:24px;margin:6px 0}
@@ -60,15 +56,62 @@
 .compact-shell.v2-shell .conversation-chat .chat-scroll {max-height:55dvh;overflow:auto}
 .compact-shell.v2-shell .conversation-chat .workspace-chat-input {display:grid;gap:10px}
 .compact-shell.v2-shell .conversation-chat .workspace-chat-input label {display:grid;gap:8px}
-.compact-shell.v2-shell .conversation-list {display:grid;gap:12px;min-width:0}
-.compact-shell.v2-shell .conversation-list .button-row {gap:2px;flex-wrap:wrap}
-.compact-shell.v2-shell .conversation-list .button {font-size:12px;padding:7px}
-.compact-shell.v2-shell .conversation-row {margin-bottom:12px;min-width:0;overflow-wrap:anywhere}
-.compact-shell.v2-shell .conversation-row summary {font-size:12px;padding:8px;color:var(--muted);cursor:pointer}
-.compact-shell.v2-shell .conversation-actions {display:grid;gap:4px}
-.compact-shell.v2-shell .conversation-actions button,.compact-shell.v2-shell .conversation-snippet {border:0;background:transparent;text-align:left;padding:8px;color:var(--ink);font-size:12px;overflow-wrap:anywhere}
-.compact-shell.v2-shell .v2-current-conversation:not([aria-current=true]) {background:#f8faf9;font-weight:400}
-.compact-shell.v2-shell .conversation-rename label {display:grid;gap:8px}
+.compact-shell.v2-shell .conversation-list {display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;flex:1}
+.compact-shell.v2-shell .conversation-list .button {font-size:12px;padding:7px 8px;min-height:34px}
+.compact-shell.v2-shell .conversation-toolbar {display:grid;gap:8px;flex-shrink:0}
+.compact-shell.v2-shell .conversation-new {width:100%;text-align:left}
+.compact-shell.v2-shell .conversation-search {display:flex;align-items:center;gap:2px;border:1px solid #dce5df;border-radius:8px;background:#fff;min-width:0}
+.compact-shell.v2-shell .conversation-search input {flex:1;min-width:0;width:100%;border:0;background:transparent;font-size:13px;padding:8px}
+.compact-shell.v2-shell .conversation-search .button {flex-shrink:0;padding:6px}
+.compact-shell.v2-shell .conversation-filters {display:flex;gap:4px;align-items:center}
+.compact-shell.v2-shell .conversation-filters [aria-pressed=true] {background:#e0eae4;color:#176e58}
+.compact-shell.v2-shell .conversation-refresh {margin-left:auto;font-size:18px;min-width:32px}
+.compact-shell.v2-shell .conversation-clear {text-align:left;color:#526974}
+.compact-shell.v2-shell .conversation-groups {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.compact-shell.v2-shell .conversation-row {display:flex;align-items:center;gap:4px;height:36px;min-width:0;margin:2px 0;border:0;border-radius:7px;background:transparent}
+.compact-shell.v2-shell .conversation-row:hover {background:#e7ede9}
+.compact-shell.v2-shell .conversation-row[data-selected] {background:#dfece5}
+.compact-shell.v2-shell .conversation-title {display:block;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;border:0;background:transparent;padding:8px 6px;color:#234f40;font:inherit;font-size:13px;line-height:20px}
+.compact-shell.v2-shell .conversation-more {width:30px;min-height:32px;flex-shrink:0;padding:0;border:0;border-radius:6px;background:transparent;color:#365c52;font-size:20px;line-height:1;opacity:0;pointer-events:none}
+.compact-shell.v2-shell .conversation-row:hover .conversation-more,.compact-shell.v2-shell .conversation-row:focus-within .conversation-more,.compact-shell.v2-shell .conversation-row[data-selected] .conversation-more,.compact-shell.v2-shell .conversation-more[aria-expanded=true] {opacity:1;pointer-events:auto}
+.compact-shell.v2-shell .conversation-more:hover {background:#d3e1d8}
+.compact-shell.v2-shell .conversation-planning {text-align:left;flex-shrink:0;border-top:1px solid #dbe6e0;border-radius:0;color:#526974}
+.compact-shell.v2-shell .conversation-rename {display:grid;gap:8px;min-width:0;flex-shrink:0}
+.compact-shell.v2-shell .conversation-rename label {display:grid;gap:6px;font-size:13px}
+.compact-shell.v2-shell .conversation-rename input {width:100%;min-width:0}
+.conversation-menu {position:fixed;z-index:500;display:grid;width:min(248px,calc(100vw - 16px));max-height:calc(100dvh - 16px);overflow:auto;overscroll-behavior:contain;padding:5px;border:1px solid #d9e4df;border-radius:10px;background:#fff;box-shadow:0 8px 28px #183b4826;font-family:inherit;color:#183b48}
+.conversation-menu button {display:block;width:100%;border:0;border-radius:6px;background:transparent;color:inherit;text-align:left;min-height:36px;padding:8px 10px;font:inherit;font-size:13px;line-height:1.5;cursor:pointer}
+.conversation-menu button:hover,.conversation-menu button:focus-visible {background:#edf4ef;outline:2px solid #438572;outline-offset:-2px}
+.conversation-menu button.danger {color:#a33f34}
+.conversation-menu .conversation-match {border-top:1px solid #e4ebe7;margin-top:4px;overflow-wrap:anywhere;font-size:12px;color:#526974}
+.compact-shell.v2-shell .conversation-chat {margin:18px 0 0;padding:24px;background:#fff;box-shadow:none;border:1px solid #dbe6e8}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-heading {align-items:baseline;flex-wrap:wrap;gap:10px 16px;padding:0;min-height:0;border:0}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-heading h2 {flex:1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:22px;line-height:1.4;margin:0;min-width:0;overflow-wrap:anywhere}
+.compact-shell.v2-shell .conversation-summary-trigger {margin-left:auto;flex-shrink:0}
+.compact-shell.v2-shell .conversation-summary-button {width:auto;min-height:34px;padding:6px 8px;font-size:12px;white-space:nowrap;border:0;background:transparent}
+.compact-shell.v2-shell .conversation-intro {margin:12px 0 16px;line-height:1.7;font-size:13px}
+.compact-shell.v2-shell .conversation-shortcuts {gap:8px;margin:0 0 6px}
+.compact-shell.v2-shell .conversation-shortcuts .button {border:0;background:transparent;padding:7px 9px;font-size:13px;min-height:34px}
+.compact-shell.v2-shell .conversation-shortcuts .button:hover {background:#edf4ef}
+.compact-shell.v2-shell .conversation-chat .chat-history {margin:18px 0}
+.compact-shell.v2-shell .conversation-chat .chat-scroll {padding:10px 0 16px;gap:14px}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-input {grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;padding:16px 0 0;background:transparent}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-input label {font-size:12px;color:#526974}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-input textarea {width:100%;min-height:88px}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-input>.button {min-height:44px;height:44px;min-width:64px}
+@media (max-width:1023px), (any-hover:none), (pointer:coarse) {
+  .compact-shell.v2-shell .conversation-more {opacity:1;pointer-events:auto;width:44px;min-height:44px}
+  .compact-shell.v2-shell .conversation-row {height:44px}
+  .compact-shell.v2-shell .conversation-title {min-height:44px}
+  .conversation-menu button {min-height:44px}
+}
+@media (max-width:1023px) {
+  .compact-shell.v2-shell .conversation-chat {padding:20px 16px;margin-top:14px}
+  .compact-shell.v2-shell .conversation-list .button {min-height:44px}
+  .compact-shell.v2-shell .conversation-search input {font-size:16px;min-height:44px}
+  .compact-shell.v2-shell .conversation-chat .workspace-chat-heading h2 {font-size:20px}
+  .compact-shell.v2-shell .conversation-chat .workspace-chat-input textarea {min-height:80px}
+}
 .recovery-note {padding:12px;border:1px solid #d6c28e;background:#fffbee;border-radius:8px;font-size:13px;overflow-wrap:anywhere}
 .recovery-note pre {white-space:pre-wrap;max-height:240px;overflow:auto;font-size:12px}
 .search-match {outline:2px solid #b18a30;outline-offset:-2px}

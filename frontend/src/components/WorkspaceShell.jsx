@@ -4,7 +4,7 @@ import { defaultSplitRatio, renderedSplitRatio, splitBounds, toolPlacement, work
 const labels = { home: '首页', schedule: '日程', review: '复盘', profile: '档案' }
 
 // Full tools stay in the primary area; auxiliary previews only read their formal data.
-export default function WorkspaceShell({ state, dispatch, chat, children, review, profile, clock, conversationContent, auxiliarySchedule, draftPanel, draftPage, chatNote = '当前支持任务规划与调整，自由交流将在后续开放。' }) {
+export default function WorkspaceShell({ state, dispatch, chat, children, review, profile, clock, conversationContent, auxiliarySchedule, draftPanel, draftPage, chatNote = null }) {
   const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches)
   const [gridWidth, setGridWidth] = useState(1440)
   const [auxiliaryTarget, setAuxiliaryTarget] = useState(null)
@@ -115,7 +115,7 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
       </aside>
       <main id="v2-chat" className="v2-chat" tabIndex={-1} aria-label="主聊天" hidden={!home || !visible.primary} inert={!home || !visible.primary}>
         <header className="v2-chat-heading"><div><p className="eyebrow">个人成长助手</p><h1>从一件事开始</h1></div><span className="workspace-clock">{clock}</span></header>
-        <p className="v2-chat-note">{chatNote}</p>
+        {chatNote && <p className="v2-chat-note">{chatNote}</p>}
         {chat}
       </main>
       <div className="v2-resizer" role="separator" tabIndex={0} hidden={!resizable} inert={!resizable} aria-label="调整主体与辅助栏宽度" aria-orientation="vertical" aria-valuemin={Math.round(bounds.min * 100)} aria-valuemax={Math.round(bounds.max * 100)} aria-valuenow={Math.round(ratio * 100)} aria-valuetext={`主体占 ${Math.round(ratio * 100)}%`} onKeyDown={resizeKey} onDoubleClick={() => dispatch({ type: 'split', value: defaultSplitRatio })} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={event => pointerEnd(event, true)} onLostPointerCapture={() => { drag.current = null }} />

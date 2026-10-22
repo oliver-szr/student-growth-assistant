@@ -7,6 +7,37 @@ import { getCalendarEvents, getReviewFacts, saveReviewRecord, editWorkspaceDraft
 import { calendarEvent, reviewRange } from '../src/calendar.js'
 import { registerEditor, coordinateDrafts, hasUnsavedDraft } from '../src/draftCoordination.js'
 import { getMemories,getMemory,createMemory,editMemory,actMemory,getConversationSummaries,createConversationSummary,getSummaryRequest } from '../src/api.js'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { readFile } from 'node:fs/promises'
+import { transformWithEsbuild } from 'vite'
+
+const menuSource=await readFile(new URL('../src/components/ConversationMenu.jsx',import.meta.url),'utf8')
+const compiledMenu=await transformWithEsbuild(`import React from '${import.meta.resolve('react')}';\n${menuSource.replace("from 'react'",`from '${import.meta.resolve('react')}'`).replace("from 'react-dom'",`from '${import.meta.resolve('react-dom')}'`)}`,'ConversationMenu.jsx',{jsx:'transform',jsxFactory:'React.createElement'})
+const {ConversationRow,menuPosition}=await import(`data:text/javascript;base64,${Buffer.from(compiledMenu.code).toString('base64')}`)
+
+test('conversation row exposes only title and menu, including archived and legacy resources',()=>{
+  for(const row of [{id:1,title:'长标题 & 真实正文',scope:'conversation'}, {id:2,title:'历史会话',scope:'planning',archived_at:'2026-10-22'}]){
+    const html=renderToStaticMarkup(React.createElement(ConversationRow,{row,onOpen:()=>{},onMenu:()=>{},expanded:false}))
+    assert.equal((html.match(/<button /g)||[]).length,2)
+    assert.ok(html.includes('aria-haspopup="menu"'));assert.ok(html.includes('aria-expanded="false"'))
+    assert.ok(html.includes('title="'+row.title.replace('&','&amp;')+'"'))
+    assert.ok(!/<small|<time|<details|持久会话|历史工具|会话操作/.test(html))
+  }
+})
+test('selection and menu expansion remain separate presentation states',()=>{
+  const html=renderToStaticMarkup(React.createElement(ConversationRow,{row:{id:7,title:'未选中'},selected:false,expanded:true,onOpen:()=>{},onMenu:()=>{}}))
+  assert.ok(html.includes('aria-expanded="true"'));assert.ok(!html.includes('aria-current='));assert.ok(!html.includes('data-selected='))
+})
+test('conversation menu flips above a bottom row and stays inside narrow viewports',()=>{
+  const value=menuPosition({top:730,bottom:766,right:220},{width:248,height:180},{width:1280,height:800})
+  assert.equal(value.top,544);assert.equal(value.left,8)
+  const mobile=menuPosition({top:810,bottom:844,right:390},{width:248,height:900},{width:390,height:844})
+  assert.equal(mobile.top,8);assert.equal(mobile.left,134);assert.equal(mobile.maxHeight,828)
+})
+test('menu beside a top row remains below without extending past the right edge',()=>{
+  assert.deepEqual(menuPosition({top:20,bottom:56,right:1438},{width:248,height:180},{width:1440,height:900}),{left:1184,top:62,maxHeight:884})
+})
 
 test('secretary uses real memory versions, explicit summary requests and stable retry identifiers',async context=>{
   const calls=[];context.mock.method(globalThis,'fetch',async(url,options)=>{calls.push({url:new URL(url),...options});return new Response('{}')})

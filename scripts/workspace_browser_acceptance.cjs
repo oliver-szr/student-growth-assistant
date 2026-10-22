@@ -11,10 +11,170 @@ async function call(path, method='GET', body) {
   assert.equal(response.headers.get('x-sga-integration-mock'),'1');
   const value=await response.json();assert.ok(response.ok,JSON.stringify(value));return value;
 }
+async function verifyConversationUI() {
+  assert.deepEqual((await call('/api/conversations?scope=all')).items,[], 'Use a new anonymous database');
+  const create=(title,key)=>call('/api/conversations','POST',{title,client_request_id:key});
+  for(let i=0;i<64;i++)await create(`匿名会话 ${i+1}`,'ui-seed-'+i);
+  const archived=await create('已归档的匿名会话','ui-archived');
+  await call(`/api/conversations/${archived.id}`,'PATCH',{expected_version:archived.version,archived:true});
+  const other=await create('另一条匿名会话','ui-other');
+  const main=await create('首页精修示例：'+ '这是一条需要单行省略且可悬停查看的长会话标题'.repeat(3),'ui-main');
+  const first=await call(`/api/conversations/${main.id}/messages`,'POST',{client_message_id:'hit-1',text:'正文定位关键字：蓝桥计划，还没有决定下一步。'});
+  const second=await call(`/api/conversations/${main.id}/messages`,'POST',{client_message_id:'hit-2',text:'第二处蓝桥计划，需要继续讨论。'});
+  const legacy=await call('/api/assistant/sessions','POST',{});
+  const legacyMeta=await call(`/api/conversations/${legacy.id}`);
+  await call(`/api/conversations/${legacy.id}`,'PATCH',{expected_version:legacyMeta.version,title:'匿名历史规划'});
+  const browser=await chromium.launch({channel:'msedge',headless:true});let page;
+  const errors=[],checks=[],requests=[];const checked=name=>{checks.push(name);console.log('PASS '+name)};
+  try {
+    page=await browser.newPage({viewport:{width:1440,height:1000},locale:'zh-CN'});
+    page.on('pageerror',error=>errors.push(error.message));page.on('request',request=>{if(request.url().startsWith(api))requests.push({url:request.url(),method:request.method(),body:request.postDataJSON()})});
+    await page.goto(web);
+    const nav=page.getByRole('navigation',{name:'主导航'}), list=page.locator('.conversation-groups');
+    const row=id=>page.locator(`.conversation-row[data-conversation-id="${id}"]`);
+    const menu=page.getByRole('menu',{name:'会话操作菜单'});
+    const input=page.getByRole('textbox',{name:'会话输入',exact:true});
+    async function openMenu(id,keyboard=false) {
+      const trigger=row(id).getByRole('button',{name:/更多操作/});
+      await expect(trigger).toBeEnabled();await trigger.scrollIntoViewIfNeeded();
+      if(keyboard){await trigger.focus();await trigger.press('ArrowDown')}
+      else {await row(id).hover();await trigger.click()}
+      await expect(menu).toBeVisible();return trigger;
+    }
+    async function choose(id,label) {await openMenu(id);await menu.getByRole('menuitem',{name:label,exact:true}).click();await expect(menu).toHaveCount(0)}
+    await row(main.id).locator('.conversation-title').click();await expect(input).toBeEnabled();
+    await input.fill('切换与操作后仍应保留的未发送文字');
+    await expect(page.locator('.workspace-chat-heading .conversation-summary-button')).toHaveCount(1);
+    const intro=page.locator('.conversation-intro');
+    assert.ok(parseFloat(await intro.evaluate(el=>getComputedStyle(el).marginTop))>=10);
+    assert.ok(parseFloat(await intro.evaluate(el=>getComputedStyle(el).lineHeight))>=20);
+    assert.equal(await row(main.id).locator('.conversation-title').getAttribute('title'),main.title);
+    const titleBox=await row(main.id).locator('.conversation-title').evaluate(el=>({client:el.clientWidth,scroll:el.scrollWidth,whiteSpace:getComputedStyle(el).whiteSpace,overflow:getComputedStyle(el).textOverflow}));
+    assert.ok(titleBox.scroll>titleBox.client);assert.equal(titleBox.whiteSpace,'nowrap');assert.equal(titleBox.overflow,'ellipsis');
+    for(const item of await page.locator('.conversation-row').all()) {
+      assert.equal(await item.locator('button').count(),2);assert.equal(await item.locator('small,time,summary').count(),0);
+      assert.ok((await item.boundingBox()).height<=38);
+    }
+    const visible=await list.evaluate(el=>{const box=el.getBoundingClientRect();return [...el.querySelectorAll('.conversation-row')].filter(row=>{const r=row.getBoundingClientRect();return r.top>=box.top&&r.bottom<=box.bottom}).length});
+    assert.ok(visible>=12,`Only ${visible} fully visible rows`);
+    checked(`single_line_title_tooltip_no_labels_${visible}_visible_rows_at_1440`);
+    await page.waitForLoadState('networkidle');
+    // Initial legacy planning startup can insert a row while page one loads.
+    // Refresh before testing the existing offset pagination on a stable list.
+    await page.getByRole('button',{name:'刷新列表',exact:true}).click();await page.waitForLoadState('networkidle');
+    const beforeHeight=await list.evaluate(el=>el.scrollHeight),beforeRow=(await row(other.id).boundingBox()).height,requestCount=requests.length;
+    const trigger=await openMenu(other.id,true);
+    assert.equal(await list.evaluate(el=>el.scrollHeight),beforeHeight);assert.equal((await row(other.id).boundingBox()).height,beforeRow);
+    assert.equal(await row(main.id).locator('.conversation-title').getAttribute('aria-current'),'true');
+    await expect(menu.getByRole('menuitem',{name:'重命名',exact:true})).toBeFocused();
+    await page.keyboard.press('End');await expect(menu.getByRole('menuitem',{name:'删除会话',exact:true})).toBeFocused();
+    await page.keyboard.press('Home');await page.keyboard.press('ArrowDown');await expect(menu.getByRole('menuitem',{name:'置顶',exact:true})).toBeFocused();
+    await page.keyboard.press('Escape');await expect(trigger).toBeFocused();await expect(menu).toHaveCount(0);
+    await trigger.press('Space');await expect(menu).toBeVisible();await page.keyboard.press('Tab');await expect(menu).toHaveCount(0);
+    assert.equal(await page.evaluate(()=>Boolean(document.activeElement.closest('[hidden],[inert],.conversation-menu'))),false);
+    await openMenu(other.id);await page.locator('.workspace-chat-heading h2').click();await expect(menu).toHaveCount(0);
+    assert.equal(requests.length,requestCount,'Opening and closing menus must not request data');
+    checked('menu_pointer_keyboard_space_arrows_escape_tab_outside_focus_no_reflow_or_requests');
+    const total=(await call('/api/conversations?scope=all&archive=active&limit=100')).items.length;
+    for(let n=0;n<2;n++){await page.getByRole('button',{name:'加载更多会话',exact:true}).click();await expect(page.locator('.conversation-row')).toHaveCount(Math.min((n+2)*30,total))}
+    const bottom=page.locator('.conversation-row').last();const bottomId=Number(await bottom.getAttribute('data-conversation-id'));
+    const bottomTrigger=await openMenu(bottomId);const menuBox=await menu.boundingBox(),anchor=await bottomTrigger.boundingBox();
+    assert.ok(menuBox.y<anchor.y);assert.ok(menuBox.y>=0&&menuBox.y+menuBox.height<=1000&&menuBox.x>=0&&menuBox.x+menuBox.width<=1440);
+    await list.evaluate(el=>{el.scrollTop-=90});await expect(menu).toHaveCount(0);
+    await openMenu(main.id);await page.setViewportSize({width:1280,height:1000});await expect(menu).toHaveCount(0);
+    checked('long_list_pagination_bottom_menu_flips_no_clipping_scroll_resize_close');
+    await choose(other.id,'重命名');await expect(page.getByRole('textbox',{name:'会话标题',exact:true})).toBeFocused();
+    await page.getByRole('textbox',{name:'会话标题',exact:true}).fill('已改名的匿名会话');
+    await page.getByRole('button',{name:'保存标题',exact:true}).click();await expect(row(other.id).locator('.conversation-title')).toHaveText('已改名的匿名会话');
+    await choose(other.id,'置顶');await expect(page.getByRole('region',{name:'置顶',exact:true}).locator(`[data-conversation-id="${other.id}"]`)).toBeVisible();
+    await choose(other.id,'取消置顶');await expect(row(other.id)).toBeVisible();
+    await choose(other.id,'归档会话');await expect(row(other.id)).toHaveCount(0);
+    await page.getByRole('button',{name:'归档',exact:true}).click();await choose(other.id,'恢复会话');await expect(row(other.id)).toHaveCount(0);
+    await page.getByRole('button',{name:'最近',exact:true}).click();await choose(other.id,'删除会话');
+    await expect(page.getByRole('region',{name:'删除会话确认'})).toContainText('软删除');
+    await page.getByRole('button',{name:'取消删除',exact:true}).click();await expect(row(other.id).getByRole('button',{name:/更多操作/})).toBeFocused();
+    await choose(other.id,'删除会话');await page.getByRole('button',{name:'确认删除会话',exact:true}).click();await expect(row(other.id)).toHaveCount(0);
+    assert.equal((await fetch(api+`/api/conversations/${other.id}`)).status,410);assert.deepEqual(await call('/api/tasks'),[]);
+    await expect(input).toHaveValue('切换与操作后仍应保留的未发送文字');
+    const mutations=requests.filter(r=>r.method==='PATCH'&&new URL(r.url).pathname===`/api/conversations/${other.id}`);
+    assert.equal(mutations.length,5);assert.ok(mutations.every(r=>r.body.expected_version));
+    checked('real_rename_pin_unpin_archive_restore_soft_delete_original_versions_no_duplicate_mutation');
+    await page.getByRole('searchbox',{name:'搜索会话',exact:true}).fill('蓝桥计划');await page.getByRole('search',{name:'搜索会话',exact:true}).getByRole('button',{name:'搜索',exact:true}).click();
+    await expect(page.locator('.conversation-row')).toHaveCount(1);assert.equal(await row(main.id).locator('button').count(),2);
+    await openMenu(main.id);await expect(menu.getByRole('menuitem',{name:/查看匹配：/})).toHaveCount(2);
+    await menu.getByRole('menuitem',{name:/查看匹配：第二处/}).click();
+    await expect(page.locator(`#conversation-message-${main.id}-${second.id}`)).toHaveClass(/search-match/);
+    await expect(page.locator(`#conversation-message-${main.id}-${second.id}`)).toBeFocused();
+    await page.getByRole('button',{name:'清除搜索',exact:true}).click();
+    await row(legacy.id).locator('.conversation-title').click();await expect(input).toBeDisabled();
+    await expect(page.locator('.conversation-intro')).toContainText('历史工具会话只读');
+    await openMenu(legacy.id);assert.deepEqual(await menu.getByRole('menuitem').allTextContents(),['重命名','置顶','归档会话','删除会话']);await page.keyboard.press('Escape');
+    await row(main.id).locator('.conversation-title').click();await expect(input).toHaveValue('切换与操作后仍应保留的未发送文字');
+    checked('search_snippets_on_demand_original_message_focus_legacy_content_stays_readonly');
+    const run=await call(`/api/conversations/${main.id}/runs`,'POST',{client_message_id:'ui-busy',text:'[慢]匿名检查运行中会话，继续慢慢讨论之前尚未决定的蓝桥计划。'});
+    await page.getByRole('button',{name:'刷新列表',exact:true}).click();await expect(page.locator('.reply-status')).toContainText('正在');
+    await choose(main.id,'归档会话');await expect(page.locator('.conversation-list [role=alert]')).toContainText('运行中的请求');
+    await choose(main.id,'删除会话');await page.getByRole('button',{name:'确认删除会话',exact:true}).click();await expect(page.locator('.conversation-list [role=alert]')).toContainText('运行中的请求');
+    await page.getByRole('button',{name:'取消删除',exact:true}).click();
+    const running=await call(`/api/conversations/${main.id}/runs/${run.id}`);if(running.status==='running')await call(`/api/conversations/${main.id}/runs/${run.id}/stop`,'POST',{expected_attempt:running.attempt});
+    const draft=await call(`/api/conversations/${main.id}/runs`,'POST',{client_message_id:'ui-pending-draft',text:'匿名拆解：周五20点前完成120分钟的匿名交付。'});
+    await expect.poll(async()=>(await call(`/api/conversations/${main.id}/runs/${draft.id}`)).status,{timeout:30000}).toBe('completed');
+    await choose(main.id,'归档会话');await expect(page.locator('.conversation-list [role=alert]')).toContainText('未处理草案');
+    await choose(main.id,'删除会话');await page.getByRole('button',{name:'确认删除会话',exact:true}).click();await expect(page.locator('.conversation-list [role=alert]')).toContainText('未处理草案');
+    await page.getByRole('button',{name:'取消删除',exact:true}).click();assert.deepEqual(await call('/api/tasks'),[]);
+    const current=await call(`/api/conversations/${main.id}`);
+    await call(`/api/conversations/${main.id}`,'PATCH',{expected_version:current.version,title:'外部修改后的匿名标题'});
+    await choose(main.id,'置顶');await expect(page.locator('.conversation-list [role=alert]')).toContainText('其他页面修改');
+    await expect(input).toHaveValue('切换与操作后仍应保留的未发送文字');
+    const stale=await create('等待失效的匿名会话','ui-stale');await page.getByRole('button',{name:'刷新列表',exact:true}).click();await expect(row(stale.id)).toBeVisible();
+    await call(`/api/conversations/${stale.id}?expected_version=${stale.version}`,'DELETE');
+    await choose(stale.id,'置顶');await expect(page.locator('.conversation-list [role=alert]')).toContainText('正式任务和日程仍保留');
+    await page.getByRole('button',{name:'刷新列表',exact:true}).click();
+    checked('busy_pending_draft_409_and_deleted_410_rejections_keep_input_and_business');
+    await page.getByRole('button',{name:'查看会话小结',exact:true}).click();await page.getByRole('button',{name:'生成会话小结',exact:true}).click();
+    await expect(page.getByRole('heading',{name:'会话小结 v1',exact:true})).toBeVisible();
+    await page.getByRole('region',{name:'会话小结',exact:true}).getByRole('button',{name:'回到原消息',exact:true}).first().click();
+    await expect(page.locator('.search-match')).toBeVisible();
+    const auxiliary=page.getByRole('tablist',{name:'辅助栏页签'});await auxiliary.getByRole('tab',{name:'档案',exact:true}).click();
+    for(const width of [1440,1280]) {
+      await page.setViewportSize({width,height:1000});
+      for(const [name,key] of [['日程与任务','schedule'],['查看复盘','review'],['目标与档案','profile']]) {
+        await page.getByRole('group',{name:'聊天业务入口'}).getByRole('button',{name,exact:true}).click();
+        await expect(page.locator('.v2-shell')).toHaveAttribute('data-navigation',key);await expect(auxiliary.getByRole('tab',{name:'档案',exact:true})).toHaveAttribute('aria-selected','true');
+        const splitter=page.getByRole('separator',{name:'调整主体与辅助栏宽度'});await splitter.focus();await splitter.press('ArrowLeft');
+        await page.getByRole('button',{name:'展开辅助栏',exact:true}).click();await page.getByRole('button',{name:'恢复普通辅助栏',exact:true}).click();
+        await page.getByRole('button',{name:'收起辅助栏',exact:true}).click();await page.getByRole('button',{name:'恢复辅助栏',exact:true}).click();
+        await nav.getByRole('button',{name:'首页',exact:true}).click();await expect(input).toHaveValue('切换与操作后仍应保留的未发送文字');
+        assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+      }
+    }
+    await page.reload();await expect(input).toHaveValue('切换与操作后仍应保留的未发送文字');
+    checked('summary_header_generation_source_shortcuts_independent_auxiliary_1440_1280_refresh');
+    const touch=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,locale:'zh-CN'});
+    const mobile=await touch.newPage();mobile.on('pageerror',error=>errors.push(error.message));await mobile.goto(web);
+    await mobile.getByRole('button',{name:'会话',exact:true}).tap();
+    const mobileRow=mobile.locator(`.conversation-row[data-conversation-id="${main.id}"]`);
+    const mobileTrigger=mobileRow.getByRole('button',{name:/更多操作/});await expect(mobileTrigger).toHaveCSS('opacity','1');
+    await mobileTrigger.tap();const mobileMenu=mobile.getByRole('menu',{name:'会话操作菜单'});await expect(mobileMenu).toBeVisible();
+    const mobileBox=await mobileMenu.boundingBox();assert.ok(mobileBox.x>=0&&mobileBox.x+mobileBox.width<=390&&mobileBox.y+mobileBox.height<=844);
+    await mobile.keyboard.press('Escape');await expect(mobileTrigger).toBeFocused();
+    await mobileRow.locator('.conversation-title').tap();const mobileInput=mobile.getByRole('textbox',{name:'会话输入',exact:true});await expect(mobileInput).toBeEnabled();await mobileInput.fill('手机未发送文字');
+    await mobile.reload();await expect(mobileInput).toHaveValue('手机未发送文字');
+    await mobile.getByRole('button',{name:'辅助栏',exact:true}).tap();
+    await mobile.getByRole('tablist',{name:'辅助栏页签'}).getByRole('tab',{name:'日程',exact:true}).tap();
+    assert.equal(await mobile.locator('#v2-auxiliary-shared .day-column').count(),1);await expect(mobile.getByRole('separator')).toBeHidden();
+    for(let i=0;i<15;i++){await mobile.keyboard.press('Tab');assert.equal(await mobile.evaluate(()=>Boolean(document.activeElement.closest('[hidden],[inert]'))),false)}
+    assert.ok(await mobile.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+    checked('390_touch_menu_single_surface_draft_refresh_independent_day_preview_focus');
+    assert.deepEqual(errors,[]);console.log(JSON.stringify({checks,visibleRows1440:visible,pageErrors:errors,provider:'Mock only',database:'new anonymous database'},null,2));
+  } catch(error) {if(page)console.error((await page.locator('body').innerText()).slice(-4500));throw error}
+  finally {await browser.close()}
+}
 (async()=>{
   assert.ok(['localhost','127.0.0.1','[::1]'].includes(new URL(api).hostname));
   const settings=await call('/api/assistant/settings');assert.ok(settings.demo);
   assert.deepEqual(await call('/api/tasks'),[], 'Use a fresh anonymous demo server');
+  if(process.argv.includes('--ui')) {await verifyConversationUI();return}
   const checks=[],errors=[];const checked=text=>{checks.push(text);console.log('PASS '+text)};
   const browser=await chromium.launch({channel:'msedge',headless:true});
   let page;
