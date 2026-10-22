@@ -20,7 +20,7 @@ def test_export_and_import_restore_growth_data_atomically(client: TestClient) ->
     exported = client.get("/api/data/export")
     assert exported.status_code == 200
     snapshot = exported.json()
-    assert snapshot["format_version"] == 4
+    assert snapshot["format_version"] == 5
     assert "growth_goals" in snapshot["tables"]
 
     client.patch(f"/api/tasks/{task['id']}", json={"status": "done"})
@@ -106,7 +106,7 @@ def test_legacy_restore_has_explicit_conversion_and_does_not_invent_message_time
     old = legacy_snapshot(version)
     assert client.post('/api/data/import', json=old).status_code == 200
     exported = client.get('/api/data/export').json()
-    assert exported['format_version'] == 4
+    assert exported['format_version'] == 5
     sessions = exported['tables']['assistant_sessions']
     messages = exported['tables']['assistant_messages']
     assert len(sessions) == len(old['tables']['assistant_sessions'])
@@ -137,7 +137,7 @@ def test_v3_restore_keeps_lifecycle_ownership_messages_and_transactional_rollbac
     client.post(f"/api/conversations/{created['id']}/messages", json={'client_message_id':'message','text':'完整正文'})
     client.patch(f"/api/conversations/{created['id']}", json={'expected_version':1,'pinned':True,'archived':True})
     snapshot = client.get('/api/data/export').json()
-    assert snapshot['format_version'] == 4
+    assert snapshot['format_version'] == 5
     assert client.post('/api/data/import', json=snapshot).status_code == 200
     read = client.get(f"/api/conversations/{created['id']}").json()
     assert read['title_source']=='manual' and read['pinned_at'] and read['archived_at']

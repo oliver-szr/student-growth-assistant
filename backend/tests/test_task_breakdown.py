@@ -274,7 +274,7 @@ def test_migration_from_genuine_v1_preserves_ids_plans_history_locks(tmp_path,mo
         assert connection.execute(text('SELECT id,task_id FROM task_feedback')).one()==(5,42)
         assert json.loads(connection.execute(text('SELECT settings FROM task_scheduling_profiles')).scalar())['locked'] is True
         assert connection.execute(text('PRAGMA foreign_key_check')).all()==[]
-        assert connection.execute(text('SELECT version_num FROM alembic_version')).scalar()=='0004_review_records'
+        assert connection.execute(text('SELECT version_num FROM alembic_version')).scalar()=='0005_secretary_memory'
     assert list((tmp_path/'backups').rglob('*.sqlite'))
     engine.dispose()
 
@@ -292,7 +292,7 @@ def test_true_v1_restore_and_strict_conversion(client):
 
 def test_v2_restore_relationships_and_transaction_rollback(client,monkeypatch):
     data=confirm(client,draft(client,monkeypatch)).json()
-    snapshot=client.get('/api/data/export').json();assert snapshot['format_version']==4
+    snapshot=client.get('/api/data/export').json();assert snapshot['format_version']==5
     assert client.post('/api/data/import',json=snapshot).status_code==200
     rows=client.get('/api/tasks').json();assert all(r['parent_task_id']==rows[0]['id'] for r in rows[1:])
     before=client.get('/api/data/export').json()['tables']

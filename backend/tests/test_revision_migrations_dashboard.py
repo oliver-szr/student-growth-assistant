@@ -6,7 +6,7 @@ def test_empty_upgrade_and_repeat(tmp_path):
     engine=create_sqlite_engine(f'sqlite:///{tmp_path / "empty.db"}')
     upgrade_database(engine);upgrade_database(engine)
     assert set(Base.metadata.tables)<=set(inspect(engine).get_table_names())
-    with engine.connect() as c:assert c.execute(text('SELECT version_num FROM alembic_version')).scalar()=='0004_review_records'
+    with engine.connect() as c:assert c.execute(text('SELECT version_num FROM alembic_version')).scalar()=='0005_secretary_memory'
     engine.dispose()
 
 
@@ -137,6 +137,6 @@ def test_migration_failure_rolls_back_ddl_data_and_version_then_can_retry(tmp_pa
             assert connection.exec_driver_sql('PRAGMA foreign_key_check').all() == []
         upgrade_database(engine)
         with engine.connect() as connection:
-            assert connection.exec_driver_sql('SELECT version_num FROM alembic_version').scalar() == '0004_review_records'
+            assert connection.exec_driver_sql('SELECT version_num FROM alembic_version').scalar() == '0005_secretary_memory'
     finally:
         engine.dispose()

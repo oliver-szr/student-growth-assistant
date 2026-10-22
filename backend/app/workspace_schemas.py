@@ -47,7 +47,7 @@ class DraftRef(StrictModel):
 
 
 class ToolCall(StrictModel):
-    name: Literal['tasks','goals','preferences','calendar','review','planning_draft','breakdown_draft','profile_draft','feedback_draft','edit_draft']
+    name: Literal['tasks','goals','preferences','calendar','review','planning_draft','breakdown_draft','profile_draft','feedback_draft','edit_draft','memory_suggestion']
     arguments: dict = Field(default_factory=dict)
 
 

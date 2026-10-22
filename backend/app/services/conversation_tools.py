@@ -11,6 +11,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ..models import AssistantSession, AssistantRun, AssistantMessage, GrowthChangeDraft, Task, GrowthGoal
+from ..secretary_schemas import LookupArgs,MemoryContent
 from ..workspace_schemas import ToolPlan, RangeArgs, PlanningArgs, BusinessArgs, EditToolArgs
 from ..task_breakdown_schemas import BreakdownCreate
 from . import claude_client
@@ -22,6 +23,8 @@ from .assistant_clock import assistant_now
 
 PLANNER='''你是中文个人成长助手的工具选择器。只返回JSON，严格符合提供的schema。
 普通聊天calls为空，不转换任务/目标/记录。查询可用tasks/goals/preferences/calendar/review。
+tasks/goals参数可用id或q（标题关键词）、offset/limit，读取特定旧记录时使用精确查询。
+用户明确表达长期信息（记住、以后、长期偏好）时才可memory_suggestion，参数text/scope，仅待确认，不自动保存。一般临时情绪不提记忆；已有正式目标/偏好优先使用原业务，时间约束走profile_draft，不另建记忆。
 calendar/review参数为start,end，上海日期，end不含；按context.now解析今天/本周/指定日期。
 用户明确办事时才生成草案：planning_draft参数actions/questions/replan；偏好调整单独使用profile_draft；
 actions使用现有ParsedCommand schema；任务名称、时长、带时区具体截止时间必须来自用户，缺失就questions询问，不能编造。
@@ -38,6 +41,8 @@ profile操作仅create_goal/update_goal/create_preference_rule/update_preference
 async def plan(request):
     from ..assistant_schemas import PreferencePatch
     from ..schemas import GrowthGoalCreate,GrowthGoalPatch,TaskFeedbackCreate
+    from .conversation_context import bounded_request
+    request=bounded_request(request)
     data={**request,'schema':ToolPlan.model_json_schema(),'planning_schema':PlanningArgs.model_json_schema(),
         'breakdown_schema':BreakdownCreate.model_json_schema(),'range_schema':RangeArgs.model_json_schema(),
         'edit_schema':EditToolArgs.model_json_schema(),'goal_patch_schema':GrowthGoalPatch.model_json_schema(),
@@ -48,6 +53,7 @@ async def plan(request):
                 'parameters':{'prefer_time':'{start:HH:MM,end:HH:MM}','avoid_time':'{start:HH:MM,end:HH:MM}','deadline_buffer':'{hours:integer 0..72}','adjustment_mode':'{mode:balanced|preference|stable}','ai_note':'{text:string}' }},
             'update_preference_rule':'op, id, fields containing supported create_preference_rule fields or enabled',
             'set_preferences':'op, settings matching preference_patch_schema'},
+        'lookup_schema':LookupArgs.model_json_schema(),'memory_schema':MemoryContent.model_json_schema(),
         'goal_schema':GrowthGoalCreate.model_json_schema(),'feedback_schema':TaskFeedbackCreate.model_json_schema()}
     raw=await claude_client.request_claude(json.dumps(data,ensure_ascii=False),PLANNER,claude_client.get_claude_config(),2400)
     from .constraint_parser import normalize_fence,unique_object,reject_constant
@@ -91,13 +97,28 @@ def persist(engine,rid,token,**values):
 
 async def execute(db,run,call,index):
     name,args=call.name,call.arguments;key=f'tool:{run.id}:{index}'
-    if name in ('tasks','goals','preferences'):
-        if args:error('INVALID_TOOL','该查询工具不接收额外参数。',422)
-        if name=='tasks':return {'items':[dict(id=t.id,title=t.title,minutes=t.duration_minutes,deadline=t.deadline.isoformat(),status=t.status.value,kind=t.task_kind) for t in db.scalars(select(Task).order_by(Task.id.desc()).limit(50))]}
-        if name=='goals':return {'items':[dict(id=g.id,title=g.title,status=g.status,weekly_target=g.weekly_target) for g in db.scalars(select(GrowthGoal).limit(30))]}
+    if name in ('tasks','goals'):
+        values=LookupArgs.model_validate(args);model=Task if name=='tasks' else GrowthGoal
+        query=select(model)
+        if values.id is not None:query=query.where(model.id==values.id)
+        if values.q.strip():query=query.where(model.title.contains(values.q.strip(),autoescape=True))
+        rows=db.scalars(query.order_by(model.id.desc()).offset(values.offset).limit(values.limit+1)).all()
+        items=[dict(id=r.id,title=r.title,status=r.status.value if hasattr(r.status,'value') else r.status,
+            **({'minutes':r.duration_minutes,'deadline':r.deadline.isoformat(),'kind':r.task_kind} if name=='tasks' else {'weekly_target':r.weekly_target,'version':r.version,'due_date':r.due_date.isoformat() if r.due_date else None})) for r in rows[:values.limit]]
+        return {'items':items,'next_offset':values.offset+values.limit if len(rows)>values.limit else None,'source':'当前正式记录'}
+    if name=='preferences':
+        if args:error('INVALID_TOOL','偏好查询不接收额外参数。',422)
         from .taxonomy import rules_payload
         from .assistant_state import preference_settings
         return {'items':rules_payload(db)[:30],'settings':preference_settings(db)['settings']}
+    if name=='memory_suggestion':
+        if not any(word in run.text for word in ('记住','以后','长期','偏好','习惯','一直')):
+            error('MEMORY_EXPLICIT_INTENT_REQUIRED','临时表达不生成长期记忆；请明确说明希望以后记住什么。',422)
+        from .secretary import create_memory,memory_data
+        values=MemoryContent.model_validate(args);db.rollback()
+        with planning_transaction(db):
+            row=create_memory(db,values.model_dump(),key,sources={'conversation_id':run.session_id,'message_ids':[run.payload['user_message_id']]},suggested=True)
+            return {'memory':memory_data(db,row),'summary':'仅提出记忆建议，审核确认后才参与后续参考。'}
     if name in ('calendar','review'):
         value=RangeArgs.model_validate(args)
         return calendar_events(db,value.start,value.end) if name=='calendar' else review_facts(db,value.start,value.end)
@@ -121,6 +142,8 @@ async def execute(db,run,call,index):
         allowed=run.payload.get('draft_versions',[])
         if not any(r['kind']==values.kind and r['id']==values.id and r['version']==values.version for r in allowed):
             error('DRAFT_COORDINATION_REQUIRED','请先打开草案，处理未保存编辑并读取最新版本后再让AI修改。')
+        latest=workspace_drafts.envelope(db,values.kind,values.id)
+        if len(json.dumps(latest['content'],ensure_ascii=False))>10000:error('DRAFT_COORDINATION_REQUIRED','这份草案较长，请在工作区修改，避免省略字段被覆盖。')
         db.rollback();result=workspace_drafts.edit(db,values.kind,values.id,values.version,values.content)
         resolved=result.get('id',values.id) if isinstance(result,dict) and values.kind=='planning' else values.id
         return {'draft':{'kind':values.kind,'id':resolved},'summary':'已更新同一草案，仍须审核确认。'}
@@ -148,7 +171,8 @@ async def prepare(engine,rid,token,request):
                 request['current_drafts']=[r for r in request['current_drafts'] if (r['kind'],r['id'])!=(ref['kind'],ref['id'])]+[current]
             except HTTPException as exc:
                 request['draft_coordination_error']=exc.detail
-        request['current_drafts']=request['current_drafts'][-10:]
+        from .conversation_context import bounded_drafts
+        request['current_drafts']=bounded_drafts(request['current_drafts'][-10:])
         snapshot=revision(db)
         stored=run.payload.get('tool_plan')
     batch_index=0
@@ -158,7 +182,8 @@ async def prepare(engine,rid,token,request):
             run=db.get(AssistantRun,rid)
             batches=run.payload.get('tool_batches',[])
         saved=batches[batch_index] if batch_index<len(batches) else stored if batch_index==0 else None
-        request['previous_tool_results']=results
+        from .conversation_context import provider_value
+        request['previous_tool_results']=provider_value(results)
         selected=ToolPlan.model_validate(saved) if saved else await plan(request)
         if len(selected.calls)>4-len(results):
             request['tool_questions']=['本轮工具次数已达上限，请核对已有结果后继续。']
@@ -196,5 +221,5 @@ async def prepare(engine,rid,token,request):
             if not persist(engine,rid,token,tool_results=results):return None
         if not selected.continue_after_read:break
         batch_index+=1
-    request['tool_results']=results
+    request['tool_results']=provider_value(results)
     return request

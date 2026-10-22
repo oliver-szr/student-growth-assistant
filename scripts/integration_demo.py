@@ -27,6 +27,7 @@ def serve(port):
     database = ROOT/"scripts/.runtime"/f"demo-integration-{uuid4().hex}.db"
     database.parent.mkdir(parents=True, exist_ok=True)
     os.environ.update(SGA_DEMO="1", SGA_DEMO_NOW=NOW, SGA_DATABASE_PATH=str(database),
+                      SGA_BACKUP_DIR=str(database.with_suffix('')/'backups'),
                       SGA_AUTO_BACKUP="0", SGA_SKIP_IMPORT_BACKUP="1")
     for key in ("CLAUDE_API_KEY", "CLAUDE_MODEL", "OPENAI_API_KEY", "OPENAI_MODEL"):
         os.environ.pop(key, None)
@@ -54,6 +55,10 @@ def serve(port):
     from app.workspace_schemas import ToolPlan
     async def mock_tools(request):
         text=request['message']
+        if text.startswith('匿名记忆建议') and '以后' in text:
+            return ToolPlan(calls=[{'name':'memory_suggestion','arguments':{'text':'学习讨论时喜欢先看短例子','scope':'study'}}])
+        if text.startswith('匿名最新任务'):
+            return ToolPlan(calls=[{'name':'tasks','arguments':{'q':'需求分析'}}])
         if text.startswith('匿名拆解'):
             return ToolPlan(calls=[{'name':'breakdown_draft','arguments':{'title':'匿名交付','text':text,'deadline':'2026-10-16T20:00:00+08:00','expected_duration_minutes':120}}])
         if text.startswith('匿名修改草案') and request.get('current_drafts'):
@@ -73,6 +78,10 @@ def serve(port):
     conversation_tools.plan=mock_tools
     async def mock_review(prompt,*args,**kwargs):
         data=json.loads(prompt)
+        if 'messages' in data and 'schema' in data:
+            messages=data['messages'];first=messages[0];last=messages[-1]
+            return json.dumps({'themes':[{'text':'讨论资料：'+first['text'][:80],'message_ids':[first['id']]}],
+                'conclusions':[],'questions':[{'text':'继续核对：'+last['text'][:80],'message_ids':[last['id']]}],'followups':[]},ensure_ascii=False)
         if 'facts' not in data:raise AssertionError('Only explicit review synthesis is mocked')
         return json.dumps({'title':'匿名复盘记录','summary':'基于已保存的匿名事实和讨论。','conclusion':'下次继续观察。','next_steps':''},ensure_ascii=False)
     claude_client.request_claude=mock_review
@@ -86,7 +95,7 @@ def serve(port):
         yield {'type': 'mode', 'value': 'full' if '[完整]' in text else 'streaming'}
         history = request['history']
         reply = '你好，我们可以从你关心的事情慢慢聊。'
-        if history:
+        if history and not any(w in text for w in ('学习偏好','记忆')):
             reply += '前面你说：' + history[-2 if len(history)>1 else -1]['text'][:60] + '。'
         results=request.get('tool_results',[])
         if results:
@@ -94,6 +103,11 @@ def serve(port):
             if any(r.get('error') for r in results):reply += '部分工具未完成，请检查提示。'
         if request['context'].get('tasks'):
             reply += '可从入口查看任务：' + request['context']['tasks'][0]['title'] + '。正式保存仍需你确认。'
+        for memory in request.get('confirmed_memories',[]):
+            reply += '已确认参考：'+memory['text']+'。'
+        for result in results:
+            if result.get('tool')=='tasks':
+                reply += '；'.join(f"{item['title']}最新预计{item['minutes']}分钟" for item in result.get('items',[]))
         if '[完整]' in text:
             await asyncio.sleep(.6)
             yield {'type': 'delta', 'text': reply}

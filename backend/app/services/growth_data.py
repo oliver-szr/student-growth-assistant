@@ -16,11 +16,11 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from ..database import UTCDateTime
-from ..models import AssistantProposal, AssistantRun, AssistantSession, AssistantMessage, Base, GrowthChangeDraft, PlanningState, ReviewRecord, utc_now
+from ..models import AssistantProposal, AssistantRun, AssistantSession, AssistantMessage, Base, GrowthChangeDraft, PlanningState, ReviewRecord, MemoryEntry, WorkspaceMetadata, utc_now
 from .planning_state import begin_planning_transaction, get_or_create_planning_state
 
 
-FORMAT_VERSION = 4
+FORMAT_VERSION = 5
 MAX_SNAPSHOT_BYTES = 25 * 1024 * 1024
 RETAIN_BACKUPS = 5
 
@@ -232,6 +232,22 @@ def _convert_legacy_v3(snapshot):
     return result
 
 
+def _convert_legacy_v4(snapshot):
+    from copy import deepcopy
+    # Explicit v4 frozen additions, independent of evolving live metadata.
+    old=deepcopy(snapshot)
+    review_columns={'id','owner_id','client_request_id','version','period','start_date','end_date','title','summary','conclusion','next_steps','facts','sources','history','created_at','updated_at'}
+    rows=old['tables'].pop('review_records',None)
+    if not isinstance(rows,list) or any(not isinstance(r,dict) or set(r)!=review_columns for r in rows):
+        raise HTTPException(422,detail='旧v4复盘字段不匹配')
+    old['format_version']=3
+    converted=_convert_legacy_v3(old)
+    converted['tables']['review_records']=rows
+    converted['tables']['memory_entries']=[]
+    converted['format_version']=5
+    return converted
+
+
 def _prepare_snapshot(snapshot: dict) -> tuple[list[tuple[Table, list[dict]]], int]:
     if not isinstance(snapshot, dict) or set(snapshot) != {"format_version", "exported_at", "timezone", "revision", "tables"}:
         raise HTTPException(status_code=422, detail="备份文件结构不正确")
@@ -241,7 +257,7 @@ def _prepare_snapshot(snapshot: dict) -> tuple[list[tuple[Table, list[dict]]], i
         raise HTTPException(status_code=422, detail="备份文件包含无法读取的数据")
     if size > MAX_SNAPSHOT_BYTES:
         raise HTTPException(status_code=413, detail="备份文件超过 25 MB 限制")
-    if type(snapshot["format_version"]) is not int or snapshot["format_version"] not in (1, 2, 3, FORMAT_VERSION):
+    if type(snapshot["format_version"]) is not int or snapshot["format_version"] not in (1, 2, 3, 4, FORMAT_VERSION):
         raise HTTPException(status_code=422, detail="不支持此备份版本")
     if snapshot["timezone"] != "UTC" or not isinstance(snapshot["tables"], dict):
         raise HTTPException(status_code=422, detail="备份时区或数据表结构无效")
@@ -259,6 +275,8 @@ def _prepare_snapshot(snapshot: dict) -> tuple[list[tuple[Table, list[dict]]], i
         snapshot = _convert_legacy_v2(snapshot)
     if snapshot['format_version'] == 3:
         snapshot = _convert_legacy_v3(snapshot)
+    if snapshot['format_version'] == 4:
+        snapshot = _convert_legacy_v4(snapshot)
 
     metadata = Base.metadata
     expected = set(metadata.tables)
@@ -308,6 +326,33 @@ def _prepare_snapshot(snapshot: dict) -> tuple[list[tuple[Table, list[dict]]], i
             ReviewContent.model_validate({key:record[key] for key in ReviewContent.model_fields})
             if record['owner_id'] not in owners or record['version']<1 or not isinstance(record['facts'],dict) or not isinstance(record['history'],list) or not isinstance(record['sources'],dict):raise ValueError()
         except Exception:raise HTTPException(422,detail='复盘记录或来源格式无效') from None
+    from ..secretary_schemas import MemoryContent,SummaryContent
+    sessions={r['id']:r for r in tables['assistant_sessions']}
+    messages={r['id']:r for r in tables['assistant_messages']}
+    def check_source(source):
+        if not isinstance(source,dict):raise ValueError()
+        if source:
+            sid=source.get('conversation_id');ids=source.get('message_ids')
+            if type(sid) is not int or sid not in sessions or sessions[sid]['owner_id'] not in owners or not isinstance(ids,list) or any(type(i) is not int or i not in messages or messages[i]['session_id']!=sid for i in ids):raise ValueError()
+    try:
+        for row in tables['memory_entries']:
+            MemoryContent.model_validate({'text':row['text'],'scope':row['scope']})
+            if row['owner_id'] not in owners or row['version']<1 or row['status'] not in ('suggested','confirmed','disabled','deleted') or not isinstance(row['receipt'],dict):raise ValueError()
+            check_source(row['sources'])
+        for message in messages.values():
+            data=message['content'] or {}
+            if data.get('kind')=='conversation_summary':
+                content=SummaryContent.model_validate(data['summary'])
+                check_source(data['sources'])
+                if data['sources']['conversation_id']!=message['session_id'] or type(data['version']) is not int or data['version']<1 or not isinstance(data['coverage'],dict):raise ValueError()
+                if any(i not in data['sources']['message_ids'] for group in content.model_dump().values() for item in group for i in item['message_ids']):raise ValueError()
+        for run in tables['assistant_runs']:
+            data=run['payload']
+            if data.get('kind')=='summary':
+                check_source({'conversation_id':run['session_id'],'message_ids':data['source_message_ids']})
+                if type(data['attempt']) is not int or data['attempt']<1 or not data.get('token'):raise ValueError()
+                if data.get('message_id') and (data['message_id'] not in messages or messages[data['message_id']]['session_id']!=run['session_id']):raise ValueError()
+    except Exception:raise HTTPException(422,detail='记忆或会话小结的归属、内容和来源引用无效') from None
     return prepared, snapshot["revision"]
 
 
@@ -355,7 +400,7 @@ def _protect_legacy_restore(db):
     message = db.scalar(select(AssistantMessage.id).where(AssistantMessage.created_at.is_not(None)).limit(1))
     if session is not None or message is not None:
         raise HTTPException(409, detail={'code': 'LEGACY_RESTORE_CONVERSATIONS_PRESENT',
-            'message': '当前库已有升级后的会话内容，旧v1/v2备份无法表达这些数据，恢复已拒绝。请先导出v4，并在独立空库恢复旧备份。'})
+            'message': '当前库已有升级后的会话内容，旧v1/v2备份无法表达这些数据，恢复已拒绝。请先导出v5，并在独立空库恢复旧备份。'})
 
 
 def restore_snapshot(db: Session, snapshot: dict) -> int:
@@ -366,9 +411,12 @@ def restore_snapshot(db: Session, snapshot: dict) -> int:
             _protect_legacy_restore(db)
         if snapshot['format_version']<4:
             if db.scalar(select(ReviewRecord.id).limit(1)) or db.scalar(select(GrowthChangeDraft.id).where(GrowthChangeDraft.scope=='review_record').limit(1)):
-                raise HTTPException(409,detail={'code':'LEGACY_RESTORE_REVIEWS_PRESENT','message':'当前已有新式复盘记录或草案，旧备份无法表达，恢复已拒绝。请先导出v4并在独立空库恢复旧备份。'})
+                raise HTTPException(409,detail={'code':'LEGACY_RESTORE_REVIEWS_PRESENT','message':'当前已有新式复盘记录或草案，旧备份无法表达，恢复已拒绝。请先导出v5并在独立空库恢复旧备份。'})
         if snapshot['format_version']<4 and db.scalar(select(AssistantRun.id).where(AssistantRun.payload['tool_plan'].is_not(None),AssistantRun.payload['tool_plan'].as_string()!='null').limit(1)):
-            raise HTTPException(409,detail={'code':'LEGACY_RESTORE_TOOLS_PRESENT','message':'当前已有阶段2工具运行资料；旧备份不能表达，恢复已拒绝。请先导出v4并在独立空库恢复旧备份。'})
+            raise HTTPException(409,detail={'code':'LEGACY_RESTORE_TOOLS_PRESENT','message':'当前已有阶段2工具运行资料；旧备份不能表达，恢复已拒绝。请先导出v5并在独立空库恢复旧备份。'})
+        if snapshot['format_version']<5:
+            if db.scalar(select(MemoryEntry.id).limit(1)) or db.scalar(select(AssistantRun.id).where(AssistantRun.payload['kind'].as_string()=='summary').limit(1)) or db.scalar(select(AssistantMessage.id).where(AssistantMessage.content['kind'].as_string()=='conversation_summary').limit(1)):
+                raise HTTPException(409,detail={'code':'LEGACY_RESTORE_SECRETARY_PRESENT','message':'当前已有记忆或会话小结，旧备份无法表达；请先导出v5，在独立空库恢复旧备份。'})
         db.execute(text("PRAGMA defer_foreign_keys=ON"))
         state = get_or_create_planning_state(db)
         next_revision = max(state.revision, imported_revision) + 1
@@ -380,6 +428,9 @@ def restore_snapshot(db: Session, snapshot: dict) -> int:
 
         state = get_or_create_planning_state(db)
         state.revision = next_revision
+        # Browser drafts belong to the pre-restore snapshot. Keep the durable
+        # owner (and all source references), rotate only its UI cache namespace.
+        db.get(WorkspaceMetadata,1).workspace_id=str(uuid4())
         db.flush()
         # A restored snapshot must never revive a pending plan based on an old state.
         db.query(AssistantProposal).filter(AssistantProposal.status.notin_(["applied", "discarded", "superseded"])).update(
@@ -396,6 +447,7 @@ def restore_snapshot(db: Session, snapshot: dict) -> int:
         db.query(GrowthChangeDraft).filter(GrowthChangeDraft.status == "ready").update(
             {GrowthChangeDraft.status: "stale"}, synchronize_session=False
         )
+        db.query(MemoryEntry).filter(MemoryEntry.status=='suggested').update({MemoryEntry.status:'disabled',MemoryEntry.version:MemoryEntry.version+1},synchronize_session=False)
         db.commit()
         return next_revision
     except Exception as error:

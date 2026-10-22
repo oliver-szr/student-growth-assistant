@@ -102,8 +102,8 @@ def test_tools_never_confirm_and_ordinary_chat_does_not_write_business(client,mo
 
 
 def test_v4_and_explicit_v3_conversion_cannot_erase_new_records(client):
-    snapshot=call(client,'GET','/api/data/export');assert snapshot['format_version']==4
-    legacy=deepcopy(snapshot);legacy['format_version']=3;del legacy['tables']['review_records']
+    snapshot=call(client,'GET','/api/data/export');assert snapshot['format_version']==5
+    legacy=deepcopy(snapshot);legacy['format_version']=3;del legacy['tables']['review_records'];del legacy['tables']['memory_entries']
     assert client.post('/api/data/import',json=legacy).status_code==200
     call(client,'POST','/api/reviews/records',json=dict(client_request_id='r',title='不能丢失',start_date='2026-10-12',end_date='2026-10-19'))
     assert client.post('/api/data/import',json=legacy).status_code==409
@@ -210,7 +210,7 @@ def test_tool_failure_does_not_hide_successful_receipts_and_retry_is_safe(client
 
 
 def test_v3_restore_refuses_to_erase_stage2_tool_receipts(client,monkeypatch,mock_reply):
-    old=call(client,'GET','/api/data/export');old['format_version']=3;del old['tables']['review_records']
+    old=call(client,'GET','/api/data/export');old['format_version']=3;del old['tables']['review_records'];del old['tables']['memory_entries']
     sid=call(client,'POST','/api/conversations',json={'client_request_id':'tool-backup'})['id']
     run=call(client,'POST',f'/api/conversations/{sid}/runs',json={'client_message_id':'msg','text':'你好'})
     assert wait(client,sid,run['id'])['status']=='completed'

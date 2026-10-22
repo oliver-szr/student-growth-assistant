@@ -90,11 +90,11 @@ def remove(id: ConversationId, expected_version: int = Query(ge=1, le=9223372036
 
 
 @router.get('/{id}/messages')
-def messages(id: ConversationId, after_id: int = Query(default=0, ge=0, le=9223372036854775807), before_id: int | None = Query(default=None, ge=1, le=9223372036854775807),
+def messages(id: ConversationId, after_id: int = Query(default=0, ge=0, le=9223372036854775807), before_id: int | None = Query(default=None, ge=1, le=9223372036854775807),latest:bool=False,
              limit: int = Query(default=50, ge=1, le=100), q: str | None = Query(default=None, min_length=1, max_length=100),
              db: Session = Depends(get_db)):
     session = require_conversation(db, id)
-    if before_id is not None and after_id:
+    if (before_id is not None and after_id) or latest and (before_id is not None or after_id):
         error('INVALID_PAGINATION', '不能同时使用前向和后向消息游标。', 422)
     conditions = [AssistantMessage.session_id == id, AssistantMessage.owner_id == session.owner_id]
     if q is not None:
@@ -102,14 +102,15 @@ def messages(id: ConversationId, after_id: int = Query(default=0, ge=0, le=92233
             error('INVALID_SEARCH', '搜索词不能为空。', 422)
         conditions.append(AssistantMessage.text.contains(q.strip(), autoescape=True))
     conditions.append(AssistantMessage.id < before_id if before_id is not None else AssistantMessage.id > after_id)
-    order = AssistantMessage.id.desc() if before_id is not None else AssistantMessage.id.asc()
+    reverse=before_id is not None or latest
+    order = AssistantMessage.id.desc() if reverse else AssistantMessage.id.asc()
     rows = list(db.scalars(select(AssistantMessage).where(*conditions).order_by(order).limit(limit + 1)).all())
     more, rows = len(rows) > limit, rows[:limit]
     cursor = rows[-1].id if more else None
-    if before_id is not None:
+    if reverse:
         rows.reverse()
     return {'items': [message_data(m) for m in rows], 'has_more': more,
-            'next_after_id': cursor if before_id is None else None, 'next_before_id': cursor if before_id is not None else None}
+            'next_after_id': cursor if not reverse else None, 'next_before_id': cursor if reverse else None}
 
 
 @router.post('/{id}/messages', status_code=201)

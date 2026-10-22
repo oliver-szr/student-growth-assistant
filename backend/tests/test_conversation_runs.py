@@ -60,7 +60,7 @@ def test_real_increment_cursor_history_and_same_message_identity(client,test_eng
     with Session(test_engine) as db:
         session=db.get(AssistantSession,sid);session.created_at-=timedelta(days=7);db.commit()
     second=start(client,sid,'next','你还记得什么？');wait(client,sid,second['id'])
-    assert streaming[-1]['history']==[{'role':'user','text':'你好'},{'role':'assistant','text':done['delta']}]
+    assert [{'role':m['role'],'text':m['text']} for m in streaming[-1]['history']]==[{'role':'user','text':'你好'},{'role':'assistant','text':done['delta']}]
     assert len(client.get(f'/api/conversations/{sid}/messages').json()['items'])==4
     assert client.get('/api/tasks').json()==[]
     other=conversation(client,'other')
@@ -124,7 +124,7 @@ def test_v3_export_restore_preserves_partial_reply_and_interrupts_running(client
     sid=conversation(client);initial=start(client,sid)
     wait(client,sid,initial['id'])
     snapshot=client.get('/api/data/export').json()
-    assert snapshot['format_version']==4
+    assert snapshot['format_version']==5
     r=client.post('/api/data/import',json=snapshot);assert r.status_code==200,r.text
     restored=client.get(f"/api/conversations/{sid}/runs/{initial['id']}").json()
     assert restored['delta'].startswith('你好') and restored['status']=='completed'

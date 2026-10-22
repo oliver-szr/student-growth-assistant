@@ -465,6 +465,24 @@ class WorkspaceMetadata(Base):
     owner_id: Mapped[str] = mapped_column(String(36), default=lambda: str(uuid4()), server_default='local', nullable=False)
 
 
+class MemoryEntry(Base):
+    """Independent, explicitly confirmed context, never a scheduling constraint."""
+    __tablename__ = 'memory_entries'
+    __table_args__ = (Index('memory_once', 'owner_id', 'client_request_id', unique=True),
+        Index('memory_active', 'owner_id', 'status', 'updated_at', 'id'))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_id: Mapped[str] = mapped_column(String(36), nullable=False, default=workspace_owner)
+    client_request_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    sources: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    receipt: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, default=utc_now)
+
+
 class ReviewRecord(Base):
     """Explicitly saved review, separate from legacy generated weekly text."""
     __tablename__ = 'review_records'
