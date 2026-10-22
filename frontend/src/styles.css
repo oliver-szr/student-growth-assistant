@@ -25,19 +25,18 @@
 }
 
 /* V2 shell. Specificity keeps legacy page styling separate from the new layout. */
-.compact-shell.v2-shell {--ink:#183b48;--muted:#526974;--line:#dbe6e8;height:100dvh;min-height:480px;display:flex;flex-direction:column;overflow:hidden;background:#f5f7f8}
+.compact-shell.v2-shell {--ink:#243e35;--muted:#586c62;--line:#dee7e1;--accent:#176e58;--soft:#edf4ef;--surface:#fff;height:100dvh;min-height:480px;display:flex;flex-direction:column;overflow:hidden;background:var(--surface);color:var(--ink)}
 .compact-shell.v2-shell .v2-grid {display:grid;grid-template-columns:76px var(--v2-list-width) minmax(360px,var(--v2-primary-fr)) 8px minmax(320px,var(--v2-auxiliary-fr));grid-template-rows:auto minmax(0,1fr);flex:1;min-height:0}
 .compact-shell.v2-shell[data-panel=collapsed] .v2-grid {grid-template-columns:76px var(--v2-list-width) minmax(0,1fr) 0 44px}
 .compact-shell.v2-shell[data-panel=expanded] .v2-grid {grid-template-columns:76px 0 280px 0 minmax(0,1fr)}
-.compact-shell.v2-shell .v2-navigation {grid-column:1;grid-row:1 / span 2;display:flex;flex-direction:column;gap:8px;padding:20px 8px 12px;background:#eaf1ee;border-right:1px solid #d9e4e7;min-width:0}
-.compact-shell.v2-shell .v2-brand {font-size:19px;font-weight:700;text-align:center;color:#176e58;margin:4px 0 24px}
-.compact-shell.v2-shell .v2-navigation>button {display:flex;flex-direction:column;align-items:center;gap:2px;border:0;background:transparent;border-radius:10px;min-height:64px;color:#526974;font-size:13px;padding:6px}
-.compact-shell.v2-shell .v2-navigation>button>span {font-size:22px;line-height:1.3}
-.compact-shell.v2-shell .v2-navigation>button[aria-current] {color:#086853;background:#d5e8df;font-weight:700}
+.compact-shell.v2-shell .v2-navigation {grid-column:1;grid-row:1 / span 2;display:flex;flex-direction:column;padding:20px 8px 12px;border-right:1px solid #d9e4e7;min-width:0}
+.compact-shell.v2-shell .v2-brand {font-size:19px;font-weight:700;text-align:center;margin:4px 0 24px}
+.compact-shell.v2-shell .v2-navigation>button {display:flex;flex-direction:column;align-items:center;gap:2px;border:0;background:transparent;min-height:64px;font-size:13px;padding:6px}
+.compact-shell.v2-shell .v2-navigation>button[aria-current] {font-weight:700}
 .compact-shell.v2-shell .v2-nav-bottom {margin-top:auto;display:grid;gap:16px;text-align:center;font-size:12px}
 .compact-shell.v2-shell .v2-nav-bottom a {color:#365e55;padding:8px 0}
 .compact-shell.v2-shell .v2-account {color:#526974;border-top:1px solid #d2dfd9;padding-top:12px}
-.compact-shell.v2-shell .v2-conversations {grid-column:2;grid-row:1 / span 2;padding:12px 10px;background:#f3f6f4;border-right:1px solid #d9e4e7;min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+.compact-shell.v2-shell .v2-conversations {grid-column:2;grid-row:1 / span 2;padding:12px 10px;border-right:1px solid #d9e4e7;min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
 .compact-shell.v2-shell .v2-list-toggle {border:0;background:transparent;color:#365c52;min-height:32px;width:100%;text-align:left;font-weight:600;padding:4px 6px;margin-bottom:8px;flex-shrink:0}
 .compact-shell.v2-shell[data-conversations=closed] .v2-conversations {padding:16px 4px}
 .compact-shell.v2-shell[data-conversations=closed] .v2-list-toggle {text-align:center;font-size:22px}
@@ -47,21 +46,20 @@
 .compact-shell.v2-shell .v2-chat {grid-column:3;grid-row:1 / span 2;min-width:0;min-height:0;overflow:auto;padding:24px;display:flex;flex-direction:column;scrollbar-gutter:stable}
 .compact-shell.v2-shell .v2-chat-heading {display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .compact-shell.v2-shell .v2-chat-heading h1 {font-size:24px;margin:6px 0}
-.compact-shell.v2-shell .v2-chat-heading .eyebrow {font-size:12px;letter-spacing:.06em}
 .compact-shell.v2-shell .v2-chat-heading .workspace-clock {font-size:12px}
 .compact-shell.v2-shell .v2-chat-note {font-size:13px;color:#526974;margin:8px 0 20px}
 .compact-shell.v2-shell .v2-chat>.chat-panel {display:flex;flex-direction:column;flex:1;min-height:440px;overflow:visible;border-radius:12px}
 .compact-shell.v2-shell .v2-chat-surface {display:flex;flex-direction:column;flex:1;min-height:0}
 .compact-shell.v2-shell .v2-chat-surface>.chat-panel,.compact-shell.v2-shell .conversation-chat {display:flex;flex-direction:column;flex:1;min-height:440px;border-radius:12px}
-.compact-shell.v2-shell .conversation-chat .chat-scroll {max-height:55dvh;overflow:auto}
-.compact-shell.v2-shell .conversation-chat .workspace-chat-input {display:grid;gap:10px}
-.compact-shell.v2-shell .conversation-chat .workspace-chat-input label {display:grid;gap:8px}
+.compact-shell.v2-shell .conversation-chat .chat-scroll {overflow:auto}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-input {display:grid}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-input label {display:grid}
 .compact-shell.v2-shell .conversation-list {display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;flex:1}
 .compact-shell.v2-shell .conversation-list .button {font-size:12px;padding:7px 8px;min-height:34px}
-.compact-shell.v2-shell .conversation-toolbar {display:grid;gap:8px;flex-shrink:0}
+.compact-shell.v2-shell .conversation-toolbar {display:grid;flex-shrink:0}
 .compact-shell.v2-shell .conversation-new {width:100%;text-align:left}
 .compact-shell.v2-shell .conversation-search {display:flex;align-items:center;gap:2px;border:1px solid #dce5df;border-radius:8px;background:#fff;min-width:0}
-.compact-shell.v2-shell .conversation-search input {flex:1;min-width:0;width:100%;border:0;background:transparent;font-size:13px;padding:8px}
+.compact-shell.v2-shell .conversation-search input {flex:1;min-width:0;width:100%;border:0;background:transparent;padding:8px}
 .compact-shell.v2-shell .conversation-search .button {flex-shrink:0;padding:6px}
 .compact-shell.v2-shell .conversation-filters {display:flex;gap:4px;align-items:center}
 .compact-shell.v2-shell .conversation-filters [aria-pressed=true] {background:#e0eae4;color:#176e58}
@@ -70,8 +68,7 @@
 .compact-shell.v2-shell .conversation-groups {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
 .compact-shell.v2-shell .conversation-row {display:flex;align-items:center;gap:4px;height:36px;min-width:0;margin:2px 0;border:0;border-radius:7px;background:transparent}
 .compact-shell.v2-shell .conversation-row:hover {background:#e7ede9}
-.compact-shell.v2-shell .conversation-row[data-selected] {background:#dfece5}
-.compact-shell.v2-shell .conversation-title {display:block;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;border:0;background:transparent;padding:8px 6px;color:#234f40;font:inherit;font-size:13px;line-height:20px}
+.compact-shell.v2-shell .conversation-title {display:block;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;border:0;background:transparent;padding:8px 6px;font:inherit;line-height:20px}
 .compact-shell.v2-shell .conversation-more {width:30px;min-height:32px;flex-shrink:0;padding:0;border:0;border-radius:6px;background:transparent;color:#365c52;font-size:20px;line-height:1;opacity:0;pointer-events:none}
 .compact-shell.v2-shell .conversation-row:hover .conversation-more,.compact-shell.v2-shell .conversation-row:focus-within .conversation-more,.compact-shell.v2-shell .conversation-row[data-selected] .conversation-more,.compact-shell.v2-shell .conversation-more[aria-expanded=true] {opacity:1;pointer-events:auto}
 .compact-shell.v2-shell .conversation-more:hover {background:#d3e1d8}
@@ -79,25 +76,21 @@
 .compact-shell.v2-shell .conversation-rename {display:grid;gap:8px;min-width:0;flex-shrink:0}
 .compact-shell.v2-shell .conversation-rename label {display:grid;gap:6px;font-size:13px}
 .compact-shell.v2-shell .conversation-rename input {width:100%;min-width:0}
-.conversation-menu {position:fixed;z-index:500;display:grid;width:min(248px,calc(100vw - 16px));max-height:calc(100dvh - 16px);overflow:auto;overscroll-behavior:contain;padding:5px;border:1px solid #d9e4df;border-radius:10px;background:#fff;box-shadow:0 8px 28px #183b4826;font-family:inherit;color:#183b48}
-.conversation-menu button {display:block;width:100%;border:0;border-radius:6px;background:transparent;color:inherit;text-align:left;min-height:36px;padding:8px 10px;font:inherit;font-size:13px;line-height:1.5;cursor:pointer}
+.conversation-menu {position:fixed;z-index:500;display:grid;width:min(248px,calc(100vw - 16px));max-height:calc(100dvh - 16px);overflow:auto;overscroll-behavior:contain;padding:5px;background:#fff;font-family:inherit}
+.conversation-menu button {display:block;width:100%;border:0;border-radius:6px;background:transparent;color:inherit;text-align:left;min-height:36px;padding:8px 10px;font:inherit;line-height:1.5;cursor:pointer}
 .conversation-menu button:hover,.conversation-menu button:focus-visible {background:#edf4ef;outline:2px solid #438572;outline-offset:-2px}
 .conversation-menu button.danger {color:#a33f34}
 .conversation-menu .conversation-match {border-top:1px solid #e4ebe7;margin-top:4px;overflow-wrap:anywhere;font-size:12px;color:#526974}
-.compact-shell.v2-shell .conversation-chat {margin:18px 0 0;padding:24px;background:#fff;box-shadow:none;border:1px solid #dbe6e8}
 .compact-shell.v2-shell .conversation-chat .workspace-chat-heading {align-items:baseline;flex-wrap:wrap;gap:10px 16px;padding:0;min-height:0;border:0}
-.compact-shell.v2-shell .conversation-chat .workspace-chat-heading h2 {flex:1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:22px;line-height:1.4;margin:0;min-width:0;overflow-wrap:anywhere}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-heading h2 {flex:1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:0;min-width:0;overflow-wrap:anywhere}
 .compact-shell.v2-shell .conversation-summary-trigger {margin-left:auto;flex-shrink:0}
 .compact-shell.v2-shell .conversation-summary-button {width:auto;min-height:34px;padding:6px 8px;font-size:12px;white-space:nowrap;border:0;background:transparent}
-.compact-shell.v2-shell .conversation-intro {margin:12px 0 16px;line-height:1.7;font-size:13px}
-.compact-shell.v2-shell .conversation-shortcuts {gap:8px;margin:0 0 6px}
-.compact-shell.v2-shell .conversation-shortcuts .button {border:0;background:transparent;padding:7px 9px;font-size:13px;min-height:34px}
+.compact-shell.v2-shell .conversation-intro {line-height:1.7}
+.compact-shell.v2-shell .conversation-shortcuts .button {border:0;background:transparent;min-height:34px}
 .compact-shell.v2-shell .conversation-shortcuts .button:hover {background:#edf4ef}
-.compact-shell.v2-shell .conversation-chat .chat-history {margin:18px 0}
-.compact-shell.v2-shell .conversation-chat .chat-scroll {padding:10px 0 16px;gap:14px}
-.compact-shell.v2-shell .conversation-chat .workspace-chat-input {grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;padding:16px 0 0;background:transparent}
-.compact-shell.v2-shell .conversation-chat .workspace-chat-input label {font-size:12px;color:#526974}
-.compact-shell.v2-shell .conversation-chat .workspace-chat-input textarea {width:100%;min-height:88px}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-input {grid-template-columns:minmax(0,1fr) auto;align-items:end;background:transparent}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-input label {color:#526974}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-input textarea {width:100%}
 .compact-shell.v2-shell .conversation-chat .workspace-chat-input>.button {min-height:44px;height:44px;min-width:64px}
 @media (max-width:1023px), (any-hover:none), (pointer:coarse) {
   .compact-shell.v2-shell .conversation-more {opacity:1;pointer-events:auto;width:44px;min-height:44px}
@@ -124,36 +117,34 @@
 .compact-shell.v2-shell .v2-chat .chat-compose textarea {min-height:100px}
 .compact-shell.v2-shell .v2-workspace {grid-column:5;grid-row:1;min-width:0;min-height:0;background:#fff;border-left:1px solid #d9e4e7}
 .compact-shell.v2-shell[data-panel=collapsed] .v2-workspace {grid-row:1 / span 2}
-.compact-shell.v2-shell .v2-resizer {grid-column:4;grid-row:1 / span 2;cursor:col-resize;touch-action:none;background:#e5ece8;position:relative;z-index:2;outline-offset:-2px}
-.compact-shell.v2-shell .v2-resizer::after {content:'';position:absolute;left:3px;top:calc(50% - 24px);height:48px;width:2px;border-radius:2px;background:#8fae9f}
+.compact-shell.v2-shell .v2-resizer {grid-column:4;grid-row:1 / span 2;cursor:col-resize;touch-action:none;position:relative;z-index:2;outline-offset:-2px}
+.compact-shell.v2-shell .v2-resizer::after {content:'';position:absolute;left:3px;top:calc(50% - 24px);height:48px;width:2px;border-radius:2px}
 .compact-shell.v2-shell .v2-resizer:hover,.compact-shell.v2-shell .v2-resizer:focus {background:#bddacb}
-.compact-shell.v2-shell .v2-workspace-heading {display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #d9e4e7;flex-shrink:0;background:#fcfdfc}
-.compact-shell.v2-shell .v2-workspace-tabs {display:flex;gap:4px}
+.compact-shell.v2-shell .v2-workspace-heading {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;border-bottom:1px solid #d9e4e7;flex-shrink:0}
+.compact-shell.v2-shell .v2-workspace-tabs {display:flex}
 .compact-shell.v2-shell .v2-workspace-tabs button,.compact-shell.v2-shell .v2-panel-controls button,.compact-shell.v2-shell .v2-calendar-view button,.compact-shell.v2-shell .v2-mobile-switch button {min-height:44px;padding:8px 12px;border:0;border-radius:8px;background:transparent;color:#526974;font-size:14px}
 .compact-shell.v2-shell .v2-workspace-tabs [aria-selected=true],.compact-shell.v2-shell .v2-calendar-view [aria-pressed=true],.compact-shell.v2-shell .v2-mobile-switch [aria-pressed=true] {background:#e4f1eb;color:#135e4c;font-weight:650}
 .compact-shell.v2-shell .v2-panel-controls {display:flex;margin-left:auto}
-.compact-shell.v2-shell .v2-panel-controls button {padding:8px}
 .compact-shell.v2-shell .v2-tool-page {min-width:0;min-height:0;overflow:auto;padding:20px;overscroll-behavior:contain;scrollbar-gutter:stable;background:#fff}
 .compact-shell.v2-shell .v2-tool-page[data-placement=primary] {grid-column:3;grid-row:1 / span 2;padding:24px 32px;background:#f5f7f8}
 .compact-shell.v2-shell .v2-tool-page[data-placement=auxiliary] {grid-column:5;grid-row:2;border-left:1px solid #d9e4e7}
 .compact-shell.v2-shell .v2-primary-page-heading {display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin-bottom:20px}
 .compact-shell.v2-shell .v2-primary-page-heading h1 {font-size:26px;margin:0}
 .compact-shell.v2-shell .v2-primary-page-heading .workspace-clock {font-size:12px;margin-left:auto}
-.compact-shell.v2-shell .v2-readonly-summary {display:grid;gap:12px;overflow-wrap:anywhere}
+.compact-shell.v2-shell .v2-readonly-summary {display:grid;overflow-wrap:anywhere}
 .compact-shell.v2-shell .v2-readonly-summary h3 {margin:8px 0 0}
 .compact-shell.v2-shell .v2-readonly-summary p {margin:4px 0}
-.compact-shell.v2-shell .v2-readonly-summary article {padding:12px;border:1px solid var(--line);border-radius:8px}
-.compact-shell.v2-shell .v2-readonly-summary dl {margin:0;display:grid;gap:12px}
-.compact-shell.v2-shell .v2-readonly-summary dl>div {padding:12px;border-bottom:1px solid var(--line)}
-.compact-shell.v2-shell .v2-readonly-summary dt {font-size:13px;color:var(--muted)}
-.compact-shell.v2-shell .v2-readonly-summary dd {margin:6px 0 0;font-size:18px;font-weight:600}
-.compact-shell.v2-shell .v2-preview-heading {display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:12px}
-.compact-shell.v2-shell .v2-preview-heading h3 {margin:0 auto 0 0;font-size:16px}
-.compact-shell.v2-shell .v2-preview-date {display:flex;align-items:center;gap:4px;max-width:100%}
+.compact-shell.v2-shell .v2-readonly-summary dl {margin:0;display:grid}
+.compact-shell.v2-shell .v2-readonly-summary dl>div {border-bottom:1px solid var(--line)}
+.compact-shell.v2-shell .v2-readonly-summary dt {color:var(--muted)}
+.compact-shell.v2-shell .v2-readonly-summary dd {font-weight:600}
+.compact-shell.v2-shell .v2-preview-heading {display:flex;align-items:center;flex-wrap:wrap}
+.compact-shell.v2-shell .v2-preview-heading h3 {margin:0 auto 0 0}
+.compact-shell.v2-shell .v2-preview-date {display:flex;align-items:center;max-width:100%}
 .compact-shell.v2-shell .v2-preview-date label {min-width:0}
-.compact-shell.v2-shell .v2-preview-date input {width:148px;max-width:100%;min-height:44px;font-size:13px}
+.compact-shell.v2-shell .v2-preview-date input {max-width:100%;min-height:44px}
 .compact-shell.v2-shell .v2-preview-date button {border:0;background:transparent;min-height:44px;min-width:32px;color:var(--ink);font-size:22px}
-.compact-shell.v2-shell .v2-planning-content {display:grid;gap:20px;min-width:0}
+.compact-shell.v2-shell .v2-planning-content {display:grid;min-width:0}
 .compact-shell.v2-shell .v2-planning-content .today-focus {margin:0}
 .compact-shell.v2-shell .v2-planning-content .today-focus ol {grid-template-columns:minmax(0,1fr)}
 .compact-shell.v2-shell .v2-calendar-heading {display:flex;flex-wrap:wrap;justify-content:flex-start;padding:16px;gap:12px}
@@ -562,3 +553,215 @@ input:focus, select:focus, textarea:focus { border-color: #3b9b86; }
   .task-container .item-top { flex-wrap: wrap; gap: 8px; }
   .task-container, .breakdown-children .item-card { min-width: 0; overflow-wrap: anywhere; }
 }
+
+/* V2 refinement: the content surface leads; rails and previews support it.
+   Specific to the workspace so legacy layouts keep their established rules. */
+.visually-hidden {position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.compact-shell.v2-shell {--ui-ink:var(--ink);--ui-muted:var(--muted);--ui-accent:var(--accent);--ui-line:var(--line);font-size:16px;line-height:1.7}
+.compact-shell.v2-shell ::selection {background:#d5e8df;color:var(--ink)}
+.compact-shell.v2-shell input,.compact-shell.v2-shell textarea {caret-color:var(--accent)}
+.compact-shell.v2-shell :focus-visible {outline:2px solid var(--accent);outline-offset:3px}
+.compact-shell.v2-shell :where(.v2-chat,.v2-tool-page,.conversation-groups,.chat-scroll) {scrollbar-width:thin;scrollbar-color:#acbfb2 transparent}
+.compact-shell.v2-shell h1,.compact-shell.v2-shell h2,.compact-shell.v2-shell h3 {text-wrap:balance}
+.compact-shell.v2-shell .button {box-shadow:none;transform:none;transition:background-color .15s ease;color:var(--ink);font-weight:500}
+.compact-shell.v2-shell .button:not(:disabled):hover {transform:none;box-shadow:none;background:var(--soft)}
+.compact-shell.v2-shell .button.primary {background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.compact-shell.v2-shell .button.primary:not(:disabled):hover {background:#105540}
+.compact-shell.v2-shell .button.secondary {background:var(--soft);border-color:transparent;color:#165a45}
+.compact-shell.v2-shell .button.subtle {background:transparent;border-color:transparent;color:var(--muted)}
+.compact-shell.v2-shell .button[aria-pressed=true],.compact-shell.v2-shell [role=tab][aria-selected=true] {background:var(--soft);color:#165a45;font-weight:600}
+.compact-shell.v2-shell input:not([type=checkbox]),.compact-shell.v2-shell select,.compact-shell.v2-shell textarea {border-color:#bccdc2;border-radius:8px;color:var(--ink);font-size:16px}
+.compact-shell.v2-shell .helper,.compact-shell.v2-shell .muted {color:var(--muted);font-size:14px;line-height:1.7}
+.compact-shell.v2-shell .growth-empty {background:transparent;padding:16px 0;color:var(--muted);font-size:15px}
+.compact-shell.v2-shell .v2-navigation {background:#edf3ef;border-color:var(--line);gap:6px}
+.compact-shell.v2-shell .v2-brand {color:var(--accent)}
+.compact-shell.v2-shell .v2-navigation>button {color:var(--muted);border-radius:8px}
+.compact-shell.v2-shell .v2-navigation>button:hover {background:#e1ebe4}
+.compact-shell.v2-shell .v2-navigation>button[aria-current] {background:#dbe9df;color:#14553e}
+.compact-shell.v2-shell .v2-navigation svg {width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;margin:2px 0 4px}
+.compact-shell.v2-shell .v2-conversations {background:#f5f8f5;border-color:var(--line)}
+.compact-shell.v2-shell .conversation-toolbar {gap:10px}
+.compact-shell.v2-shell .conversation-new {border:1px solid #cdded1;background:var(--surface)}
+.compact-shell.v2-shell .conversation-search {border-color:var(--line)}
+.compact-shell.v2-shell .conversation-search input {font-size:14px}
+.compact-shell.v2-shell .conversation-search .button {font-size:13px}
+.compact-shell.v2-shell .conversation-filters .button {font-size:13px}
+.compact-shell.v2-shell .conversation-title {font-size:14px;color:var(--ink)}
+.compact-shell.v2-shell .conversation-row[data-selected] {background:#dfece3}
+.conversation-menu {color:#243e35;border:0;box-shadow:0 6px 24px #243e3526;border-radius:12px}
+.conversation-menu button {font-size:14px}
+.compact-shell.v2-shell .v2-chat,.compact-shell.v2-shell .v2-tool-page[data-placement=primary] {background:var(--surface);padding:24px 28px}
+.compact-shell.v2-shell .v2-chat-heading,.compact-shell.v2-shell .v2-primary-page-heading {align-items:center;gap:8px 16px;margin:0 0 24px;min-height:30px}
+.compact-shell.v2-shell .v2-chat-heading h1,.compact-shell.v2-shell .v2-primary-page-heading h1 {font-size:22px;font-weight:600;margin:0}
+.compact-shell.v2-shell .workspace-clock {color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.compact-shell.v2-shell .conversation-chat {padding:0;margin:0;border:0;border-radius:0;min-height:480px;background:transparent;box-shadow:none}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-heading h2 {font-size:18px;line-height:1.5;font-weight:600}
+.compact-shell.v2-shell .conversation-intro {margin:12px 0;font-size:13px}
+.compact-shell.v2-shell .conversation-shortcuts {margin:0;padding-bottom:12px;border-bottom:1px solid var(--line);gap:4px}
+.compact-shell.v2-shell .conversation-shortcuts .button {padding:6px 8px;font-size:14px}
+.compact-shell.v2-shell .conversation-chat .chat-history {display:flex;flex-direction:column;flex:1;min-height:140px;margin:12px 0}
+.compact-shell.v2-shell .conversation-chat .chat-scroll {flex:1;height:0;min-height:140px;max-height:none;padding:12px 8px 16px 0;gap:28px}
+.compact-shell.v2-shell .conversation-chat .workspace-message {padding:0;max-width:min(100%,70ch);border:0;border-radius:0;background:transparent;font-size:16px;line-height:1.8;white-space:normal}
+.compact-shell.v2-shell .conversation-chat .workspace-message>strong {display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+.compact-shell.v2-shell .conversation-chat .workspace-message p {line-height:1.8;margin:6px 0 0}
+.compact-shell.v2-shell .conversation-chat .workspace-message.user {max-width:90%;background:var(--soft);padding:10px 16px;border-radius:12px}
+.compact-shell.v2-shell .conversation-chat .workspace-message.user>strong {position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.compact-shell.v2-shell .conversation-chat .workspace-message>.button-row:empty {display:none}
+.compact-shell.v2-shell .conversation-welcome {margin:auto 0;padding:40px 0;max-width:36ch}
+.compact-shell.v2-shell .conversation-welcome h3 {font-size:22px;font-weight:500;margin:0 0 12px}
+.compact-shell.v2-shell .conversation-welcome p {font-size:15px;color:var(--muted);margin:0}
+.compact-shell.v2-shell .conversation-start {display:flex;flex-direction:column;align-items:flex-start;justify-content:center;min-height:320px;flex:1;gap:16px;border:0;border-radius:0;background:transparent;box-shadow:none;padding:0 0 15dvh}
+.compact-shell.v2-shell .conversation-start h2 {font-size:26px;font-weight:500;margin:0}
+.compact-shell.v2-shell .conversation-start p {color:var(--muted);max-width:36ch;margin:0}
+.compact-shell.v2-shell .conversation-chat .reply-status {display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:var(--muted);padding:0;margin:0}
+.compact-shell.v2-shell .reply-status p {margin:0}
+.compact-shell.v2-shell .conversation-review-action {align-self:flex-start;min-height:36px;padding:4px 0;margin:8px 0;font-size:13px}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-input {padding:12px 0 0;border:0;gap:8px}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-input label {gap:6px;font-size:13px}
+.compact-shell.v2-shell .conversation-chat .workspace-chat-input textarea {min-height:80px;max-height:180px;resize:vertical}
+.compact-shell.v2-shell .workspace-message .workspace-draft,.compact-shell.v2-shell .workspace-message .memory-card {margin-top:16px;padding:16px;border:1px solid #d7c9a7;background:#fdfaf2;border-radius:12px;box-shadow:none}
+.compact-shell.v2-shell .workspace-message .workspace-draft>strong {font-size:14px;font-weight:600;color:#69552d}
+.compact-shell.v2-shell .workspace-message .workspace-draft .button {width:auto;margin-top:12px}
+.compact-shell.v2-shell .workspace-message .workspace-draft>.button {justify-self:start}
+.compact-shell.v2-shell .workspace-draft.panel {border:1px solid #d7c9a7;background:#fdfbf5;padding:20px;box-shadow:none}
+.compact-shell.v2-shell .workspace-draft.panel h2 {font-size:18px}
+.compact-shell.v2-shell .workspace-draft .breakdown-children>.item-card {border:0;border-top:1px solid #e5dcc7;border-radius:0;background:transparent;padding:20px 0;box-shadow:none}
+.compact-shell.v2-shell .workspace-draft .breakdown-total {background:transparent;border-bottom:1px solid #e5dcc7;border-radius:0;padding:12px 0}
+.compact-shell.v2-shell .v2-tool-page .workspace-draft .form-grid {grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr))}
+.compact-shell.v2-shell .v2-tool-page .workspace-draft .form-grid .span-two {grid-column:1/-1}
+.compact-shell.v2-shell .draft-change {border:0;border-radius:0;border-top:1px solid #e5dcc7;background:transparent;padding:12px 0}
+.compact-shell.v2-shell .growth-section,.compact-shell.v2-shell .full-calendar,.compact-shell.v2-shell .task-breakdown,.compact-shell.v2-shell .workspace-details {border:0;border-radius:0;box-shadow:none;background:transparent;padding:0}
+.compact-shell.v2-shell .v2-planning-content {gap:28px}
+.compact-shell.v2-shell .v2-planning-content .today-focus {border:0;border-top:1px solid var(--line);border-radius:0;background:transparent;padding:20px 0 0}
+.compact-shell.v2-shell .task-memory {border-top:1px solid var(--line);padding:16px 0}
+.compact-shell.v2-shell .full-calendar {margin:0;container-type:inline-size}
+.compact-shell.v2-shell .calendar-toolbar {gap:8px;margin:0 0 16px;align-items:center}
+.compact-shell.v2-shell .calendar-toolbar [role=group] {display:inline-flex;gap:2px;background:#f3f6f3;padding:3px;border-radius:8px}
+.compact-shell.v2-shell .calendar-toolbar [role=group] .button {padding:6px 12px;min-width:38px;min-height:36px}
+.compact-shell.v2-shell .full-calendar-toolbar {display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px}
+.compact-shell.v2-shell .calendar-navigation {justify-content:flex-end;align-items:center;margin:0;gap:4px}
+.compact-shell.v2-shell .calendar-navigation strong {font-size:15px;font-weight:500;text-align:center;overflow-wrap:anywhere}
+.compact-shell.v2-shell .calendar-navigation .button {padding:4px 8px;min-width:36px;font-size:20px;flex-shrink:0}
+.compact-shell.v2-shell .full-calendar-toolbar>label {width:160px}
+.compact-shell.v2-shell .full-calendar-toolbar>.button {justify-self:start}
+.compact-shell.v2-shell .calendar-key {display:flex;flex-wrap:wrap;gap:8px 16px;margin:8px 0 16px;color:var(--muted);font-size:13px}
+.compact-shell.v2-shell .calendar-key span {display:inline-flex;align-items:center;gap:6px}
+.compact-shell.v2-shell .calendar-key span:before {content:'';width:8px;height:8px;border-radius:2px;background:#26745e}
+.compact-shell.v2-shell .calendar-key .key-course:before {background:#4b7094}
+.compact-shell.v2-shell .calendar-key .key-candidate:before {background:#fff6db;border:1px dashed #997327}
+.compact-shell.v2-shell .calendar-key .key-deadline:before {background:#934a35}
+.compact-shell.v2-shell .full-calendar .fc {font-size:13px;color:var(--ink);--fc-border-color:var(--line)}
+.compact-shell.v2-shell .full-calendar .fc-col-header-cell {font-weight:500;background:#f7faf7}
+.compact-shell.v2-shell .full-calendar .fc-scrollgrid {border-radius:8px}
+.compact-shell.v2-shell .full-calendar .calendar-formal_task {background:#26745e;color:#fff}
+.compact-shell.v2-shell .full-calendar :is(.calendar-course,.calendar-course_snapshot) {background:#4b7094;color:#fff}
+.compact-shell.v2-shell .full-calendar .calendar-protected {background:#677580;color:#fff}
+.compact-shell.v2-shell .full-calendar .fc-daygrid-event-dot {border-color:currentColor}
+.compact-shell.v2-shell .full-calendar :is(.calendar-deadline,.calendar-goal) {background:#fbf2ea;color:#834c31;border-color:transparent;font-weight:500}
+.compact-shell.v2-shell .full-calendar :is(.calendar-deadline,.calendar-goal,.calendar-candidate) .fc-event-main {color:inherit}
+.compact-shell.v2-shell .calendar-reading-note {margin:12px 0;color:var(--muted)}
+@container (max-width:480px) {
+  .full-calendar-toolbar {grid-template-columns:minmax(0,1fr) auto}
+  .full-calendar-toolbar>[role=group] {grid-column:1;grid-row:1;justify-self:start}
+  .full-calendar-toolbar>.button {grid-column:2;grid-row:1;justify-self:end}
+  .full-calendar-toolbar .calendar-navigation {grid-column:1/-1;grid-row:2;justify-content:space-between}
+  .full-calendar-toolbar>label {grid-column:1/-1;grid-row:3;width:auto}
+}
+.compact-shell.v2-shell .review-workspace {gap:20px;container-type:inline-size}
+.compact-shell.v2-shell .review-range-toolbar {display:grid;grid-template-columns:auto auto minmax(0,1fr)}
+.compact-shell.v2-shell .review-date-navigation {display:flex;align-items:center;gap:4px;min-width:0}
+.compact-shell.v2-shell .review-date-navigation .button {min-width:36px;padding:6px}
+.compact-shell.v2-shell .review-range-toolbar>.button {justify-self:end}
+@container (max-width:600px) {
+  .review-range-toolbar {grid-template-columns:minmax(0,1fr) auto}
+  .review-range-toolbar>[role=group] {grid-column:1;grid-row:1;justify-self:start}
+  .review-range-toolbar>.button {grid-column:2;grid-row:1}
+  .review-range-toolbar>.review-date-navigation {grid-column:1/-1;grid-row:2}
+}
+.compact-shell.v2-shell .review-workspace>[role=tablist],.compact-shell.v2-shell .profile-sections {display:flex;gap:16px;border-bottom:1px solid var(--line);padding:0 0 6px;margin-bottom:20px}
+.compact-shell.v2-shell :is(.review-workspace>[role=tablist],.profile-sections) [role=tab] {background:transparent;border:0;border-radius:0;padding:8px 0;color:var(--muted);font-size:15px;min-height:44px;border-bottom:2px solid transparent}
+.compact-shell.v2-shell :is(.review-workspace>[role=tablist],.profile-sections) [aria-selected=true] {color:#165a45;border-bottom-color:var(--accent);font-weight:600}
+.compact-shell.v2-shell .review-workspace>[role=tablist] {margin-bottom:4px}
+.compact-shell.v2-shell .review-workspace .review-metrics {display:flex;flex-wrap:wrap;gap:0;margin:20px 0 8px;border-block:1px solid var(--line);padding:16px 0}
+.compact-shell.v2-shell .review-metrics .metric-card {flex:1 1 150px;gap:6px;border:0;border-radius:0;background:transparent;padding:8px 16px;text-align:left;color:var(--ink)}
+.compact-shell.v2-shell .metric-card:hover {background:var(--soft)}
+.compact-shell.v2-shell .metric-card span {font-size:14px;color:var(--muted)}
+.compact-shell.v2-shell .metric-card strong {font-size:22px;font-weight:600;line-height:1.5;overflow-wrap:anywhere}
+.compact-shell.v2-shell .metric-card strong.metric-empty {font-size:16px;font-weight:400;color:var(--muted)}
+.compact-shell.v2-shell .review-definitions {margin-bottom:24px;color:var(--muted)}
+.compact-shell.v2-shell .review-workspace .section-heading {align-items:center;margin:24px 0 12px;gap:12px;flex-wrap:wrap}
+.compact-shell.v2-shell .review-workspace .section-heading .button-row {margin:0}
+.compact-shell.v2-shell .time-distribution {gap:2px}
+.compact-shell.v2-shell .time-bar {background:transparent;padding:10px 0;color:var(--ink);font-size:14px}
+.compact-shell.v2-shell .time-bar:hover {background:var(--soft)}
+.compact-shell.v2-shell .review-record {padding:20px 0}
+.compact-shell.v2-shell .review-record p {margin:0;max-width:70ch}
+.compact-shell.v2-shell .review-record h3 {font-size:18px}
+.compact-shell.v2-shell :is(.review-record,.review-source,.memory-panel,.growth-page)>.button {justify-self:start}
+.compact-shell.v2-shell .review-record-editor {padding:24px 0;border:0;border-top:1px solid var(--line);border-radius:0;background:transparent}
+.compact-shell.v2-shell .profile-page {position:relative}
+.compact-shell.v2-shell .profile-page>.growth-page-heading {justify-content:flex-end;margin:0 0 12px;min-height:0}
+.compact-shell.v2-shell .profile-sections {flex-wrap:wrap;gap:4px 20px}
+.compact-shell.v2-shell .growth-section-heading {margin-bottom:16px;gap:12px}
+.compact-shell.v2-shell .preference-rule-list,.compact-shell.v2-shell .goal-list {gap:0}
+.compact-shell.v2-shell :is(.preference-rule-card,.goal-card,.memory-card) {border:0;border-bottom:1px solid var(--line);border-radius:0;box-shadow:none;background:transparent;padding:20px 0;gap:12px}
+.compact-shell.v2-shell .preference-rule-card:first-child,.compact-shell.v2-shell .goal-card:first-child {padding-top:8px}
+.compact-shell.v2-shell .badge {border:0;border-radius:4px;background:var(--soft);font-size:12px;font-weight:400;padding:2px 6px}
+.compact-shell.v2-shell .goal-card>.button-row {margin-top:12px}
+.compact-shell.v2-shell .growth-form {border:0;border-top:1px solid var(--line);border-radius:0;padding:24px 0;background:transparent;gap:16px}
+.compact-shell.v2-shell .v2-tool-page .growth-form-row {grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:16px}
+.compact-shell.v2-shell .rule-section {padding:16px 0;border-top:1px solid var(--line)}
+.compact-shell.v2-shell .rule-section>.panel {border:0;padding:12px 0;box-shadow:none}
+.compact-shell.v2-shell .v2-resizer {background:#f3f6f3}
+.compact-shell.v2-shell .v2-resizer::after {background:#a2b6a8}
+.compact-shell.v2-shell .v2-resizer:hover,.compact-shell.v2-shell .v2-resizer:focus-visible {background:#d5e8df}
+.compact-shell.v2-shell .v2-workspace-heading {background:#f8faf8;padding:12px;gap:4px;border-color:var(--line)}
+.compact-shell.v2-shell .v2-workspace-tabs {gap:0}
+.compact-shell.v2-shell .v2-workspace-tabs button {padding:8px 10px}
+.compact-shell.v2-shell .v2-panel-controls button {font-size:13px;padding:6px;color:var(--muted)}
+.compact-shell.v2-shell .v2-panel-controls button:hover {background:var(--soft)}
+.compact-shell.v2-shell .v2-tool-page[data-placement=auxiliary] {padding:20px 16px;background:#fcfdfb;border-color:var(--line)}
+.compact-shell.v2-shell .v2-day-preview {border:0;border-radius:0;box-shadow:none;background:transparent}
+.compact-shell.v2-shell .v2-preview-heading {padding:0 0 16px;gap:8px;border:0}
+.compact-shell.v2-shell .v2-preview-heading h3 {font-size:16px;font-weight:600}
+.compact-shell.v2-shell .v2-preview-date {gap:0}
+.compact-shell.v2-shell .v2-preview-date input {font-size:14px;width:144px;background:transparent}
+.compact-shell.v2-shell .v2-day-preview .day-heading {background:transparent;border:0;border-bottom:1px solid var(--line);color:var(--muted);font-weight:500}
+.compact-shell.v2-shell .v2-day-preview .week-grid {border:0}
+.compact-shell.v2-shell .v2-day-preview .v2-calendar-note {padding:12px 0;background:transparent;font-size:13px;color:var(--muted);border-color:var(--line)}
+.compact-shell.v2-shell .v2-readonly-summary {gap:16px}
+.compact-shell.v2-shell .v2-readonly-summary h3 {font-size:16px}
+.compact-shell.v2-shell .v2-readonly-summary article {padding:12px 0;border:0;border-bottom:1px solid var(--line);border-radius:0}
+.compact-shell.v2-shell .v2-readonly-summary dl {gap:0}
+.compact-shell.v2-shell .v2-readonly-summary dl>div {display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:14px 0}
+.compact-shell.v2-shell .v2-readonly-summary dd {font-size:18px;margin:0}
+.compact-shell.v2-shell .v2-readonly-summary dt {font-size:14px}
+.compact-shell.v2-shell .recovery-note,.compact-shell.v2-shell .error-box {box-shadow:none;line-height:1.7;font-size:14px;white-space:normal}
+@media(max-width:1279px) and (min-width:1024px) {
+  .compact-shell.v2-shell .v2-chat,.compact-shell.v2-shell .v2-tool-page[data-placement=primary] {padding:20px}
+  .compact-shell.v2-shell .v2-workspace-heading {padding:8px}
+}
+@media(max-width:1023px) {
+  .compact-shell.v2-shell .v2-chat,.compact-shell.v2-shell .v2-tool-page[data-placement=primary] {padding:20px 16px}
+  .compact-shell.v2-shell .conversation-chat {padding:0;min-height:480px}
+  .compact-shell.v2-shell .v2-navigation svg {width:20px;height:20px;margin:0}
+  .compact-shell.v2-shell .conversation-search input {font-size:16px}
+  .compact-shell.v2-shell .conversation-chat .workspace-chat-input {padding:12px 0 max(8px,env(safe-area-inset-bottom));background:#fff}
+  .compact-shell.v2-shell .v2-tool-page .growth-section {padding:0}
+  .compact-shell.v2-shell .v2-chat-heading,.compact-shell.v2-shell .v2-primary-page-heading {margin-bottom:20px}
+  .compact-shell.v2-shell .calendar-toolbar [role=group] .button {min-width:44px;min-height:44px}
+  .compact-shell.v2-shell .calendar-navigation .button {min-width:44px}
+  .compact-shell.v2-shell .review-date-navigation .button,.compact-shell.v2-shell .v2-preview-date button,.compact-shell.v2-shell .v2-panel-controls button {min-width:44px;min-height:44px}
+  .compact-shell.v2-shell .conversation-shortcuts .button,.compact-shell.v2-shell .conversation-summary-button,.compact-shell.v2-shell .conversation-review-action {min-height:44px}
+  .compact-shell.v2-shell .v2-nav-bottom a {display:flex;align-items:center;justify-content:center;min-height:44px}
+}
+@media(max-width:600px) {
+  .compact-shell.v2-shell .review-metrics .metric-card {flex-basis:100%;display:flex;justify-content:space-between;align-items:baseline;padding:10px 0}
+  .compact-shell.v2-shell .metric-card strong {font-size:20px}
+  .compact-shell.v2-shell .preference-rule-card {flex-direction:column;align-items:stretch;gap:4px;padding:16px 0}
+  .compact-shell.v2-shell .preference-rule-actions {align-self:flex-end}
+  .compact-shell.v2-shell .profile-sections {gap:4px 16px}
+  .compact-shell.v2-shell .v2-nav-bottom a {font-size:11px;white-space:nowrap}
+  .compact-shell.v2-shell .conversation-chat .chat-scroll {gap:24px}
+}
+@media(prefers-reduced-motion:reduce) {.compact-shell.v2-shell .button {transition:none}}

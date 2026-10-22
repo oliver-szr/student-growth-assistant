@@ -91,7 +91,7 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
     catch (e) { setError(e.message) } finally { setBusy(false);setOperation('') }
   }
 
-  return <><section className="growth-page" aria-labelledby="growth-heading">
+  return <><section className="growth-page" aria-label="回顾与成长">
     {onReturnChat&&<button className="button subtle" onClick={onReturnChat}>返回相关对话</button>}
     {embedded&&today&&<ReviewWorkspace workspace={workspace} today={today} active={primaryActive} refreshVersion={refreshVersion} onDiscuss={onDiscuss} onSaved={onDataChanged} resource={resource} onOpenTask={onOpenTask}/>}
     <details className="legacy-review" open={!embedded||undefined} onToggle={e=>{if(e.currentTarget.open)setLegacyMounted(true)}}><summary>旧统计与自动周说明</summary>{legacyMounted&&<>

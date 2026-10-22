@@ -156,7 +156,7 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
         </article>)}
         {windowStart+120<messages.length&&<button className="button subtle" onClick={()=>setWindowStart(Math.max(0,messages.length-120))}>显示最新已加载消息</button>}
         {next !== null && <button className="button subtle" disabled={busy || loading} onClick={() => loadMore()}>加载后续消息</button>}
-        {!loading && !messages.length && <p className="growth-empty">还没有消息。</p>}
+        {!loading && !error && !messages.length && (meta?.scope==='conversation' ? <div className="conversation-welcome"><h3>想先聊些什么？</h3><p>说说眼前的事，或一起看看接下来的安排。</p></div> : <p className="growth-empty">还没有消息。</p>)}
       </>}
     </ChatMessages>
     {run && <section aria-label="回复状态" className="reply-status">
@@ -167,7 +167,7 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
       {['failed', 'cancelled', 'interrupted'].includes(run.status) && <button className="button secondary" disabled={busy} onClick={() => action(async () => { const response = await retryConversationRun(id, run.id, run.attempt); if (alive.current) { receive(response); setObserving(true) } })}>重试回复</button>}
       {!observing && run.status === 'running' && <p className="helper">已停止此界面的观察，后台回复可能继续；点击继续读取恢复。</p>}
     </section>}
-    {meta?.scope==='conversation'&&<><button className="button subtle" disabled={busy||loading||unavailable||Boolean(meta.archived_at)||run?.status==='running'} onClick={()=>setReviewOpen(!reviewOpen)}>整理为复盘记录</button>
+    {meta?.scope==='conversation'&&<><button className="button subtle conversation-review-action" aria-expanded={reviewOpen} disabled={busy||loading||unavailable||Boolean(meta.archived_at)||run?.status==='running'} onClick={()=>setReviewOpen(!reviewOpen)}>整理为复盘记录</button>
     {reviewOpen&&<form className="review-preview-form" onSubmit={event=>{event.preventDefault();action(async()=>{
       reviewRequest.current ||= {...reviewDates,client_request_id:crypto.randomUUID(),message_id:messages.at(-1)?.id}
       const result=await createReviewDraft(id,reviewRequest.current)
@@ -175,8 +175,8 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
       onNavigate?.({page:'review',kind:'review_record',id:result.id,conversationId:id})
     })}}><p className="helper">仅整理指定范围和当前讨论为可编辑草案，确认后才保存复盘，不会创建任务。</p><label>开始日期<input required type="date" value={reviewDates.start_date} onChange={e=>{reviewRequest.current=null;setReviewDates({...reviewDates,start_date:e.target.value})}}/></label><label>结束日期（不含）<input required type="date" value={reviewDates.end_date} onChange={e=>{reviewRequest.current=null;setReviewDates({...reviewDates,end_date:e.target.value})}}/></label><label>记录周期<select value={reviewDates.period} onChange={e=>{reviewRequest.current=null;setReviewDates({...reviewDates,period:e.target.value})}}><option value="day">日</option><option value="week">周</option><option value="month">月</option></select></label><button className="button secondary" disabled={busy}>生成可编辑预览</button></form>}</>}
     <form className="workspace-chat-input" onSubmit={send}>
-      <label>会话输入<textarea aria-label="会话输入" value={input.text} maxLength={2000} disabled={busy || loading || unavailable || Boolean(meta?.archived_at) || meta?.scope !== 'conversation'} onChange={event => setInput({ text: event.target.value, requestId: null })} /></label>
-      <button className="button primary" disabled={busy || loading || unavailable || Boolean(meta?.archived_at) || meta?.scope !== 'conversation' || !input.text.trim() || run?.status === 'running'}>发送</button>
+      <label>会话输入<textarea aria-label="会话输入" value={input.text} maxLength={2000} disabled={busy || loading || !recovery.ready || unavailable || Boolean(meta?.archived_at) || meta?.scope !== 'conversation'} onChange={event => setInput({ text: event.target.value, requestId: null })} /></label>
+      <button className="button primary" disabled={busy || loading || !recovery.ready || unavailable || Boolean(meta?.archived_at) || meta?.scope !== 'conversation' || !input.text.trim() || run?.status === 'running'}>发送</button>
     </form>
   </section>
 }

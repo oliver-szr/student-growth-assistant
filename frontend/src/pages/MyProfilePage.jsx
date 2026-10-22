@@ -174,7 +174,7 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
   const weekdays = ruleForm.weekdays
   return <><section className="growth-page profile-page" aria-labelledby="profile-heading">
     {onReturnChat&&<button className="button subtle" onClick={onReturnChat}>返回相关对话</button>}
-    <div className="growth-page-heading"><div><h2 id="profile-heading">我的档案</h2></div>{onBusinessChat&&<button className="button secondary" onClick={onBusinessChat}>用 AI 整理目标或偏好</button>}</div>
+    <div className="growth-page-heading"><h2 id="profile-heading" className={embedded?'visually-hidden':undefined}>我的档案</h2>{onBusinessChat&&<button className="button subtle" onClick={onBusinessChat}>用 AI 整理目标或偏好</button>}</div>
     <div className="profile-sections" role="tablist" aria-label="档案分区">{[['goals','目标'],['time','时间与课程'],['preferences','偏好'],['memories','记忆'],['data','数据管理']].map(([key,label])=><button className="button subtle" key={key} role="tab" aria-selected={section===key} onClick={()=>{setSection(key);if(key==='memories')setMemoryVisited(true)}}>{label}</button>)}</div>
     {memoryVisited&&<div hidden={section!=='memories'} inert={section!=='memories'}><MemoryPanel workspace={recoveryWorkspace} active={primaryActive&&section==='memories'} resource={resource} onSource={onOpenConversation} onPreferences={()=>setSection('preferences')}/></div>}
     <Content {...(embedded ? {} : { scope: 'profile', onAdjustTask, onDraftConfirmed: load })}>

@@ -212,6 +212,16 @@ test('four main headings share one clock and only the auxiliary header owns coll
   }
 })
 
+test('workspace navigation uses consistent decorative SVGs and leaves one home heading', () => {
+  const html = renderShell(initialWorkbench)
+  const navigation = html.match(/<nav class="v2-navigation".*?<\/nav>/s)[0]
+  assert.equal((navigation.match(/<svg /g) || []).length, 4)
+  assert.equal((navigation.match(/aria-hidden="true"/g) || []).length, 4)
+  assert.ok(!html.includes('class="eyebrow"'))
+  assert.match(html, /<header class="v2-chat-heading"><h1>首页<\/h1>/)
+  for (const label of ['首页', '日程', '复盘', '档案']) assert.ok(navigation.includes(label))
+})
+
 test('shared workspace clock advances server time in Shanghai without losing the demo prefix', () => {
   const settings = { demo: true, now: '2026-10-14T15:59:30Z' }
   assert.equal(workspaceClock(settings), '演示 · 2026-10-14 23:59 北京时间')

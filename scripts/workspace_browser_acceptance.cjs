@@ -136,7 +136,7 @@ async function verifyConversationUI() {
     await page.getByRole('region',{name:'会话小结',exact:true}).getByRole('button',{name:'回到原消息',exact:true}).first().click();
     await expect(page.locator('.search-match')).toBeVisible();
     const auxiliary=page.getByRole('tablist',{name:'辅助栏页签'});await auxiliary.getByRole('tab',{name:'档案',exact:true}).click();
-    for(const width of [1440,1280]) {
+    for(const width of [1440,1280,1024]) {
       await page.setViewportSize({width,height:1000});
       for(const [name,key] of [['日程与任务','schedule'],['查看复盘','review'],['目标与档案','profile']]) {
         await page.getByRole('group',{name:'聊天业务入口'}).getByRole('button',{name,exact:true}).click();
@@ -149,7 +149,7 @@ async function verifyConversationUI() {
       }
     }
     await page.reload();await expect(input).toHaveValue('切换与操作后仍应保留的未发送文字');
-    checked('summary_header_generation_source_shortcuts_independent_auxiliary_1440_1280_refresh');
+    checked('summary_header_generation_source_shortcuts_independent_auxiliary_1440_1280_1024_refresh');
     const touch=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,locale:'zh-CN'});
     const mobile=await touch.newPage();mobile.on('pageerror',error=>errors.push(error.message));await mobile.goto(web);
     await mobile.getByRole('button',{name:'会话',exact:true}).tap();
@@ -159,7 +159,15 @@ async function verifyConversationUI() {
     const mobileBox=await mobileMenu.boundingBox();assert.ok(mobileBox.x>=0&&mobileBox.x+mobileBox.width<=390&&mobileBox.y+mobileBox.height<=844);
     await mobile.keyboard.press('Escape');await expect(mobileTrigger).toBeFocused();
     await mobileRow.locator('.conversation-title').tap();const mobileInput=mobile.getByRole('textbox',{name:'会话输入',exact:true});await expect(mobileInput).toBeEnabled();await mobileInput.fill('手机未发送文字');
-    await mobile.reload();await expect(mobileInput).toHaveValue('手机未发送文字');
+    let releaseMetadata;const metadataGate=new Promise(resolve=>{releaseMetadata=resolve});
+    const metadataURL=api+`/api/conversations/${main.id}`;
+    await mobile.route(metadataURL,async route=>{await metadataGate;await route.continue()});
+    await mobile.reload({waitUntil:'domcontentloaded'});await expect(mobileInput).toBeDisabled();
+    releaseMetadata();await expect(mobileInput).toHaveValue('手机未发送文字');await expect(mobileInput).toBeEnabled();
+    await mobile.unroute(metadataURL);
+    await mobileInput.fill('恢复检查完成后的新文字');
+    await mobile.reload();await expect(mobileInput).toHaveValue('恢复检查完成后的新文字');
+    checked('refresh_recovery_waits_for_server_then_preserves_first_replacement_input');
     await mobile.getByRole('button',{name:'辅助栏',exact:true}).tap();
     await mobile.getByRole('tablist',{name:'辅助栏页签'}).getByRole('tab',{name:'日程',exact:true}).tap();
     assert.equal(await mobile.locator('#v2-auxiliary-shared .day-column').count(),1);await expect(mobile.getByRole('separator')).toBeHidden();
@@ -186,6 +194,7 @@ async function verifyConversationUI() {
     const home=()=>nav.getByRole('button',{name:'首页',exact:true}).click();
     const send=async text=>{
       await page.getByRole('textbox',{name:'会话输入',exact:true}).fill(text);
+      await expect(page.getByRole('button',{name:'发送',exact:true})).toBeEnabled();
       const response=page.waitForResponse(r=>r.url().endsWith('/runs')&&r.request().method()==='POST');
       await page.getByRole('button',{name:'发送',exact:true}).click();const result=await (await response).json();
       await expect.poll(async()=>(await call(`/api/conversations/${result.session_id}/runs/${result.id}`)).status,{timeout:30000}).toBe('completed');
@@ -340,7 +349,49 @@ async function verifyConversationUI() {
     await editor.getByRole('button',{name:'关闭草案',exact:true}).click();
     assert.ok((await call('/api/calendar/events?start=2026-10-19&end=2026-10-26')).events.some(e=>e.kind==='formal_task'));
     checked('C:facts_discussion_explicit_review_preview_confirm_then_separate_schedule');
-    for(const width of [1440,1280]) {
+    // Refined surfaces keep every existing control, including in a narrow primary pane.
+    for(const width of [1440,1280,1024,390]) {
+      await page.setViewportSize({width,height:width===390?844:1000});
+      await home();
+      const chatInput=page.getByRole('textbox',{name:'会话输入',exact:true});
+      await chatInput.fill('视觉切页检查后应保留的输入');
+      assert.equal(await page.locator('.conversation-chat').evaluate(el=>getComputedStyle(el).borderTopWidth),'0px');
+      for(const name of ['日程','复盘','档案']) {
+        await nav.getByRole('button',{name,exact:true}).click();
+        assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+      }
+      await page.getByRole('tab',{name:'偏好',exact:true}).click();
+      await page.getByRole('button',{name:'新增偏好',exact:true}).click();
+      await page.getByLabel('偏好名称',{exact:true}).fill('视觉验收的未保存偏好');
+      await nav.getByRole('button',{name:'复盘',exact:true}).click();
+      await review.getByRole('tab',{name:'回顾',exact:true}).click();
+      const definitions=review.locator('.review-definitions');
+      await definitions.locator('summary').click();await expect(definitions.locator('.helper')).toBeVisible();
+      await definitions.locator('summary').click();await expect(definitions.locator('.helper')).toBeHidden();
+      assert.ok(await review.locator('.review-range-toolbar').evaluate(el=>el.scrollWidth<=el.clientWidth+1),'Review controls must stay inside their pane');
+      if(width===390) {
+        const metrics=await review.locator('.metric-card').evaluateAll(els=>els.map(el=>el.getBoundingClientRect().toJSON()));
+        assert.ok(metrics[1].y>=metrics[0].bottom&&metrics[2].y>=metrics[1].bottom,'Phone facts must be readable rows');
+      }
+      await nav.getByRole('button',{name:'日程',exact:true}).click();
+      for(const name of ['天','周','月','年']) {
+        await calendar.getByRole('button',{name,exact:true}).click();
+        await expect(calendar.getByRole('button',{name,exact:true})).toHaveAttribute('aria-pressed','true');
+        assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+        assert.ok(await calendar.locator('.full-calendar-toolbar').evaluate(el=>el.scrollWidth<=el.clientWidth+1),'Calendar controls must stay inside their pane');
+      }
+      await calendar.getByRole('button',{name:'天',exact:true}).click();
+      const dayScroller=calendar.locator('.fc-scroller').last();
+      assert.ok(await dayScroller.evaluate(el=>el.scrollHeight>el.clientHeight),'All 24 hours remain scrollable');
+      await dayScroller.evaluate(el=>{el.scrollTop=el.scrollHeight});
+      const note=calendar.locator('.calendar-reading-note');await note.locator('summary').click();await expect(note).toContainText('拖动不会修改日程');await note.locator('summary').click();
+      await nav.getByRole('button',{name:'档案',exact:true}).click();
+      await expect(page.getByLabel('偏好名称',{exact:true})).toHaveValue('视觉验收的未保存偏好');
+      await page.locator('#preference-editor').getByRole('button',{name:'取消',exact:true}).click();
+      await home();await expect(chatInput).toHaveValue('视觉切页检查后应保留的输入');
+    }
+    checked('polish:1440_1280_1024_390_four_views_readable_facts_notes_and_unsaved_edit_preservation');
+    for(const width of [1440,1280,1024]) {
       await page.setViewportSize({width,height:1000});
       for(const name of ['首页','日程','复盘','档案']) {
         await nav.getByRole('button',{name,exact:true}).click();
@@ -363,7 +414,7 @@ async function verifyConversationUI() {
     await nav.getByRole('button',{name:'复盘',exact:true}).click();await review.getByRole('button',{name:'月',exact:true}).click();
     assert.equal(await page.getByRole('region',{name:'复盘辅助视图'}).innerText(),auxText);
     await home();await expect(auxiliary.getByRole('tab',{name:'复盘',exact:true})).toHaveAttribute('aria-selected','true');
-    checked('layout:1440_1280_four_pages_resize_keyboard_expand_collapse_reset_independent_tabs_ranges');
+    checked('layout:1440_1280_1024_four_pages_resize_keyboard_expand_collapse_reset_independent_tabs_ranges');
     // Invalid edits survive navigation, reload and an actual remote version conflict.
     await send('匿名拆解：另一个需要审核的120分钟任务。');
     await page.getByRole('button',{name:'查看最新草案',exact:true}).last().click();
@@ -417,7 +468,11 @@ async function verifyConversationUI() {
     await expect(page.locator('.reply-status')).toContainText('回复已完成',{timeout:30000});
     assert.equal((await call(`/api/conversations/${failed.session_id}/runs/${failed.id}`)).attempt,2);
     const old=await begin('[慢]匿名旧会话迟到内容');
+    const createdResponse=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/conversations'&&r.request().method()==='POST');
     await page.getByRole('button',{name:'＋ 新对话',exact:true}).click();
+    const created=await (await createdResponse).json();
+    await expect(page.locator(`.conversation-row[data-conversation-id="${created.id}"] .conversation-title`)).toHaveAttribute('aria-current','true');
+    await expect(page.getByRole('textbox',{name:'会话输入',exact:true})).toBeEnabled();
     await send('新会话独立问候');
     assert.ok(!(await page.locator('.conversation-chat .chat-scroll').innerText()).includes('匿名旧会话迟到内容'));
     await expect.poll(async()=>(await call(`/api/conversations/${old.session_id}/runs/${old.id}`)).status,{timeout:30000}).toBe('completed');

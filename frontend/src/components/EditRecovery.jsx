@@ -36,6 +36,9 @@ export function useEditRecovery({ workspace, resource, base, value, dirty, resto
   const conflict = saved && saved.base !== base
   return {
     saved, warning, conflict,
+    // Editors may wait for this before accepting input, so automatic restoration
+    // cannot race the user's first keystroke after the server baseline loads.
+    ready: !key || (base !== undefined && readyKey === key),
     restore() {
       if (!saved || conflict) return
       try {

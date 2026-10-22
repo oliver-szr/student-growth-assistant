@@ -2,6 +2,12 @@ import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useSt
 import { defaultSplitRatio, renderedSplitRatio, splitBounds, toolPlacement, workbenchPanel, workbenchVisibility, workspacePages } from '../workbench.js'
 
 const labels = { home: '首页', schedule: '日程', review: '复盘', profile: '档案' }
+const navigationIcons = {
+  home: <><path d="m3 10 9-7 9 7"/><path d="M5 9v12h14V9M9 21v-7h6v7"/></>,
+  schedule: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18M7 15h2M13 15h4"/></>,
+  review: <><path d="M21 12a9 9 0 1 1-3-6.7M21 3v6h-6"/><path d="M12 7v5l3 2"/></>,
+  profile: <><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></>,
+}
 
 // Full tools stay in the primary area; auxiliary previews only read their formal data.
 export default function WorkspaceShell({ state, dispatch, chat, children, review, profile, clock, conversationContent, auxiliarySchedule, draftPanel, draftPage, chatNote = null }) {
@@ -104,7 +110,7 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
     <div ref={grid} className="v2-grid">
       <nav className="v2-navigation" aria-label="主导航">
         <div className="v2-brand" title="个人成长助手" aria-label="个人成长助手">生长</div>
-        {['home', ...workspacePages].map((page, i) => <button key={page} type="button" aria-current={state.navigation === page ? 'page' : undefined} onClick={() => navigate(page)}><span aria-hidden="true">{['⌂', '▦', '◷', '◇'][i]}</span>{labels[page]}</button>)}
+        {['home', ...workspacePages].map(page => <button key={page} type="button" aria-current={state.navigation === page ? 'page' : undefined} onClick={() => navigate(page)}><svg viewBox="0 0 24 24" aria-hidden="true">{navigationIcons[page]}</svg>{labels[page]}</button>)}
         <div className="v2-nav-bottom"><a href="?layout=legacy" target="_blank" rel="noopener" title="在新标签页打开旧版">旧版入口</a><span className="v2-account" aria-label="账号区预留">账号预留</span></div>
       </nav>
       <aside id="v2-conversations" className="v2-conversations" aria-label="会话区域" hidden={narrow ? !visible.conversations : !home || panel === 'expanded'} inert={narrow ? !visible.conversations : !home || panel === 'expanded'}>
@@ -114,7 +120,7 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
         </div>
       </aside>
       <main id="v2-chat" className="v2-chat" tabIndex={-1} aria-label="主聊天" hidden={!home || !visible.primary} inert={!home || !visible.primary}>
-        <header className="v2-chat-heading"><div><p className="eyebrow">个人成长助手</p><h1>从一件事开始</h1></div><span className="workspace-clock">{clock}</span></header>
+        <header className="v2-chat-heading"><h1>首页</h1><span className="workspace-clock">{clock}</span></header>
         {chatNote && <p className="v2-chat-note">{chatNote}</p>}
         {chat}
       </main>
