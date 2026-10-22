@@ -170,6 +170,62 @@ def test_planning_tool_uses_existing_confirmation_and_retry_receipt(client,monke
     assert any(e['kind']=='formal_task' for e in call(client,'GET','/api/calendar/events?start=2026-10-14&end=2026-10-19')['events'])
 
 
+@pytest.mark.parametrize('question_source',['selector','tool','validator'])
+def test_scheduling_clarification_survives_reply_and_continues_to_confirm(client,monkeypatch,question_source):
+    question='今晚最晚几点前完成操作系统作业？'
+    actions=[{'op':'add','fields':{'title':'操作系统作业','duration_minutes':90}}]
+    requests=[]
+    async def choose(request):
+        requests.append(request)
+        if request['message']=='大概1个半小时，你帮我安排一下':
+            arguments={'actions':actions,'replan':True}
+            if question_source!='validator':arguments['questions']=[question]
+            return ToolPlan(questions=[question] if question_source=='selector' else [],
+                calls=[{'name':'planning_draft','arguments':arguments}])
+        assert request['message']=='今晚22点前完成'
+        assert any(item['text']=='我今天晚上要完成操作系统作业' for item in request['history'])
+        assert any(item['text']=='大概1个半小时，你帮我安排一下' for item in request['history'])
+        action={'op':'add','fields':{**actions[0]['fields'],'deadline':'2026-10-14T22:00:00+08:00'}}
+        pending=next((d for d in request.get('current_drafts',[]) if d['kind']=='planning' and d['status']=='needs_input'),None)
+        if pending:action['target']=pending['content']['actions'][0]['target']
+        return ToolPlan(calls=[{'name':'planning_draft','arguments':{'actions':[action]}}])
+    monkeypatch.setattr(conversation_tools,'plan',choose)
+    async def reply(request):
+        # A model must not replace a required clarification with informal advice.
+        assert request['message']=='今晚22点前完成'
+        yield {'type':'delta','text':'已生成待审核日程方案，请打开草案确认采用。'}
+    monkeypatch.setattr(conversation_runs,'reply_events',reply)
+    sid=call(client,'POST','/api/conversations',json={'client_request_id':'clarify'})['id']
+    call(client,'POST',f'/api/conversations/{sid}/messages',json={'client_message_id':'initial','text':'我今天晚上要完成操作系统作业'})
+    body={'client_message_id':'duration','text':'大概1个半小时，你帮我安排一下'}
+    run=call(client,'POST',f'/api/conversations/{sid}/runs',json=body)
+    pending=wait(client,sid,run['id'])
+    assert pending['status']=='completed',pending
+    questions=pending['content']['questions']
+    assert questions and all(q in pending['delta'] for q in questions)
+    if question_source!='validator':assert questions==[question]
+    else:assert any('具体截止时间' in q for q in questions)
+    assert pending['delivery']=='full'
+    assert '审核' in pending['delta'] and '正式' in pending['delta']
+    assert call(client,'GET','/api/tasks')==[]
+    assert not any(e['kind']=='formal_task' for e in call(client,'GET','/api/calendar/events?start=2026-10-14&end=2026-10-15')['events'])
+    repeated=call(client,'POST',f'/api/conversations/{sid}/runs',json=body)
+    assert repeated['id']==run['id'] and repeated['content']['questions']==questions
+    assert len(requests)==1
+    following=call(client,'POST',f'/api/conversations/{sid}/runs',json={'client_message_id':'deadline','text':'今晚22点前完成'})
+    done=wait(client,sid,following['id'])
+    assert done['status']=='completed',done
+    ref=done['content']['tools'][0]['draft']
+    assert ref['status']=='ready' and call(client,'GET','/api/tasks')==[]
+    assert not done['content'].get('questions')
+    body={'expected_version':ref['version']}
+    call(client,'POST',f"/api/workspace/drafts/planning/{ref['id']}/confirm",json=body)
+    call(client,'POST',f"/api/workspace/drafts/planning/{ref['id']}/confirm",json=body)
+    tasks=call(client,'GET','/api/tasks')
+    assert len(tasks)==1 and tasks[0]['duration_minutes']==90 and tasks[0]['title']=='操作系统作业'
+    assert any(e['kind']=='formal_task' for e in call(client,'GET','/api/calendar/events?start=2026-10-14&end=2026-10-15')['events'])
+
+
 @pytest.mark.parametrize('kind,operations',[
     ('profile',[{'op':'create_goal','title':'明确目标','metric_kind':'count','weekly_target':2}]),
     ('feedback',[{'op':'record_feedback','task_id':1,'outcome':'completed','actual_minutes':20}]),

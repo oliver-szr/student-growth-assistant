@@ -28,6 +28,10 @@ tasks/goals参数可用id或q（标题关键词）、offset/limit，读取特定
 calendar/review参数为start,end，上海日期，end不含；按context.now解析今天/本周/指定日期。
 用户明确办事时才生成草案：planning_draft参数actions/questions/replan；偏好调整单独使用profile_draft；
 actions使用现有ParsedCommand schema；任务名称、时长、带时区具体截止时间必须来自用户，缺失就questions询问，不能编造。
+“帮我安排一下”“排进日程”是办事请求，不是只要文字建议。结合history内用户已给的任务、日期和时长理解省略的追问；信息足够时调用planning_draft，不退回普通闲聊。
+排程可自行选择开始时间，不要求用户指定开始钟点或作业类型、环境等可选细节。只有“今晚”等模糊截止表达时，询问最晚几点前完成；已给出的名称和时长不重复询问。
+还缺必要信息时只返回questions，calls留空；不要同时提出疑问又调用依赖这些答案的工具。task_type仅使用已知正式类别key，不猜中文类别名；未知时省略。
+补全已有needs_input日程草案时沿用其actions中的draft:引用，避免重复新增同一任务；已ready草案的修改仍须走edit_draft及版本协调。
 breakdown_draft参数title/text/deadline/expected_duration_minutes/goal_id，可拆复杂任务。需要完整名称、总时长、具体截止时间；不猜钟点。
 profile_draft与feedback_draft参数operations，复用给出的业务操作契约。只提出草案，绝不确认。
 edit_draft参数kind/id/version/content，仅可引用current_drafts内的当前ID和version，基于最新content只修改用户要求，保留其它编辑。
@@ -91,7 +95,8 @@ def persist(engine,rid,token,**values):
         if not run or run.payload.get('token')!=token:return False
         run.payload={**run.payload,**values}
         output=db.get(AssistantMessage,run.payload['assistant_message_id'])
-        output.content={**output.content,'tools':run.payload.get('tool_results',[])}
+        output.content={**output.content,'tools':run.payload.get('tool_results',[]),
+            'questions':run.payload.get('tool_questions',[])}
         return run.status=='running'
 
 
@@ -136,7 +141,8 @@ async def execute(db,run,call,index):
         db.rollback()
         with planning_transaction(db):session=tool_session(db,run.session_id,'planning');sid=session.id
         result=await message(sid,MessageRequest(client_message_id=key,text=run.text,**{**request.model_dump(mode='json',exclude_unset=True),'replan':request.replan}),db)
-        return {'draft':{'kind':'planning','id':result['id']},'summary':result['summary'],'status':result['status']}
+        return {'draft':{'kind':'planning','id':result['id']},'summary':result['summary'],'status':result['status'],
+            'questions':result.get('questions',[])}
     if name=='edit_draft':
         values=EditToolArgs.model_validate(args)
         allowed=run.payload.get('draft_versions',[])
@@ -221,5 +227,9 @@ async def prepare(engine,rid,token,request):
             if not persist(engine,rid,token,tool_results=results):return None
         if not selected.continue_after_read:break
         batch_index+=1
+    questions=list(dict.fromkeys(q.strip() for q in [*request.get('tool_questions',[]),
+        *(q for result in results for q in result.get('questions',[]))] if isinstance(q,str) and q.strip()))
+    request['tool_questions']=questions
+    if not persist(engine,rid,token,tool_questions=questions):return None
     request['tool_results']=provider_value(results)
     return request
