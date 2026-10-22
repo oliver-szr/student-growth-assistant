@@ -47,7 +47,7 @@ class DraftRef(StrictModel):
 
 
 class ToolCall(StrictModel):
-    name: Literal['tasks','goals','preferences','calendar','review','planning_draft','breakdown_draft','profile_draft','feedback_draft','edit_draft','memory_suggestion']
+    name: Literal['tasks','goals','preferences','calendar','review','memories','planning_draft','breakdown_draft','profile_draft','feedback_draft','edit_draft','memory_suggestion','review_draft']
     arguments: dict = Field(default_factory=dict)
 
 
@@ -58,7 +58,7 @@ class ToolPlan(StrictModel):
 
     @model_validator(mode='after')
     def safe_continuation(self):
-        if self.continue_after_read and (not self.calls or any(c.name not in ('tasks','goals','preferences','calendar','review') for c in self.calls)):
+        if self.continue_after_read and (not self.calls or any(c.name not in ('tasks','goals','preferences','calendar','review','memories') for c in self.calls)):
             raise ValueError('Only a read-only query batch can request another planning step')
         return self
 
@@ -66,6 +66,12 @@ class ToolPlan(StrictModel):
 class RangeArgs(StrictModel):
     start: date
     end: date
+
+
+class ReviewToolArgs(StrictModel):
+    start_date: date
+    end_date: date
+    period: Literal['day','week','month'] = 'week'
 
 
 class PlanningArgs(StrictModel):

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState,lazy,Suspense } from 'react'
 import { getConversation, getConversationMessages, getConversationRuns, getConversationRun, startConversationRun, stopConversationRun, retryConversationRun, createReviewDraft } from '../api.js'
-import { applyReply, mergeMessages, requestGate } from '../workbench.js'
+import { applyReply, mergeMessages, requestGate, visibleChatMessages, toolNotices } from '../workbench.js'
 import { localizedError } from '../localization.js'
 import EditRecovery, { useEditRecovery } from './EditRecovery.jsx'
 import ChatMessages from './ChatMessages.jsx'
@@ -11,7 +11,7 @@ import ConversationSummary from './ConversationSummary.jsx'
 const MemoryCard=lazy(()=>import('./MemoryPanel.jsx').then(module=>({default:module.MemoryCard})))
 import SafeMessage from './SafeMessage.jsx'
 
-const statuses = { completed: '回复已完成', failed: '回复未完成', cancelled: '已停止生成', interrupted: '回复已中断，可重试' }
+const statuses = { completed: '回复已完成', failed: '回复未正常结束，内容可能不完整', cancelled: '已停止生成', interrupted: '回复已中断，可重试' }
 
 export default function ConversationChat({ workspace, id, target, revision, onChanged, active = true, onNavigate, today, intent,onLocate }) {
   const [meta, setMeta] = useState(null), [messages, setMessages] = useState([]), [next, setNext] = useState(null)
@@ -90,7 +90,8 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
     if (!loading && target && active){const item=document.getElementById(`conversation-message-${id}-${target}`);item?.scrollIntoView({ block: 'center' });item?.focus({preventScroll:true})}
   }, [loading, target, id, active])
   const [windowStart,setWindowStart]=useState(0)
-  const visibleMessages=messages.slice(windowStart,windowStart+120)
+  const displayMessages=visibleChatMessages(messages)
+  const visibleMessages=displayMessages.slice(windowStart,windowStart+120)
   async function loadMore(before = false) {
     if (locked.current || loading || unavailable) return
     locked.current = true; setBusy(true); setError('')
@@ -125,7 +126,7 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
       if (!alive.current) return
       setMessages(current => mergeMessages(current, [{ id: response.user_message_id, session_id: id, role: 'user', text: payload.text }]))
       receive(response); setObserving(true)
-      setWindowStart(current=>Math.max(current,messages.length-118))
+      setWindowStart(current=>Math.max(current,displayMessages.length-118))
       setInput(current => current.text === payload.text ? { text: '', requestId: null } : current)
       onChanged()
     })
@@ -150,11 +151,12 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
         {windowStart>0&&<button className="button subtle" onClick={()=>setWindowStart(Math.max(0,windowStart-100))}>显示前一段已加载消息</button>}
         {visibleMessages.map(message => <article tabIndex={-1} id={`conversation-message-${id}-${message.id}`} key={message.id} className={`workspace-message ${message.role} ${target === message.id ? 'search-match' : ''}`}>
           <strong>{message.role === 'user' ? '我' : '成长助手'}</strong><SafeMessage text={message.text} />
-          {message.content?.status && message.content.status !== 'completed' && <small>{statuses[message.content.status] || '正在生成…'}</small>}
-          {(message.content?.tools||[]).map((result,index)=>result.memory?<Suspense key={index} fallback={<p role="status">正在读取记忆建议…</p>}><MemoryCard id={result.memory.id} active={active} onOpen={onNavigate}/></Suspense>:result.draft?<DraftCard key={index} reference={result.draft} active={active} onOpen={link=>onNavigate?.({...link,conversationId:id,messageId:message.id})}/>:<p className="helper" key={index}>{result.error?result.message:result.questions?.join('；')||'已读取正式记录，供本次回答参考。'}</p>)}
+          {message.content?.status && message.content.status !== 'completed' && message.id!==run?.assistant_message_id && <small>{statuses[message.content.status] || '正在生成…'}</small>}
+          {(message.content?.tools||[]).filter(result=>result.memory||result.draft).map((result,index)=>result.memory?<Suspense key={index} fallback={<p role="status">正在读取记忆建议…</p>}><MemoryCard id={result.memory.id} active={active} onOpen={onNavigate}/></Suspense>:<DraftCard key={index} reference={result.draft} active={active} onOpen={link=>onNavigate?.({...link,conversationId:id,messageId:message.id})}/>)}
+          {toolNotices(message.content?.tools,message.content?.questions).map(notice=><p className="helper" key={notice}>{notice}</p>)}
           <div className="button-row">{(Array.isArray(message.content?.links)?message.content.links:[]).filter(link=>link&&typeof link.label==='string'&&['schedule','review','profile'].includes(link.page)).map((link, i) => <button className="button subtle" key={i} onClick={() => onNavigate?.({...link,conversationId:id,messageId:message.id})}>{link.label}</button>)}</div>
         </article>)}
-        {windowStart+120<messages.length&&<button className="button subtle" onClick={()=>setWindowStart(Math.max(0,messages.length-120))}>显示最新已加载消息</button>}
+        {windowStart+120<displayMessages.length&&<button className="button subtle" onClick={()=>setWindowStart(Math.max(0,displayMessages.length-120))}>显示最新已加载消息</button>}
         {next !== null && <button className="button subtle" disabled={busy || loading} onClick={() => loadMore()}>加载后续消息</button>}
         {!loading && !error && !messages.length && (meta?.scope==='conversation' ? <div className="conversation-welcome"><h3>想先聊些什么？</h3><p>说说眼前的事，或一起看看接下来的安排。</p></div> : <p className="growth-empty">还没有消息。</p>)}
       </>}

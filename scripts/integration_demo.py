@@ -55,6 +55,21 @@ def serve(port):
     from app.workspace_schemas import ToolPlan
     async def mock_tools(request):
         text=request['message']
+        skill_fixture=text.startswith('技能验收：') or any(m['text'].startswith('技能验收：今晚写') for m in request.get('history',[]) if m['role']=='user')
+        if skill_fixture:
+            if '先不要帮我安排' in text:
+                return ToolPlan(calls=[{'name':'planning_draft','arguments':{'replan':True}}])  # Deliberately rejected by real policy.
+            if '没有模型工具' in text:return ToolPlan()
+            if '帮我复盘一下今天' in text:
+                return ToolPlan(calls=[{'name':'review_draft','arguments':{'start_date':'2026-10-14','end_date':'2026-10-15','period':'day'}}])
+            if '今天有什么安排' in text:
+                return ToolPlan(calls=[{'name':'tasks'},{'name':'calendar','arguments':{'start':'2026-10-14','end':'2026-10-15'}}])
+            if text.startswith('技能验收：今晚写'):return ToolPlan(questions=['预计需要多少分钟？'])
+            if text in ('一个半小时','帮我安排一下'):return ToolPlan(questions=['今晚最晚几点前完成？'])
+            if text=='今晚22点前完成':
+                if not request.get('previous_tool_results'):
+                    return ToolPlan(calls=[{'name':'calendar','arguments':{'start':'2026-10-14','end':'2026-10-15'}}],continue_after_read=True)
+                return ToolPlan(calls=[{'name':'planning_draft','arguments':{'actions':[{'op':'add','fields':{'title':'匿名作业','duration_minutes':90,'deadline':'2026-10-14T22:00:00+08:00'}}]}}])
         if text.startswith('匿名记忆建议') and '以后' in text:
             return ToolPlan(calls=[{'name':'memory_suggestion','arguments':{'text':'学习讨论时喜欢先看短例子','scope':'study'}}])
         if text.startswith('匿名最新任务'):
@@ -99,7 +114,7 @@ def serve(port):
             reply += '前面你说：' + history[-2 if len(history)>1 else -1]['text'][:60] + '。'
         results=request.get('tool_results',[])
         if results:
-            reply += '已完成真实查询或生成待审核草案，没有正式保存。'
+            reply += '本次工具未完成，正式资料没有改变。' if any(r.get('error') for r in results) else '已完成真实查询或生成待审核草案，没有正式保存。'
             if any(r.get('error') for r in results):reply += '部分工具未完成，请检查提示。'
         if request['context'].get('tasks'):
             reply += '可从入口查看任务：' + request['context']['tasks'][0]['title'] + '。正式保存仍需你确认。'

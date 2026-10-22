@@ -53,6 +53,7 @@ const CODE_MESSAGES = {
   INVALID_TASKS: '所选任务信息无效，请检查任务时长、截止时间和状态。',
   INVALID_TIME_RULES: '时间规则无效，请检查课程是否重叠，以及日期和起止时间是否正确。',
   AI_NOT_CONFIGURED: '尚未配置 AI，仍可手动拆解任务、添加任务、课程和保护时间。',
+  AI_SKILLS_UNAVAILABLE: '助手技能文件读取或校验失败，已停止操作。请检查服务端技能配置；仍可使用手动功能。',
   AI_CONTEXT_TOO_LARGE: '所选资料超过安全请求上限，请缩小问题范围或到工作区核对；原消息和草案未改变。',
   AI_UNAVAILABLE: 'AI 暂时不可用，仍可手动操作。',
   AI_RESPONSE_INVALID: 'AI 返回的内容未通过校验，请补充描述后重试或手动添加。',

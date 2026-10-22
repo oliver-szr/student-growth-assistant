@@ -236,7 +236,7 @@ def test_profile_feedback_tools_validate_and_write_only_after_confirm(client,mon
     async def choose(request):return ToolPlan(calls=[{'name':kind+'_draft','arguments':{'operations':operations}}])
     monkeypatch.setattr(conversation_tools,'plan',choose)
     sid=call(client,'POST','/api/conversations',json={'client_request_id':kind})['id']
-    run=call(client,'POST',f'/api/conversations/{sid}/runs',json={'client_message_id':'business','text':'明确提出业务修改'})
+    run=call(client,'POST',f'/api/conversations/{sid}/runs',json={'client_message_id':'business','text':'创建目标建议' if kind=='profile' else '记录执行反馈，投入20分钟'})
     done=wait(client,sid,run['id']);ref=done['content']['tools'][0]['draft']
     assert call(client,'GET','/api/tasks')[0]['status']=='todo'
     if kind=='profile':assert call(client,'GET','/api/goals')['goals']==[]
@@ -256,7 +256,7 @@ def test_tool_failure_does_not_hide_successful_receipts_and_retry_is_safe(client
         yield {'type':'delta','text':'工具未执行修改，没有正式保存。'}
     monkeypatch.setattr(conversation_runs,'reply_events',flaky)
     sid=call(client,'POST','/api/conversations',json={'client_request_id':'failure'})['id']
-    run=call(client,'POST',f'/api/conversations/{sid}/runs',json={'client_message_id':'once','text':'查询并提建议'})
+    run=call(client,'POST',f'/api/conversations/{sid}/runs',json={'client_message_id':'once','text':'查询并生成目标建议'})
     failed=wait(client,sid,run['id']);assert failed['status']=='failed'
     assert len(failed['content']['tools'])==2,failed
     assert failed['content']['tools'][1]['error']=='INVALID_DRAFT'

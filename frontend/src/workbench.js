@@ -106,6 +106,22 @@ export function compatibleEdit(saved, example) {
 export function mergeMessages(previous, incoming) {
   return [...new Map([...previous, ...incoming].map(message => [message.id, message])).values()].sort((a, b) => a.id - b.id)
 }
+export function visibleChatMessages(messages) {
+  return messages.filter((message,index)=>!(message.role==='assistant' && message.content?.status==='failed' && !message.text?.trim()
+    && !message.content?.tools?.length
+    && messages.slice(index+1).some(next=>next.role==='assistant' && next.content?.status==='completed' && next.text?.trim())))
+}
+export function toolNotices(results = [], shownQuestions = []) {
+  const labels={tasks:'任务',goals:'目标',preferences:'偏好',calendar:'日程',review:'回顾事实',memories:'已确认记忆'}
+  const notices=[],queried=[]
+  for(const result of results){
+    if(result.error){if(result.message)notices.push(result.message);continue}
+    if(result.questions?.length){notices.push(...result.questions.filter(question=>!shownQuestions.includes(question)));continue}
+    if(labels[result.tool])queried.push(labels[result.tool])
+  }
+  if(queried.length)notices.push(`已查询：${[...new Set(queried)].join('、')}。`)
+  return [...new Set(notices)]
+}
 export function applyReply(previous, response) {
   const old = previous.find(message => message.id === response.assistant_message_id)
   const text = response.reset ? response.delta : (old?.text || '') + response.delta

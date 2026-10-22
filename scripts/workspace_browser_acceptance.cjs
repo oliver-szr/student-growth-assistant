@@ -11,6 +11,80 @@ async function call(path, method='GET', body) {
   assert.equal(response.headers.get('x-sga-integration-mock'),'1');
   const value=await response.json();assert.ok(response.ok,JSON.stringify(value));return value;
 }
+async function verifySkillsUI() {
+  assert.deepEqual((await call('/api/conversations?scope=all')).items,[], 'Use a new anonymous database');
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  const page=await browser.newPage({viewport:{width:1440,height:1000},locale:'zh-CN'}),errors=[],checks=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  const checked=name=>{checks.push(name);console.log('PASS '+name)};
+  try {
+    await page.goto(web);
+    await page.getByRole('button',{name:'开始新对话',exact:true}).click();
+    const input=page.getByRole('textbox',{name:'会话输入',exact:true});await expect(input).toBeEnabled();
+    const sid=(await call('/api/conversations')).items[0].id;
+    async function send(text){
+      await expect(input).toBeEnabled();await input.fill(text);
+      await expect(page.getByRole('button',{name:'发送',exact:true})).toBeEnabled();
+      const pending=page.waitForResponse(r=>r.url().endsWith(`/api/conversations/${sid}/runs`)&&r.request().method()==='POST');
+      await page.getByRole('button',{name:'发送',exact:true}).click();
+      const initial=await (await pending).json();
+      await expect.poll(async()=>(await call(`/api/conversations/${sid}/runs/${initial.id}`)).status).not.toBe('running');
+      await expect(page.locator('.reply-status')).not.toContainText('正在');
+      return call(`/api/conversations/${sid}/runs/${initial.id}`);
+    }
+    await send('技能验收：今晚写匿名作业');
+    await expect(page.locator('.conversation-chat')).toContainText('预计需要多少分钟');
+    await send('一个半小时');await send('帮我安排一下');
+    await expect(page.locator('.conversation-chat')).toContainText('今晚最晚几点前完成');
+    assert.deepEqual(await call('/api/tasks'),[]);
+    const planned=await send('今晚22点前完成');const draft=planned.content.tools.find(r=>r.draft)?.draft;
+    assert.ok(draft?.id>0);assert.equal(draft.kind,'planning');assert.equal(draft.status,'ready');
+    await expect(page.getByRole('button',{name:'查看最新草案',exact:true})).toHaveCount(1);
+    assert.deepEqual(await call('/api/tasks'),[]);
+    checked('skills_multi_turn_title_duration_date_real_draft_no_early_formal_write');
+    await page.getByRole('button',{name:'查看最新草案',exact:true}).click();
+    const editor=page.getByRole('region',{name:'共享草案编辑器'});
+    await expect(editor).toBeVisible();await editor.getByRole('button',{name:'确认采用方案',exact:true}).click();
+    await expect(editor.getByRole('status')).toContainText('已正式保存');
+    assert.equal((await call('/api/tasks')).length,1);
+    assert.ok((await call('/api/calendar/events?start=2026-10-14&end=2026-10-15')).events.some(e=>e.kind==='formal_task'));
+    await editor.getByRole('button',{name:'关闭草案',exact:true}).click();
+    const nav=page.getByRole('navigation',{name:'主导航'});await nav.getByRole('button',{name:'首页',exact:true}).click();
+    checked('skills_original_confirm_receipt_and_formal_calendar');
+    await send('技能验收：今天有什么安排');
+    const article=page.locator('.workspace-message.assistant').last();
+    await expect(article.locator('.helper')).toHaveCount(1);await expect(article.locator('.helper')).toContainText('已查询：任务、日程');
+    assert.equal(await page.getByText('已读取正式记录，供本次回答参考。',{exact:true}).count(),0);
+    checked('skills_query_receipts_are_aggregated_once');
+    const review=await send('技能验收：帮我复盘一下今天');
+    const ref=review.content.tools.find(r=>r.draft)?.draft;assert.equal(ref?.kind,'review_record');
+    assert.equal((await call('/api/reviews/records')).items.length,0);
+    const latestArticle=page.locator(`#conversation-message-${sid}-${review.assistant_message_id}`);
+    await expect(latestArticle.getByRole('button',{name:'查看最新草案',exact:true})).toHaveCount(1);
+    checked('skills_explicit_natural_language_review_is_one_real_editable_preview');
+    const denied=await send('技能验收：先不要帮我安排');
+    assert.equal(denied.content.tools[0].error,'TOOL_NOT_ALLOWED');
+    const missing=await send('技能验收：帮我安排但没有模型工具');
+    assert.equal(missing.content.business_status,'not_created');assert.deepEqual(missing.content.tools,[]);
+    await expect(page.locator(`#conversation-message-${sid}-${missing.assistant_message_id}`)).toContainText('没有生成可审核');
+    assert.equal((await call('/api/tasks')).length,1);
+    checked('skills_negative_model_plan_blocked_and_empty_plan_never_fakes_a_card');
+    await send('[无Key]匿名旧失败');await send('技能验收：今天有什么安排');
+    await expect(page.getByText('回复未正常结束，内容可能不完整',{exact:true})).toHaveCount(0);
+    checked('skills_old_empty_failure_does_not_label_new_complete_reply');
+    for(const width of [1440,1280,390]){
+      await page.setViewportSize({width,height:900});
+      if(width<700)await page.getByRole('button',{name:'辅助栏',exact:true}).click();
+      const auxiliary=page.getByRole('tablist',{name:'辅助栏页签'});
+      await auxiliary.getByRole('tab',{name:'日程',exact:true}).click();
+      await expect(page.locator('#v2-auxiliary-shared .day-column')).toHaveCount(1);
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+      if(width<700){await expect(page.getByRole('separator')).toHaveCount(0);await page.getByRole('button',{name:'聊天',exact:true}).click()}
+    }
+    checked('skills_1440_1280_390_independent_single_day_preview_no_overflow');
+    assert.deepEqual(errors,[]);console.log(JSON.stringify({checks,consoleErrors:errors,provider:'Mock only',database:'new anonymous database'}));
+  }finally{await browser.close()}
+}
 async function verifyConversationUI() {
   assert.deepEqual((await call('/api/conversations?scope=all')).items,[], 'Use a new anonymous database');
   const create=(title,key)=>call('/api/conversations','POST',{title,client_request_id:key});
@@ -183,6 +257,7 @@ async function verifyConversationUI() {
   const settings=await call('/api/assistant/settings');assert.ok(settings.demo);
   assert.deepEqual(await call('/api/tasks'),[], 'Use a fresh anonymous demo server');
   if(process.argv.includes('--ui')) {await verifyConversationUI();return}
+  if(process.argv.includes('--skills')) {await verifySkillsUI();return}
   const checks=[],errors=[];const checked=text=>{checks.push(text);console.log('PASS '+text)};
   const browser=await chromium.launch({channel:'msedge',headless:true});
   let page;
@@ -463,7 +538,7 @@ async function verifyConversationUI() {
     await expect(page.locator('.reply-status')).toContainText('回复已完成',{timeout:30000});
     assert.equal((await call(`/api/conversations/${stopped.session_id}/runs/${stopped.id}`)).attempt,2);
     const failed=await begin('[失败]匿名同请求重试');
-    await expect(page.locator('.reply-status')).toContainText('回复未完成',{timeout:30000});
+    await expect(page.locator('.reply-status')).toContainText('回复未正常结束',{timeout:30000});
     await page.getByRole('button',{name:'重试回复',exact:true}).click();
     await expect(page.locator('.reply-status')).toContainText('回复已完成',{timeout:30000});
     assert.equal((await call(`/api/conversations/${failed.session_id}/runs/${failed.id}`)).attempt,2);

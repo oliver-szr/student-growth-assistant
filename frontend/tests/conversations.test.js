@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createConversation, getConversations, getConversation, getConversationMessages, saveConversationMessage, updateConversation, deleteConversation } from '../src/api.js'
-import { editKey, readEdit, writeEdit, compatibleEdit, mergeMessages, applyReply, requestGate, restoredWorkbench, initialWorkbench } from '../src/workbench.js'
+import { editKey, readEdit, writeEdit, compatibleEdit, mergeMessages, applyReply, requestGate, restoredWorkbench, initialWorkbench, visibleChatMessages, toolNotices } from '../src/workbench.js'
 import { startConversationRun, getConversationRun, stopConversationRun, retryConversationRun } from '../src/api.js'
 import { getCalendarEvents, getReviewFacts, saveReviewRecord, editWorkspaceDraft, actWorkspaceDraft, createReviewDraft } from '../src/api.js'
 import { calendarEvent, reviewRange } from '../src/calendar.js'
@@ -15,6 +15,23 @@ import { transformWithEsbuild } from 'vite'
 const menuSource=await readFile(new URL('../src/components/ConversationMenu.jsx',import.meta.url),'utf8')
 const compiledMenu=await transformWithEsbuild(`import React from '${import.meta.resolve('react')}';\n${menuSource.replace("from 'react'",`from '${import.meta.resolve('react')}'`).replace("from 'react-dom'",`from '${import.meta.resolve('react-dom')}'`)}`,'ConversationMenu.jsx',{jsx:'transform',jsxFactory:'React.createElement'})
 const {ConversationRow,menuPosition}=await import(`data:text/javascript;base64,${Buffer.from(compiledMenu.code).toString('base64')}`)
+
+test('query results produce one truthful notice, preserving distinct errors and questions',()=>{
+  assert.deepEqual(toolNotices([{tool:'tasks'},{tool:'calendar'},{tool:'tasks'}]),['已查询：任务、日程。'])
+  assert.deepEqual(toolNotices([{tool:'planning_draft',questions:['几点前完成？']},{tool:'planning_draft',questions:['几点前完成？']},
+    {tool:'calendar',error:'FAILED',message:'查询失败'},{tool:'calendar',error:'FAILED',message:'查询失败'}]),['几点前完成？','查询失败'])
+  assert.deepEqual(toolNotices([{tool:'planning_draft',draft:{id:1}}]),[])
+  assert.deepEqual(toolNotices([{tool:'planning_draft',questions:['几点前完成？']}],['几点前完成？']),[])
+})
+test('later success hides obsolete empty failed placeholders without deleting partial replies or cards',()=>{
+  const messages=[{id:1,role:'assistant',text:'',content:{status:'failed',links:[{page:'schedule'}]}},
+    {id:2,role:'assistant',text:'已收到的部分内容',content:{status:'failed'}},
+    {id:3,role:'assistant',text:'',content:{status:'failed',tools:[{draft:{id:1}}]}},
+    {id:4,role:'assistant',text:'最新完整回答',content:{status:'completed'}}]
+  assert.deepEqual(visibleChatMessages(messages).map(m=>m.id),[2,3,4])
+  assert.equal(messages.length,4)
+  assert.deepEqual(visibleChatMessages(messages.slice(0,1)),messages.slice(0,1))
+})
 
 test('conversation row exposes only title and menu, including archived and legacy resources',()=>{
   for(const row of [{id:1,title:'长标题 & 真实正文',scope:'conversation'}, {id:2,title:'历史会话',scope:'planning',archived_at:'2026-10-22'}]){
@@ -56,7 +73,7 @@ test('secretary uses real memory versions, explicit summary requests and stable 
   assert.ok(calls.every(c=>!c.url.pathname.includes('/assistant/')))
 })
 
-for(const [code,message] of [['MEMORY_VERSION_CONFLICT','核对'],['SOURCE_UNAVAILABLE','来源'],['SUMMARY_IN_PROGRESS','小结'],['AI_CONTEXT_TOO_LARGE','上限']])test(`secretary ${code} preserves actionable error code`,async context=>{
+for(const [code,message] of [['MEMORY_VERSION_CONFLICT','核对'],['SOURCE_UNAVAILABLE','来源'],['SUMMARY_IN_PROGRESS','小结'],['AI_CONTEXT_TOO_LARGE','上限'],['AI_SKILLS_UNAVAILABLE','技能']])test(`secretary ${code} preserves actionable error code`,async context=>{
   context.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({detail:{code}}),{status:409}))
   await assert.rejects(()=>actMemory(3,{expected_version:1,action:'confirm'}),e=>e.code===code&&e.message.includes(message))
 })

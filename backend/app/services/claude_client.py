@@ -25,6 +25,7 @@ class AIServiceError(Exception):
         self.code = code
         self.status_code, self.message = {
             "AI_NOT_CONFIGURED": (503, "AI parsing is not configured."),
+            "AI_SKILLS_UNAVAILABLE": (503, "Assistant skills could not be loaded safely; no new action was executed."),
             "AI_CONTEXT_TOO_LARGE": (422, "Selected context exceeds the safe request limit; narrow the question or open the workspace."),
             "AI_UNAVAILABLE": (503, "The AI parsing service is temporarily unavailable."),
             "AI_RESPONSE_INVALID": (502, "The AI parsing service returned an invalid response."),

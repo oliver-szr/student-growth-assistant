@@ -46,10 +46,16 @@ def context_for(db,run):
         info=row.content or {}
         if info.get('kind')=='conversation_summary' or info.get('status','completed')!='completed' or not row.text:continue
         text=row.text[-min(1600,budget):]
-        history.append({'id':row.id,'role':row.role,'text':text,'source':'历史交流，用户感受/AI建议不代表当前正式事实'})
+        history.append({'id':row.id,'role':row.role,'text':text,'business_status':info.get('business_status'),
+            'source':'历史交流，用户感受/AI建议不代表当前正式事实'})
         budget-=len(text)
         if len(history)>=12 or budget<=0:break
     history.reverse();links=[];now=assistant_now();facts={'now':now.isoformat()}
+    from .ai_skills import select_skills
+    selection=select_skills(run.text,history)
+    signals={**signals,'planning':signals['planning'] or selection.expected in ('planning','breakdown'),
+        'profile':signals['profile'] or selection.expected=='profile',
+        'review':signals['review'] or selection.expected in ('feedback','review_record')}
     if recall:
         budget+=2000
         words=[w for w in terms(run.text) if w not in ('之前','前面','上次','记得','那件','提过')][:8]
