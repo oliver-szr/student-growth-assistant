@@ -3,6 +3,55 @@ import assert from 'node:assert/strict'
 import { createConversation, getConversations, getConversation, getConversationMessages, saveConversationMessage, updateConversation, deleteConversation } from '../src/api.js'
 import { editKey, readEdit, writeEdit, compatibleEdit, mergeMessages, applyReply, requestGate, restoredWorkbench, initialWorkbench } from '../src/workbench.js'
 import { startConversationRun, getConversationRun, stopConversationRun, retryConversationRun } from '../src/api.js'
+import { getCalendarEvents, getReviewFacts, saveReviewRecord, editWorkspaceDraft, actWorkspaceDraft, createReviewDraft } from '../src/api.js'
+import { calendarEvent, reviewRange } from '../src/calendar.js'
+import { registerEditor, coordinateDrafts, hasUnsavedDraft } from '../src/draftCoordination.js'
+
+test('stage2 saves local valid draft edits before providing exact current server references',async()=>{
+  let dirty=true,version='old';const order=[]
+  const unregister=registerEditor('test-draft',{dirty:()=>dirty,save:async()=>{order.push('save');dirty=false;version='latest'},reference:async()=>{order.push('reference');return {kind:'breakdown',id:5,version}}})
+  try{
+    assert.equal(hasUnsavedDraft(),true)
+    assert.deepEqual(await coordinateDrafts(),[{kind:'breakdown',id:5,version:'latest'}])
+    assert.deepEqual(order,['save','reference']);assert.equal(hasUnsavedDraft(),false)
+  }finally{unregister()}
+})
+
+test('invalid draft edits block AI coordination and retain editable local content',async()=>{
+  const content={minutes:-1};let referenced=false
+  const unregister=registerEditor('invalid',{dirty:()=>true,save:async()=>{throw Error('请修正时长')},reference:()=>{referenced=true}})
+  try{await assert.rejects(coordinateDrafts,/请修正时长/);assert.equal(content.minutes,-1);assert.equal(referenced,false)}finally{unregister()}
+})
+
+test('Shanghai calendar preserves all-day deadlines and spans midnight in any browser zone',()=>{
+  const original={id:'plan:1',start:'2026-10-14T15:30:00Z',end:'2026-10-14T16:30:00Z',kind:'formal_task',allDay:false}
+  const event=calendarEvent(original)
+  assert.equal(event.start,'2026-10-14T23:30:00Z');assert.equal(event.end,'2026-10-15T00:30:00Z')
+  assert.equal(event.extendedProps,original);assert.equal(event.editable,false)
+  assert.equal(calendarEvent({id:'deadline:1',start:'2026-10-15',allDay:true,kind:'deadline'}).start,'2026-10-15')
+})
+
+test('day/week/month reviews use exclusive bounds including leap month and Shanghai week',()=>{
+  assert.deepEqual(reviewRange('2026-10-18','week'),['2026-10-12','2026-10-19'])
+  assert.deepEqual(reviewRange('2024-02-29','month'),['2024-02-01','2024-03-01'])
+  assert.deepEqual(reviewRange('2026-12-31','day'),['2026-12-31','2027-01-01'])
+})
+
+test('stage2 endpoints keep readonly views, draft editing and explicit formal confirmation separate',async context=>{
+  const calls=[];context.mock.method(globalThis,'fetch',async(url,options)=>{calls.push({url:new URL(url),...options});return new Response('{}')})
+  await getCalendarEvents('2026-01-01','2027-01-01');await getReviewFacts('2026-10-12','2026-10-19')
+  await editWorkspaceDraft('breakdown',5,'version1',{parent:{title:'同一草案'}})
+  await actWorkspaceDraft('breakdown',5,'version2','confirm')
+  await createReviewDraft(7,{client_request_id:'review-once',start_date:'2026-10-12',end_date:'2026-10-19'})
+  await saveReviewRecord({client_request_id:'manual',title:'自己写几句'})
+  await saveReviewRecord({expected_version:2,title:'编辑'},9)
+  assert.equal(calls[0].url.searchParams.get('end'),'2027-01-01')
+  assert.equal(calls[1].method,undefined)
+  assert.equal(calls[2].method,'PATCH');assert.equal(JSON.parse(calls[2].body).expected_version,'version1')
+  assert.equal(calls[3].url.pathname,'/api/workspace/drafts/breakdown/5/confirm')
+  assert.equal(calls[4].url.pathname,'/api/conversations/7/review-drafts')
+  assert.equal(calls[6].method,'PATCH');assert.equal(calls[6].url.pathname,'/api/reviews/records/9')
+})
 
 test('reply cursor uses server code points, handles reset and rejects duplicate deltas',()=>{
   const first={assistant_message_id:5,session_id:1,reset:true,delta:'你好🙂',next_cursor:3,from_cursor:0,content:{status:'running'}}

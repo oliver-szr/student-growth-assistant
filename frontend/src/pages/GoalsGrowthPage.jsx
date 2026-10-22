@@ -1,21 +1,25 @@
 import { Fragment, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  getReviewContext, acceptGrowthInsight, analyzeGrowthInsights, createGrowthReview, editGrowthInsight, getDurationAdvice, getGoals, getGrowthAttention, getGrowthInsights,
+  getReviewFacts, getReviewContext, acceptGrowthInsight, analyzeGrowthInsights, createGrowthReview, editGrowthInsight, getDurationAdvice, getGoals, getGrowthAttention, getGrowthInsights,
   getGrowthReviews, getTaskCategories, getTaskGrowthContext, getTasks, ignoreGrowthInsight,
 } from '../api.js'
+import ReviewWorkspace from '../components/ReviewWorkspace.jsx'
 import GrowthAnalytics from '../components/GrowthAnalytics.jsx'
 import '../analytics.css'
 import SafeMessage from '../components/SafeMessage.jsx'
 import WorkspaceChat from '../components/WorkspaceChat.jsx'
+import { reviewRange } from '../calendar.js'
 import { minutesText } from '../analytics.js'
 
 
-export default function ReviewPage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null, onDataChanged, onBusinessChat, onReturnChat }) {
+export default function ReviewPage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null, onDataChanged, onBusinessChat, onReturnChat, workspace, today, onDiscuss, resource, onOpenTask, primaryActive=active }) {
   const Content = embedded ? Fragment : WorkspaceChat
+  const [legacyMounted,setLegacyMounted]=useState(!embedded)
   const [parentTasks, setParentTasks] = useState([])
   const [analyticsVersion, setAnalyticsVersion] = useState(0)
   const [overview, setOverview] = useState(null)
+  const [auxFacts,setAuxFacts]=useState(null)
   const [overviewError, setOverviewError] = useState('')
   const [categories, setCategories] = useState([])
   const [contexts, setContexts] = useState({})
@@ -30,6 +34,12 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
+  useEffect(()=>{
+    if(!auxiliaryTarget||!today)return
+    let valid=true;const [start,end]=reviewRange(today,'week')
+    getReviewFacts(start,end).then(value=>{if(valid){setAuxFacts(value);setOverviewError('')}}).catch(cause=>{if(valid)setOverviewError(cause.message)})
+    return()=>{valid=false}
+  },[auxiliaryTarget,today,refreshVersion])
   async function refresh() {
     const snapshot=await getReviewContext()
     setCategories(snapshot.categories);setParentTasks(snapshot.tasks.filter(task=>task.task_kind==='container'));setAnalyticsVersion(value=>value+1)
@@ -50,7 +60,7 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
     }
   }
 
-  useEffect(() => { if (active) refresh().catch((e) => setError(e.message)) }, [active, refreshVersion])
+  useEffect(() => { if (active&&legacyMounted) refresh().catch((e) => setError(e.message)) }, [active, refreshVersion,legacyMounted])
 
   async function generateReview() {
     setOperation('review'); setBusy(true); setError(''); setNotice('')
@@ -83,6 +93,8 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
 
   return <><section className="growth-page" aria-labelledby="growth-heading">
     {onReturnChat&&<button className="button subtle" onClick={onReturnChat}>返回相关对话</button>}
+    {embedded&&today&&<ReviewWorkspace workspace={workspace} today={today} active={primaryActive} refreshVersion={refreshVersion} onDiscuss={onDiscuss} onSaved={onDataChanged} resource={resource} onOpenTask={onOpenTask}/>}
+    <details className="legacy-review" open={!embedded||undefined} onToggle={e=>{if(e.currentTarget.open)setLegacyMounted(true)}}><summary>旧统计与自动周说明</summary>{legacyMounted&&<>
     <div className="growth-page-heading">
       <div><h2 id="growth-heading">复盘</h2></div><span className="review-week muted">{weekStart} 周</span>
       <button className="button primary" type="button" disabled={busy} onClick={generateReview}>{operation==='review'?'生成中…':'生成复盘'}</button>{onBusinessChat&&<button className="button secondary" onClick={onBusinessChat}>用 AI 整理执行记录</button>}
@@ -109,15 +121,16 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
     </section>
 
 
-    </Content>
+    </Content></>}
+    </details>
   </section>
     {auxiliaryTarget && createPortal(<section className="v2-readonly-summary" aria-label="复盘辅助视图">
       <h3>本周回顾</h3>
       {overviewError && <p role="status">摘要暂时无法更新{overview ? '，以下为上次读取的记录。' : '。'}</p>}
-      {overview ? <><p className="muted">{overview.start_date} 起的一周</p><dl>
-        <div><dt>已确认完成</dt><dd>{overview.completed_count} 项</dd></div>
-        <div><dt>已记录投入</dt><dd>{minutesText(overview.actual_minutes,overview.known_actual_minutes,overview.unknown_actual_count)}</dd></div>
-        <div><dt>有效反馈</dt><dd>{overview.feedback_count} 条</dd></div>
+      {auxFacts ? <><p className="muted">{auxFacts.start_date} 起的一周</p><dl>
+        <div><dt>已确认完成</dt><dd>{auxFacts.completed_count} 项</dd></div>
+        <div><dt>已记录投入</dt><dd>{`${auxFacts.known_minutes} 分钟${auxFacts.unknown_count?'（另有未知）':''}`}</dd></div>
+        <div><dt>有效反馈</dt><dd>{auxFacts.feedback_ids.length} 条</dd></div>
       </dl></> : !overviewError && <p role="status">正在读取本周记录…</p>}
     </section>, auxiliaryTarget)}
   </>

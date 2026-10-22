@@ -50,7 +50,33 @@ def serve(port):
                 operations = [{'op': 'record_feedback', 'task_id': task['id'], 'outcome': 'completed', 'actual_minutes': 30}]
         return {'reply': '已整理为待确认建议，请核对后再保存。', 'questions': [], 'operations': operations}
     assistant_ai.workspace_message = mock_workspace
-    from app.services import conversation_runs
+    from app.services import conversation_runs, conversation_tools
+    from app.workspace_schemas import ToolPlan
+    async def mock_tools(request):
+        text=request['message']
+        if text.startswith('匿名拆解'):
+            return ToolPlan(calls=[{'name':'breakdown_draft','arguments':{'title':'匿名交付','text':text,'deadline':'2026-10-16T20:00:00+08:00','expected_duration_minutes':120}}])
+        if text.startswith('匿名修改草案') and request.get('current_drafts'):
+            draft=next((d for d in request['current_drafts'] if d['kind']=='breakdown'),None)
+            if draft:
+                content=deepcopy(draft['content']);content['children'][0]['title']='保留手改后的名称'
+                return ToolPlan(calls=[{'name':'edit_draft','arguments':{'kind':draft['kind'],'id':draft['id'],'version':draft['version'],'content':content}}])
+        if text.startswith('匿名排程') and '下周' in text:
+            return ToolPlan(calls=[{'name':'planning_draft','arguments':{'actions':[{'op':'add','fields':{'title':'匿名下周行动','duration_minutes':30,'deadline':'2026-10-23T20:00:00+08:00','profile':{'allowed_windows':[{'start_at':'2026-10-19T08:00:00+08:00','end_at':'2026-10-19T12:00:00+08:00'}]}}}]}}])
+        if text.startswith('匿名排程'):
+            return ToolPlan(calls=[{'name':'planning_draft','arguments':{'replan':True}}])
+        if text.startswith('匿名查询'):
+            return ToolPlan(calls=[{'name':'calendar','arguments':{'start':'2026-10-14','end':'2026-10-15'}}])
+        if text.startswith('匿名复盘'):
+            return ToolPlan(calls=[{'name':'review','arguments':{'start':'2026-10-12','end':'2026-10-19'}}])
+        return ToolPlan()
+    conversation_tools.plan=mock_tools
+    async def mock_review(prompt,*args,**kwargs):
+        data=json.loads(prompt)
+        if 'facts' not in data:raise AssertionError('Only explicit review synthesis is mocked')
+        return json.dumps({'title':'匿名复盘记录','summary':'基于已保存的匿名事实和讨论。','conclusion':'下次继续观察。','next_steps':''},ensure_ascii=False)
+    claude_client.request_claude=mock_review
+    claude_client.get_claude_config=lambda:None
     from app.services.claude_client import AIServiceError
     failed_once = set()
     async def mock_reply(request):
@@ -62,6 +88,10 @@ def serve(port):
         reply = '你好，我们可以从你关心的事情慢慢聊。'
         if history:
             reply += '前面你说：' + history[-2 if len(history)>1 else -1]['text'][:60] + '。'
+        results=request.get('tool_results',[])
+        if results:
+            reply += '已完成真实查询或生成待审核草案，没有正式保存。'
+            if any(r.get('error') for r in results):reply += '部分工具未完成，请检查提示。'
         if request['context'].get('tasks'):
             reply += '可从入口查看任务：' + request['context']['tasks'][0]['title'] + '。正式保存仍需你确认。'
         if '[完整]' in text:

@@ -4,7 +4,7 @@ import { defaultSplitRatio, renderedSplitRatio, splitBounds, toolPlacement, work
 const labels = { home: '首页', schedule: '日程', review: '复盘', profile: '档案' }
 
 // Full tools stay in the primary area; auxiliary previews only read their formal data.
-export default function WorkspaceShell({ state, dispatch, chat, children, review, profile, clock, conversationContent, auxiliarySchedule, chatNote = '当前支持任务规划与调整，自由交流将在后续开放。' }) {
+export default function WorkspaceShell({ state, dispatch, chat, children, review, profile, clock, conversationContent, auxiliarySchedule, draftPanel, draftPage, chatNote = '当前支持任务规划与调整，自由交流将在后续开放。' }) {
   const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches)
   const [gridWidth, setGridWidth] = useState(1440)
   const [auxiliaryTarget, setAuxiliaryTarget] = useState(null)
@@ -125,6 +125,7 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
         const target = page === state.auxiliaryPage ? auxiliaryTarget : null
         return <section key={page} id={'v2-page-' + page} className="v2-tool-page" data-placement={placement} role="main" tabIndex={-1} aria-labelledby={'v2-primary-' + page} hidden={!shown} inert={!shown}>
           <header className="v2-primary-page-heading"><h1 id={'v2-primary-' + page}>{labels[page]}</h1><span className="workspace-clock">{clock}</span></header>
+          {draftPage===page&&draftPanel}
           {page !== 'schedule' && isValidElement(content) ? cloneElement(content, { auxiliaryTarget: target }) : content}
         </section>
       })}

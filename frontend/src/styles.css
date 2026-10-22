@@ -460,6 +460,38 @@ input:focus, select:focus, textarea:focus { border-color: #3b9b86; }
 .breakdown-pending { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .task-hierarchy { display: grid; gap: 16px; min-width: 0; }
 .task-container { border-left: 4px solid #398873; }
+.full-calendar { min-width: 0; --fc-border-color: #dde5e3; --fc-today-bg-color: #f0f8f5; }
+.full-calendar .fc { font: inherit; font-size: 13px; }
+.calendar-toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.calendar-toolbar label, .review-preview-form label, .review-record-editor label, .draft-editor-fields label { display: grid; gap: 6px; min-width: 0; }
+.calendar-toolbar input { max-width: 180px; }
+.year-month-links, .review-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.year-month-links { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.calendar-course, .calendar-course_snapshot { background: #4b7094; border-color: #4b7094; }
+.calendar-formal_task { background: #26745e; border-color: #26745e; }
+.calendar-candidate { background: #fff6db; color: #664500; border: 1px dashed #997327; }
+.calendar-deadline, .calendar-goal { color: #934a35; font-weight: 600; }
+.calendar-protected { opacity: .65; background: #677580; }
+.calendar-event-detail { overflow-wrap: anywhere; }
+.review-workspace, .review-record-editor, .time-distribution, .review-preview-form { display: grid; gap: 12px; min-width: 0; }
+.metric-card { display: grid; gap: 8px; padding: 16px; border: 1px solid #d8e5df; border-radius: 12px; background: #f5faf7; text-align: left; color: inherit; cursor: pointer; }
+.metric-card strong { font-size: 21px; }
+.time-bar { display: grid; grid-template-columns: minmax(90px, 1fr) 2fr minmax(80px,1fr); gap: 8px; align-items: center; border: 0; background: #f5f8f7; padding: 10px; text-align: left; cursor: pointer; }
+.time-bar meter { width: 100%; }
+.review-source, .review-record, .draft-operation { display: grid; gap: 8px; border-bottom: 1px solid #dce6e0; padding: 12px 0; }
+.review-record-editor textarea, .draft-editor-fields textarea, .draft-editor-fields input { width: 100%; box-sizing: border-box; }
+.draft-editor-fields { border: 0; min-width: 0; padding: 0; }
+.workspace-draft pre { max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.legacy-review { margin-top: 24px; }
+@media (max-width: 640px) {
+  .full-calendar { padding: 10px; }
+  .full-calendar .fc { font-size: 11px; }
+  .full-calendar .fc-toolbar { flex-wrap: wrap; }
+  .full-calendar .fc-timegrid-axis { width: 32px; }
+  .review-metrics { grid-template-columns: minmax(0,1fr); }
+  .year-month-links { grid-template-columns: repeat(4,minmax(0,1fr)); }
+  .time-bar { grid-template-columns: 1fr; }
+}
 .hierarchy-children { margin: 12px 0 0 12px; padding-left: 12px; border-left: 2px solid #cee3dc; display: grid; gap: 12px; }
 .hierarchy-progress { font-weight: 600; }
 @media (max-width: 640px) {

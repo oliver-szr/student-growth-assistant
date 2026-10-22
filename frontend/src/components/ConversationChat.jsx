@@ -1,23 +1,41 @@
 import { useEffect, useRef, useState } from 'react'
-import { getConversation, getConversationMessages, getConversationRuns, getConversationRun, startConversationRun, stopConversationRun, retryConversationRun } from '../api.js'
+import { getConversation, getConversationMessages, getConversationRuns, getConversationRun, startConversationRun, stopConversationRun, retryConversationRun, createReviewDraft } from '../api.js'
 import { applyReply, mergeMessages, requestGate } from '../workbench.js'
 import { localizedError } from '../localization.js'
 import EditRecovery, { useEditRecovery } from './EditRecovery.jsx'
 import ChatMessages from './ChatMessages.jsx'
+import { coordinateDrafts } from '../draftCoordination.js'
+import { DraftCard, draftEvent } from './WorkspaceDraft.jsx'
+import { reviewRange } from '../calendar.js'
 import SafeMessage from './SafeMessage.jsx'
 
 const statuses = { completed: '回复已完成', failed: '回复未完成', cancelled: '已停止生成', interrupted: '回复已中断，可重试' }
 
-export default function ConversationChat({ workspace, id, target, revision, onChanged, active = true, onNavigate }) {
+export default function ConversationChat({ workspace, id, target, revision, onChanged, active = true, onNavigate, today, intent }) {
   const [meta, setMeta] = useState(null), [messages, setMessages] = useState([]), [next, setNext] = useState(null)
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState('')
   const [run, setRun] = useState(null), [observing, setObserving] = useState(true), [reload, setReload] = useState(0)
   const [unavailable, setUnavailable] = useState(false), [input, setInput] = useState({ text: '', requestId: null })
+  const [reviewDates,setReviewDates]=useState(()=>{const [start,end]=reviewRange(today||new Date().toISOString().slice(0,10),'week');return {start_date:start,end_date:end,period:'week'}})
+  const [reviewOpen,setReviewOpen]=useState(false),[intentPending,setIntentPending]=useState(null)
+  const reviewRequest=useRef(null),seenIntent=useRef(null)
+  useEffect(()=>{
+    if(!intent||seenIntent.current===intent.key)return
+    seenIntent.current=intent.key
+    setReviewDates({start_date:intent.range.start,end_date:intent.range.end,period:intent.range.period})
+    setIntentPending(intent)
+  },[intent])
+  const reviewRecovery=useEditRecovery({workspace,resource:`conversation:${id}:review-preview`,base:meta?`review-preview:${id}`:undefined,
+    value:{dates:reviewDates,request:reviewRequest.current,open:reviewOpen},dirty:reviewOpen||Boolean(reviewRequest.current),automatic:true,
+    restore:value=>{setReviewDates(value.dates);reviewRequest.current=value.request;setReviewOpen(Boolean(value.open))}})
+  const toolSignature=useRef('')
   const gate = useRef(requestGate()), alive = useRef(true), locked = useRef(false), cursor = useRef({})
   const recovery = useEditRecovery({ workspace, resource: `conversation:${id}:input`, base: meta ? `${id}:${meta.scope}` : undefined,
     value: input, dirty: Boolean(input.text), restore: value => setInput({ text: typeof value.text === 'string' ? value.text : '', requestId: value.requestId || null }), automatic: true })
   useEffect(() => { alive.current = true; return () => { alive.current = false; gate.current.next() } }, [])
   function receive(response) {
+    const signature=JSON.stringify(response.content?.tools||[])
+    if(signature!==toolSignature.current){toolSignature.current=signature;draftEvent()}
     cursor.current = { id: response.id, attempt: response.attempt, after: response.next_cursor }
     setMessages(current => applyReply(current, response)); setRun(response); setError('')
   }
@@ -96,7 +114,8 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
     const payload = { client_message_id: input.requestId || crypto.randomUUID(), text: input.text }
     setInput({ text: input.text, requestId: payload.client_message_id })
     action(async () => {
-      const response = await startConversationRun(id, payload)
+      const draft_versions=await coordinateDrafts()
+      const response = await startConversationRun(id, {...payload,draft_versions,review_range:{start:reviewDates.start_date,end:reviewDates.end_date}})
       if (!alive.current) return
       setMessages(current => mergeMessages(current, [{ id: response.user_message_id, session_id: id, role: 'user', text: payload.text }]))
       receive(response); setObserving(true)
@@ -112,16 +131,18 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
       <button className="button subtle" onClick={() => onNavigate?.({ page: 'review', kind: 'review' })}>查看复盘</button>
       <button className="button subtle" onClick={() => onNavigate?.({ page: 'profile', kind: 'profile' })}>目标与档案</button>
     </div>
+    {intentPending&&<section className="recovery-note"><p>从回顾带入的讨论：{intentPending.text}</p><button className="button secondary" disabled={Boolean(input.text)} onClick={()=>{setInput({text:intentPending.text,requestId:null});setIntentPending(null)}}>填入聊天（不会自动发送）</button><button className="button subtle" onClick={()=>setIntentPending(null)}>保留当前输入</button></section>}
     {loading && <p role="status">正在读取会话…</p>}
     {error && <p className="error-box" role="alert">{error}<button className="button subtle" onClick={() => setReload(value => value + 1)}>重新读取</button></p>}
     {meta?.archived_at && !unavailable && <p role="status">当前会话已归档，请在会话栏恢复后再发送。</p>}
-    <EditRecovery recovery={recovery} label="聊天输入" />
+    <EditRecovery recovery={recovery} label="聊天输入" /><EditRecovery recovery={reviewRecovery} label="复盘整理请求" />
     <ChatMessages revision={`${messages.at(-1)?.id}:${messages.at(-1)?.text?.length}`}>
       {!unavailable && <>
         {messages.length > 0 && <button className="button subtle" disabled={busy || loading} onClick={() => loadMore(true)}>加载更早消息</button>}
         {messages.map(message => <article tabIndex={-1} id={`conversation-message-${id}-${message.id}`} key={message.id} className={`workspace-message ${message.role} ${target === message.id ? 'search-match' : ''}`}>
           <strong>{message.role === 'user' ? '我' : '成长助手'}</strong><SafeMessage text={message.text} />
           {message.content?.status && message.content.status !== 'completed' && <small>{statuses[message.content.status] || '正在生成…'}</small>}
+          {(message.content?.tools||[]).map((result,index)=>result.draft?<DraftCard key={index} reference={result.draft} active={active} onOpen={link=>onNavigate?.({...link,conversationId:id,messageId:message.id})}/>:<p className="helper" key={index}>{result.error?result.message:result.questions?.join('；')||'已读取正式记录，供本次回答参考。'}</p>)}
           <div className="button-row">{(Array.isArray(message.content?.links)?message.content.links:[]).filter(link=>link&&typeof link.label==='string'&&['schedule','review','profile'].includes(link.page)).map((link, i) => <button className="button subtle" key={i} onClick={() => onNavigate?.({...link,conversationId:id,messageId:message.id})}>{link.label}</button>)}</div>
         </article>)}
         {next !== null && <button className="button subtle" disabled={busy || loading} onClick={() => loadMore()}>加载后续消息</button>}
@@ -129,13 +150,20 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
       </>}
     </ChatMessages>
     {run && <section aria-label="回复状态" className="reply-status">
-      <p role="status">{run.status === 'running' ? run.delivery === 'full' ? '服务使用完整回复模式，正在等待结果…' : run.delivery === 'streaming' ? '正在接收回复…' : '正在理解并读取必要上下文…' : statuses[run.status]}</p>
+      <p role="status">{run.status === 'running' ? run.phase==='querying'?'正在查询正式记录…':run.phase==='calculating'?'正在计算待审核草案…':run.delivery === 'full' ? '服务使用完整回复模式，正在等待结果…' : run.delivery === 'streaming' ? '正在接收回复…' : '正在理解并读取必要上下文…' : statuses[run.status]}</p>
       {run.error_code && <p role="alert">{localizedError(503, { code: run.error_code })}</p>}
       {run.status === 'running' && <><button className="button subtle" disabled={busy} onClick={() => action(async () => { const response = await stopConversationRun(id, run.id, run.attempt); if (alive.current) receive(response) })}>停止生成</button>
         <button className="button subtle" onClick={() => setObserving(value => !value)}>{observing ? '停止等待' : '继续读取'}</button></>}
       {['failed', 'cancelled', 'interrupted'].includes(run.status) && <button className="button secondary" disabled={busy} onClick={() => action(async () => { const response = await retryConversationRun(id, run.id, run.attempt); if (alive.current) { receive(response); setObserving(true) } })}>重试回复</button>}
       {!observing && run.status === 'running' && <p className="helper">已停止此界面的观察，后台回复可能继续；点击继续读取恢复。</p>}
     </section>}
+    {meta?.scope==='conversation'&&<><button className="button subtle" disabled={busy||loading||unavailable||Boolean(meta.archived_at)||run?.status==='running'} onClick={()=>setReviewOpen(!reviewOpen)}>整理为复盘记录</button>
+    {reviewOpen&&<form className="review-preview-form" onSubmit={event=>{event.preventDefault();action(async()=>{
+      reviewRequest.current ||= {...reviewDates,client_request_id:crypto.randomUUID(),message_id:messages.at(-1)?.id}
+      const result=await createReviewDraft(id,reviewRequest.current)
+      reviewRequest.current=null;setReviewOpen(false);setReload(v=>v+1)
+      onNavigate?.({page:'review',kind:'review_record',id:result.id,conversationId:id})
+    })}}><p className="helper">仅整理指定范围和当前讨论为可编辑草案，确认后才保存复盘，不会创建任务。</p><label>开始日期<input required type="date" value={reviewDates.start_date} onChange={e=>{reviewRequest.current=null;setReviewDates({...reviewDates,start_date:e.target.value})}}/></label><label>结束日期（不含）<input required type="date" value={reviewDates.end_date} onChange={e=>{reviewRequest.current=null;setReviewDates({...reviewDates,end_date:e.target.value})}}/></label><label>记录周期<select value={reviewDates.period} onChange={e=>{reviewRequest.current=null;setReviewDates({...reviewDates,period:e.target.value})}}><option value="day">日</option><option value="week">周</option><option value="month">月</option></select></label><button className="button secondary" disabled={busy}>生成可编辑预览</button></form>}</>}
     <form className="workspace-chat-input" onSubmit={send}>
       <label>会话输入<textarea aria-label="会话输入" value={input.text} maxLength={2000} disabled={busy || loading || unavailable || Boolean(meta?.archived_at) || meta?.scope !== 'conversation'} onChange={event => setInput({ text: event.target.value, requestId: null })} /></label>
       <button className="button primary" disabled={busy || loading || unavailable || Boolean(meta?.archived_at) || meta?.scope !== 'conversation' || !input.text.trim() || run?.status === 'running'}>发送</button>

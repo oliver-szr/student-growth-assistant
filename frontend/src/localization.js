@@ -4,6 +4,16 @@ export const PRIORITY_LABELS = { low: '低', normal: '普通', high: '高' }
 export const RECURRENCE_LABELS = { weekly: '每周', once: '仅一次' }
 
 const CODE_MESSAGES = {
+  DRAFT_COORDINATION_REQUIRED:'请先打开草案并保存有效编辑，再让 AI 修改。',
+  RECORD_VERSION_CONFLICT:'复盘记录已在其他入口修改，本地输入保留，请比较后重新读取。',
+  RECORD_RANGE_IMMUTABLE:'已存记录的事实范围固定；不同范围请新建记录。',
+  REVIEW_FACTS_CHANGED:'事实来源已变化，请保留文字并重新整理最新事实后确认。',
+  INVALID_RANGE:'日期范围无效，请检查开始、结束日期及范围上限。',
+  RANGE_TOO_LARGE:'范围内事项过多，请缩小日期范围。',
+  DRAFT_APPLIED:'这份草案已保存，请查看保存结果。',
+  DRAFT_NOT_FOUND:'草案不存在或无法访问，请重新读取。',
+  LEGACY_RESTORE_REVIEWS_PRESENT:'已有新式复盘，旧备份无法表达这些资料，恢复已拒绝。请导出最新版后在独立空库恢复。',
+  LEGACY_RESTORE_TOOLS_PRESENT:'已有工具运行资料，旧备份恢复已拒绝，请先导出最新版。',
   RUN_NOT_FOUND: '这次回复不存在，请重新读取会话。',
   RUN_VERSION_CONFLICT: '回复已重新开始，请读取最新状态后操作。',
   RUN_NOT_RETRYABLE: '这次回复已完成，不能重复生成。',

@@ -4,12 +4,13 @@ import { editKey, readEdit, requestGate, writeEdit } from '../workbench.js'
 import ConversationChat from './ConversationChat.jsx'
 import WorkspaceChat from './WorkspaceChat.jsx'
 
-export default function ConversationManager({ workspace, onOpen, children, active, onNavigate, onBusinessSaved, onAdjustTask }) {
+export default function ConversationManager({ workspace, onOpen, children, active, onNavigate, onBusinessSaved, onAdjustTask, today }) {
   const [selected, setSelected] = useState(null), [target, setTarget] = useState(null), [ready, setReady] = useState(false)
   const [rows, setRows] = useState([]), [next, setNext] = useState(null), [query, setQuery] = useState(''), [search, setSearch] = useState(''), [archive, setArchive] = useState('active')
   const [revision, setRevision] = useState(0), [detailVersion, setDetailVersion] = useState(0)
   const [loading, setLoading] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [storageWarning, setStorageWarning] = useState('')
   const [rename, setRename] = useState(null), [remove, setRemove] = useState(null)
+  const [intent,setIntent]=useState(null)
   const gate = useRef(requestGate()), lock = useRef(false), createKey = useRef(null)
   useEffect(() => {
     if (!workspace) return
@@ -61,6 +62,10 @@ export default function ConversationManager({ workspace, onOpen, children, activ
       open(row.id)
     })
   }
+  async function discuss(range){
+    if(Number.isSafeInteger(selected)){setIntent({key:crypto.randomUUID(),range,text:`请与我回顾${range.start}至${range.end}（不含）的实际记录。`});onOpen();return}
+    action(async()=>{const row=await createConversation({client_request_id:crypto.randomUUID()});open(row.id);setIntent({key:crypto.randomUUID(),range,text:`请与我回顾${range.start}至${range.end}（不含）的实际记录。`})})
+  }
   const sidebar = <div className="conversation-list">
     <button className="button secondary" disabled={busy || !ready} onClick={fresh}>＋ 新对话</button>
     <button className="v2-current-conversation" aria-current={selected === 'planning' ? 'true' : undefined} onClick={() => open('planning')}>本周规划入口</button>
@@ -89,6 +94,6 @@ export default function ConversationManager({ workspace, onOpen, children, activ
     {loading && <p role="status">正在读取会话列表…</p>}{!loading && !rows.length && <p className="helper">没有符合条件的会话。</p>}
     {next !== null && <button className="button subtle" disabled={loading} onClick={more}>加载更多会话</button>}
   </div>
-  return children({ sidebar, planning: selected === 'planning', openPlanning: () => open('planning'), openConversation: open,
-    chat: ready && Number.isSafeInteger(selected) ? <ConversationChat active={active} onNavigate={onNavigate} key={`${workspace}:${selected}`} workspace={workspace} id={selected} target={target} revision={detailVersion} onChanged={() => setRevision(value => value + 1)} /> : selected?.startsWith?.('tool-') ? <WorkspaceChat workspace={workspace} key={selected} scope={selected.slice(5)} observe={active} renderLayout={({chat,children})=><>{chat}{children}</>} onAdjustTask={onAdjustTask} onDraftConfirmed={onBusinessSaved}/> : <section className="workspace-chat"><p>从一个想法开始，自由交流或查看已有记录。</p><button className="button primary" disabled={busy} onClick={fresh}>开始新对话</button></section>, openBusiness: scope => open('tool-'+scope) })
+  return children({ sidebar, discussReview:discuss, planning: selected === 'planning', openPlanning: () => open('planning'), openConversation: open,
+    chat: ready && Number.isSafeInteger(selected) ? <ConversationChat today={today} intent={intent} active={active} onNavigate={onNavigate} key={`${workspace}:${selected}`} workspace={workspace} id={selected} target={target} revision={detailVersion} onChanged={() => setRevision(value => value + 1)} /> : selected?.startsWith?.('tool-') ? <WorkspaceChat workspace={workspace} key={selected} scope={selected.slice(5)} observe={active} renderLayout={({chat,children})=><>{chat}{children}</>} onAdjustTask={onAdjustTask} onDraftConfirmed={onBusinessSaved}/> : <section className="workspace-chat"><p>从一个想法开始，自由交流或查看已有记录。</p><button className="button primary" disabled={busy} onClick={fresh}>开始新对话</button></section>, openBusiness: scope => open('tool-'+scope) })
 }

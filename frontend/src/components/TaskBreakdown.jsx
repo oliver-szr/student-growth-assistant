@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { createTaskBreakdown, getTaskBreakdowns, getTaskBreakdown, editTaskBreakdown, confirmTaskBreakdown, discardTaskBreakdown, getGoals } from '../api.js'
 import { toBackendDeadline } from '../datetime.js'
 import { breakdownPayload, breakdownTotals, editableContent, MAX_CHILDREN, moveChild } from '../taskHierarchy.js'
+import { registerEditor } from '../draftCoordination.js'
+import { getWorkspaceDraft } from '../api.js'
 import EditRecovery, { useEditRecovery } from './EditRecovery.jsx'
 
 export function BreakdownEditor({ content, expected, disabled, onChange }) {
@@ -65,6 +67,12 @@ export default function TaskBreakdown({ onCreated, recoveryWorkspace, requestedR
     const saved = await editTaskBreakdown(draft.id, { version: draft.version, content: breakdownPayload(content) })
     setDraft(saved); setDirty(false); setRecovered(false); setNotice('草案已保存，刷新后可以继续。'); return saved
   }
+  const coordination=useRef(null);coordination.current={dirty,persist,draft}
+  useEffect(()=>registerEditor('legacy-breakdown',{
+    dirty:()=>Boolean(coordination.current?.dirty),
+    save:()=>coordination.current.persist(),
+    reference:async()=>{const current=coordination.current;if(!current?.draft)return null;const latest=await getWorkspaceDraft('breakdown',current.draft.id);return {kind:'breakdown',id:latest.id,version:latest.version}}
+  }),[])
   function change(next) { setContent(next); setDirty(true); setError(''); setNotice('修改尚未保存') }
   // Only valid edits can be persisted. Failed saves retain the editor and offer retry.
   useEffect(() => {
