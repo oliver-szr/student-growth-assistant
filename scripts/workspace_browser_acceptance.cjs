@@ -168,6 +168,90 @@ async function verifyDefaultDraftUI(){
     assert.deepEqual(errors,[]);console.log(JSON.stringify({checks,consoleErrors:errors,provider:'Mock only',database:'new anonymous database'}));
   }catch(e){console.error((await page.locator('body').innerText()).slice(-4000));throw e}finally{await browser.close()}
 }
+
+async function verifyDraftSidebarUI(){
+  assert.deepEqual((await call('/api/conversations?scope=all')).items,[]);
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  const page=await browser.newPage({viewport:{width:1440,height:1000},locale:'zh-CN'}),errors=[],checks=[];
+  page.on('pageerror',e=>errors.push(e.message));const checked=name=>{checks.push(name);console.log('PASS '+name)};
+  try{
+    await page.goto(web);await page.getByRole('button',{name:'开始新对话',exact:true}).click();
+    const input=page.getByRole('textbox',{name:'会话输入',exact:true});await expect(input).toBeEnabled();
+    let sid=(await call('/api/conversations')).items[0].id;
+    async function send(text){
+      await input.fill(text);
+      const pending=page.waitForResponse(r=>r.url().endsWith(`/api/conversations/${sid}/runs`)&&r.request().method()==='POST');
+      await page.getByRole('button',{name:'发送',exact:true}).click();const run=await(await pending).json();
+      await expect.poll(async()=>(await call(`/api/conversations/${sid}/runs/${run.id}`)).status).not.toBe('running');
+      await expect(page.locator('.reply-status')).not.toContainText('正在');
+      return (await call(`/api/conversations/${sid}/runs/${run.id}`)).content.tools.find(t=>t.draft)?.draft;
+    }
+    const initial=await send('今晚帮我安排操作系统作业，90分钟');
+    assert.equal(initial.status,'needs_input');assert.equal(initial.content.schedule.deadline,null);
+    const nav=page.getByRole('navigation',{name:'主导航'}),tabs=page.getByRole('tablist',{name:'辅助栏页签'});
+    await input.fill('保留在聊天中的输入');
+    await page.getByRole('button',{name:'收起辅助栏',exact:true}).click();
+    await page.getByRole('button',{name:'查看最新草案',exact:true}).last().click();
+    const editor=page.locator('#v2-auxiliary-shared').getByRole('region',{name:'共享草案编辑器'});
+    await expect(editor).toBeVisible();await expect(nav.getByRole('button',{name:'首页',exact:true})).toHaveAttribute('aria-current','page');
+    await expect(input).toHaveValue('保留在聊天中的输入');await expect(page.locator('#v2-draft-preview')).toBeFocused();
+    checked('draft_opens_collapsed_auxiliary_without_changing_home_or_chat_input');
+    await editor.getByLabel('名称',{exact:true}).fill('操作系统作业（保留编辑）');
+    for(const name of ['日程','复盘','档案','首页']){
+      await nav.getByRole('button',{name,exact:true}).click();await expect(editor).toBeVisible();
+      await expect(editor.getByLabel('名称',{exact:true})).toHaveValue('操作系统作业（保留编辑）');
+    }
+    await tabs.getByRole('tab',{name:'复盘',exact:true}).click();await expect(editor).toBeHidden();
+    assert.ok(await page.evaluate(()=>!document.activeElement?.closest('[hidden],[inert]')));
+    await tabs.getByRole('tab',{name:'日程',exact:true}).click();await expect(editor).toBeVisible();
+    await expect(editor.getByLabel('名称',{exact:true})).toHaveValue('操作系统作业（保留编辑）');
+    checked('draft_edits_survive_four_primary_pages_and_independent_auxiliary_tabs');
+    for(const width of [1440,1280,390]){
+      await page.setViewportSize({width,height:900});
+      if(width<700)await page.getByRole('button',{name:'辅助栏',exact:true}).click();
+      await expect(editor).toBeVisible();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+      if(width>=700){
+        const divider=page.getByRole('separator');await divider.focus();await divider.press('ArrowLeft');
+        await page.getByRole('button',{name:'展开辅助栏',exact:true}).click();await expect(editor).toBeVisible();
+        await page.getByRole('button',{name:'恢复普通辅助栏',exact:true}).click();
+      }else{await expect(page.getByRole('separator')).toHaveCount(0);await expect(input).toBeHidden()}
+    }
+    checked('draft_sidebar_1440_1280_390_resize_expand_single_surface_no_overflow');
+    await page.getByRole('button',{name:'收起辅助栏',exact:true}).click();await expect(editor).toBeHidden();
+    assert.ok(await page.evaluate(()=>!document.activeElement?.closest('[hidden],[inert]')));
+    await page.getByRole('button',{name:'辅助栏',exact:true}).click();await expect(editor).toBeVisible();
+    await editor.getByRole('button',{name:'保存草案编辑',exact:true}).click();
+    await expect(editor.getByRole('button',{name:'保存草案编辑',exact:true})).toBeDisabled();
+    await page.reload();await expect(editor).toBeVisible();
+    await expect(editor.getByLabel('名称',{exact:true})).toHaveValue('操作系统作业（保留编辑）');
+    await expect(editor.getByRole('button',{name:'确认采用方案',exact:true})).toBeDisabled();
+    checked('draft_sidebar_collapse_focus_and_refresh_keep_same_preview');
+    await editor.getByRole('button',{name:'以安排结束时间作为截止',exact:true}).click();
+    const expectedEnd=initial.items.filter(i=>i.ref===initial.schedule_target).reduce((last,i)=>new Date(i.end_at)>new Date(last)?i.end_at:last,initial.items.find(i=>i.ref===initial.schedule_target).end_at);
+    await expect(editor.getByLabel('截止时间',{exact:true})).toHaveValue(expectedEnd.slice(0,16));
+    assert.deepEqual(await call('/api/tasks'),[]);
+    await expect(editor.getByRole('button',{name:'确认采用方案',exact:true})).toBeEnabled();
+    await editor.getByRole('button',{name:'确认采用方案',exact:true}).click();await expect(editor.getByRole('status')).toContainText('已正式保存');
+    let tasks=await call('/api/tasks');assert.equal(tasks.length,1);assert.equal(Date.parse(tasks[0].deadline),Date.parse(expectedEnd));
+    assert.ok((await call('/api/calendar/events?start=2026-10-14&end=2026-10-15')).events.some(e=>e.kind==='formal_task'));
+    checked('explicit_preview_end_then_one_confirm_persists_real_task_calendar_and_receipt');
+    await editor.getByRole('button',{name:'关闭草案',exact:true}).click();
+    await expect(page.getByLabel('辅助日程日期',{exact:true})).toBeVisible();
+    await page.setViewportSize({width:1440,height:1000});await nav.getByRole('button',{name:'首页',exact:true}).click();
+    await page.getByRole('button',{name:'＋ 新对话',exact:true}).click();await expect(input).toBeEnabled();
+    sid=(await call('/api/conversations')).items[0].id;
+    await send('明天晚上帮我安排编译原理作业，60分钟');
+    await page.getByRole('button',{name:'查看最新草案',exact:true}).last().click();
+    await expect(editor.getByRole('button',{name:'确认采用方案',exact:true})).toBeDisabled();
+    await editor.getByLabel('截止时间',{exact:true}).fill('2026-10-15T22:00');
+    // No separate save: the former needs_input button must submit current edits.
+    await editor.getByRole('button',{name:'确认采用方案',exact:true}).click();await expect(editor.getByRole('status')).toContainText('已正式保存');
+    assert.equal((await call('/api/tasks')).length,2);
+    await expect(nav.getByRole('button',{name:'首页',exact:true})).toHaveAttribute('aria-current','page');
+    checked('manual_deadline_edit_confirms_directly_without_separate_save_or_primary_navigation');
+    assert.deepEqual(errors,[]);console.log(JSON.stringify({checks,consoleErrors:errors,provider:'Mock only',database:'new anonymous database'}));
+  }finally{await browser.close()}
+}
 async function verifyConversationUI() {
   assert.deepEqual((await call('/api/conversations?scope=all')).items,[], 'Use a new anonymous database');
   const create=(title,key)=>call('/api/conversations','POST',{title,client_request_id:key});
@@ -344,6 +428,7 @@ async function verifyConversationUI() {
   assert.deepEqual(await call('/api/tasks'),[], 'Use a fresh anonymous demo server');
   if(process.argv.includes('--ui')) {await verifyConversationUI();return}
   if(process.argv.includes('--skills')) {await verifySkillsUI();return}
+  if(process.argv.includes('--draft-sidebar')) {await verifyDraftSidebarUI();return}
   if(process.argv.includes('--defaults')) {await verifyDefaultDraftUI();return}
   const checks=[],errors=[];const checked=text=>{checks.push(text);console.log('PASS '+text)};
   const browser=await chromium.launch({channel:'msedge',headless:true});
@@ -463,6 +548,7 @@ async function verifyConversationUI() {
     await call('/api/time-rules','POST',{title:'匿名课程',kind:'course',recurrence:'weekly',weekday:4,start_time:'09:00',end_time:'10:00'});
     await call('/api/goals','POST',{title:'匿名月末目标',metric_kind:'count',weekly_target:1,due_date:'2026-10-30'});
     await editor.getByRole('button',{name:'关闭草案',exact:true}).click();
+    await nav.getByRole('button',{name:'日程',exact:true}).click();
     const calendar=page.getByRole('region',{name:'完整日历',exact:true});
     for(const name of ['天','周','月','年']) {
       await calendar.getByRole('button',{name,exact:true}).click();

@@ -46,6 +46,7 @@ def envelope(db,kind,id):
         unresolved=['正式创建前请填写父子任务的真实截止时间；当前为可编辑初稿。']
     return dict(kind=kind,id=id,version=version(row),status=status,source_revision=row.source_revision,
         content=content,summary=summary,session_id=row.session_id,items=links,
+        schedule_target=row.payload['actions'][0]['target'] if kind=='planning' and row.payload.get('preview_input') and row.payload.get('actions') else None,
         replacement_id=session.latest_proposal_id if kind=='planning' and status=='superseded' else None,
         field_sources=row.payload.get('field_sources',{}),unresolved=unresolved,
         notices=row.payload.get('notices',[]),diagnostics=row.payload.get('diagnostics',[]),

@@ -69,6 +69,7 @@ def test_real_protocol_failure_or_query_loop_still_persists_editable_draft(clien
     drafts=[r['draft'] for r in result['content']['tools'] if r.get('draft')]
     assert len(drafts)==1
     draft=drafts[0];value=draft['content']['schedule']
+    assert draft['schedule_target'] and any(item['ref']==draft['schedule_target'] for item in draft['items'])
     assert value['title']=='操作系统作业' and value['duration_minutes']==90 and value['deadline'] is None
     assert draft['items'] and call(client,'/api/tasks')==[]
     trace=trace_for(client,wire['sid'],result['id'])

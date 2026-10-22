@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState,lazy,Suspense } from 'react'
+import { useEffect, useReducer, useRef, useState,lazy,Suspense } from 'react'
 import { getAssistantSettings } from './api.js'
 import TasksPage from './pages/TasksPage.jsx'
 import AssistantPage from './pages/AssistantPage.jsx'
@@ -26,6 +26,7 @@ function WorkspaceApp() {
   const [adjustment, setAdjustment] = useState(null)
   const [resource, setResource] = useState(null)
   const [draftResource,setDraftResource]=useState(null)
+  const draftReturnFocus=useRef(null)
   const dataChanged = source => setVersions(current=>Object.fromEntries(Object.entries(current).map(([key,value])=>[key,value+(key===source?0:1)])))
   function openResource(link) {
     if (!['schedule','review','profile'].includes(link?.page)) return
@@ -33,7 +34,11 @@ function WorkspaceApp() {
       if ((!draftResource || draftResource.kind!==link.kind || draftResource.id!==link.id) && hasUnsavedDraft()) {
         window.alert('当前草案有未保存编辑，请先保存或修正后再打开另一份草案。'); return
       }
+      draftReturnFocus.current=document.activeElement
       setDraftResource(link)
+      dispatch({type:'auxiliary',page:link.page})
+      requestAnimationFrame(()=>document.getElementById('v2-draft-preview')?.focus())
+      return
     }
     dispatch({type:'navigate',page:link.page})
     setResource({...link, requestKey:crypto.randomUUID()})
@@ -44,6 +49,14 @@ function WorkspaceApp() {
         const details=page?.querySelector('.task-memory'); if(details)details.open=true
         page?.querySelector(`[data-resource-task="${link.id}"]`)?.scrollIntoView({block:'center'})
       }
+    })
+  }
+  function closeDraft(){
+    setDraftResource(null)
+    requestAnimationFrame(()=>{
+      const target=draftReturnFocus.current
+      if(target?.isConnected&&!target.closest('[hidden], [inert]'))target.focus()
+      else document.getElementById('v2-tab-'+state.auxiliaryPage)?.focus()
     })
   }
   const layoutRecovery = useEditRecovery({ workspace: settings?.workspace_id, resource: 'layout', base: settings ? 'layout-v1' : undefined,
@@ -83,7 +96,7 @@ function WorkspaceApp() {
     onFocusChat={openPlanning}
     taskTools={<TasksPage resource={resource?.kind==='breakdown'?null:resource} active={state.navigation==='schedule'} recoveryWorkspace={settings?.workspace_id} refreshVersion={versions.tasks} onDataChanged={()=>dataChanged('tasks')} onAdjustTask={requestAdjustment} />}
     renderWorkbench={({ chat, children, conversation, auxiliarySchedule }) => <WorkspaceShell state={state} dispatch={dispatch} chatNote={planning?'规划操作沿用原草案与确认流程。':null} conversationContent={<><EditRecovery recovery={layoutRecovery} label="界面状态" /><EditRecovery recovery={draftRecovery} label="草案选择" />{sidebar}</>} chat={<><div className="v2-chat-surface" hidden={!planning} inert={!planning}>{chat}</div><div className="v2-chat-surface" hidden={planning} inert={planning}>{conversationChat}</div></>} conversation={conversation} auxiliarySchedule={auxiliarySchedule}
-      clock={clock} draftPage={draftResource?.page} draftPanel={draftResource&&<WorkspaceDraft key={`${draftResource.kind}:${draftResource.id}`} workspace={settings.workspace_id} kind={draftResource.kind} id={draftResource.id} onSaved={()=>dataChanged()} onClose={()=>setDraftResource(null)}/>}
+      clock={clock} draftPage={draftResource?.page} draftPanel={draftResource&&<WorkspaceDraft key={`${draftResource.kind}:${draftResource.id}`} workspace={settings.workspace_id} kind={draftResource.kind} id={draftResource.id} onSaved={()=>dataChanged()} onClose={closeDraft}/>}
       review={state.visited.includes('review') && <ReviewPage embedded primaryActive={state.navigation==='review'} workspace={settings.workspace_id} today={settings.now.slice(0,10)} onDiscuss={discussReview} resource={resource} onOpenTask={id=>openResource({page:'schedule',kind:'task',id})} onReturnChat={resource?.conversationId?()=>openConversation(resource.conversationId,resource.messageId):undefined} onDataChanged={()=>dataChanged('review')} onBusinessChat={()=>openBusiness('review')} active={toolActive('review')} refreshVersion={versions.review} onAdjustTask={requestAdjustment} />}
       profile={state.visited.includes('profile') && <MyProfilePage embedded resource={resource} onOpenConversation={openConversation} primaryActive={state.navigation==='profile'} onReturnChat={resource?.conversationId?()=>openConversation(resource.conversationId,resource.messageId):undefined} onDataChanged={()=>dataChanged('profile')} onBusinessChat={()=>openBusiness('profile')} recoveryWorkspace={settings?.workspace_id} active={toolActive('profile')} refreshVersion={versions.profile} onAdjustTask={requestAdjustment} />}>
       {resource?.conversationId&&<button className="button subtle" onClick={()=>openConversation(resource.conversationId,resource.messageId)}>返回相关对话</button>}{children}

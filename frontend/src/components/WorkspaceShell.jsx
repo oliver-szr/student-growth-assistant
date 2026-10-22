@@ -9,7 +9,7 @@ const navigationIcons = {
   profile: <><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></>,
 }
 
-// Full tools stay in the primary area; auxiliary previews only read their formal data.
+// Full pages stay in the primary area. Shared draft previews live in the auxiliary pane.
 export default function WorkspaceShell({ state, dispatch, chat, children, review, profile, clock, conversationContent, auxiliarySchedule, draftPanel, draftPage, chatNote = null }) {
   const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches)
   const [gridWidth, setGridWidth] = useState(1440)
@@ -24,6 +24,7 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
   const bounds = splitBounds(available)
   const resizable = !narrow && panel === 'normal'
   const controls = 'v2-auxiliary-shared'
+  const draftShown=Boolean(draftPanel)&&draftPage===state.auxiliaryPage
 
   useEffect(()=>{
     const viewport=window.visualViewport
@@ -143,13 +144,13 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
         const target = page === state.auxiliaryPage ? auxiliaryTarget : null
         return <section key={page} id={'v2-page-' + page} className="v2-tool-page" data-placement={placement} role="main" tabIndex={-1} aria-labelledby={'v2-primary-' + page} hidden={!shown} inert={!shown}>
           <header className="v2-primary-page-heading"><h1 id={'v2-primary-' + page}>{labels[page]}</h1><span className="workspace-clock">{clock}</span></header>
-          {draftPage===page&&draftPanel}
           {page !== 'schedule' && isValidElement(content) ? <Suspense fallback={<p role="status">正在加载{labels[page]}…</p>}>{cloneElement(content, { auxiliaryTarget: target })}</Suspense> : content}
         </section>
       })}
       <div id="v2-auxiliary-shared" className="v2-tool-page" data-placement="auxiliary" role="tabpanel" aria-labelledby={'v2-tab-' + state.auxiliaryPage} hidden={!visible.auxiliary} inert={!visible.auxiliary}>
-        <div hidden={state.auxiliaryPage !== 'schedule'} inert={state.auxiliaryPage !== 'schedule'}>{auxiliarySchedule}</div>
-        <div ref={setAuxiliaryTarget} />
+        <div id="v2-draft-preview" tabIndex={-1} hidden={!draftShown} inert={!draftShown}>{draftPanel}</div>
+        <div hidden={state.auxiliaryPage !== 'schedule'||draftShown} inert={state.auxiliaryPage !== 'schedule'||draftShown}>{auxiliarySchedule}</div>
+        <div hidden={draftShown} inert={draftShown} ref={setAuxiliaryTarget} />
       </div>
     </div>
   </div>

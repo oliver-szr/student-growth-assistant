@@ -12,3 +12,13 @@ export async function coordinateDrafts(){
   }
   return refs
 }
+
+export const editableDraft=draft=>draft?.status==='ready'||Boolean(draft?.content?.schedule)&&['needs_input','conflict','no_plan'].includes(draft?.status)
+// Dirty edits may resolve needs_input. The server must recalculate and return
+// ready before confirmation; this only enables submitting the current editor.
+export const canConfirmDraft=(draft,dirty)=>Boolean(editableDraft(draft)&&(dirty||draft.status==='ready'&&!draft.unresolved?.length))
+export function previewCompletionDeadline(draft){
+  if(!draft?.schedule_target)return null
+  const items=(draft.items||[]).filter(item=>item.ref===draft.schedule_target&&Number.isFinite(Date.parse(item.end_at)))
+  return items.reduce((latest,item)=>!latest||Date.parse(item.end_at)>Date.parse(latest)?item.end_at:latest,null)
+}

@@ -1,6 +1,6 @@
 import { useEffect,useRef,useState } from 'react'
 import { getWorkspaceDraft,editWorkspaceDraft,actWorkspaceDraft } from '../api.js'
-import { registerEditor } from '../draftCoordination.js'
+import { registerEditor,editableDraft,canConfirmDraft,previewCompletionDeadline } from '../draftCoordination.js'
 import { BreakdownEditor } from './TaskBreakdown.jsx'
 import { editableContent,breakdownPayload } from '../taskHierarchy.js'
 import EditRecovery,{useEditRecovery} from './EditRecovery.jsx'
@@ -67,28 +67,43 @@ export default function WorkspaceDraft({workspace,kind,id,onSaved,onClose}){
   useEffect(()=>registerEditor(`shared:${kind}:${id}`,{dirty:()=>current.current?.dirty||false,save,
     reference:async()=>{if(!current.current?.draft)return null;const latest=await getWorkspaceDraft(kind,current.current.draft.id);return {kind,id:latest.id,version:latest.version}}}),[kind,id])
   function change(next){setValue(next);setDirty(true);setError('')}
-  const editable=draft?.status==='ready'||Boolean(draft?.content?.schedule)&&['needs_input','conflict','no_plan'].includes(draft?.status)
+  const editable=editableDraft(draft)
+  async function useCompletionDeadline(){
+    if(busy)return;setBusy(true);setError('')
+    try{
+      const saved=await save(),latest=await getWorkspaceDraft(kind,saved.id)
+      if(latest.version!==saved.version){setRemote(latest);throw Error('草案已改变，请先比较最新安排，再选择截止时间。')}
+      const deadline=previewCompletionDeadline(latest)
+      if(!deadline)throw Error('当前没有可采用的候选时段，请先调整安排。')
+      change({...saved.content,schedule:{...saved.content.schedule,deadline}})
+    }catch(cause){setError(cause.message)}finally{setBusy(false)}
+  }
   async function act(action){
     if(busy)return;setBusy(true);setError('')
     try{
       const saved=await save()
       const latest=await getWorkspaceDraft(kind,saved.id)
       if(latest.version!==saved.version)throw Error('草案已改变，输入保留，请比较后重新读取。')
+      if(action==='confirm'&&(latest.status!=='ready'||latest.unresolved?.length)){
+        adopt(latest)
+        throw Error(latest.unresolved?.join(' ')||'当前安排仍有冲突或信息未补齐，请修改后再确认。')
+      }
       const next=await actWorkspaceDraft(kind,saved.id,saved.version,action)
       adopt(next);draftEvent();if(action==='confirm')onSaved?.()
     }catch(cause){setError(cause.message);getWorkspaceDraft(kind,id).then(setRemote).catch(()=>{})}finally{setBusy(false)}
   }
-  return <section className="workspace-draft panel" aria-label="共享草案编辑器"><div className="section-heading"><h2>{draftLabels[kind]} · {draft?.status==='applied'?'已保存':'待审核'}</h2><button className="button subtle" onClick={()=>{if(dirty)setError('有未保存修改，请保存或保留缓存后再关闭。');else onClose?.()}}>关闭草案</button></div>
+  return <section className="workspace-draft panel" aria-label="共享草案编辑器"><div className="section-heading"><h2>{draftLabels[kind]} · {statusLabels[draft?.status]||'读取中'}</h2><button className="button subtle" disabled={busy} onClick={()=>{if(dirty)setError('有未保存修改，请保存或保留缓存后再关闭。');else onClose?.()}}>关闭草案</button></div>
     {error&&<p className="error-box" role="alert">{error}</p>}<EditRecovery recovery={recovery} label="共享草案编辑"/>
     {remote&&<details open className="recovery-note"><summary>服务端最新内容（本地编辑仍保留）</summary><pre>{JSON.stringify(remote.content,null,2)}</pre><button onClick={()=>{if(window.confirm('用服务端版本替换编辑器？本地内容请先保留对照。'))adopt(remote)}}>读取服务器版本</button></details>}
     {draft&&value?<><p className="helper">{draft.summary} · {statusLabels[draft.status]||draft.status} {dirty?'· 有未保存修改':''}</p>
       <PreviewDetails draft={draft}/>
+      {editable&&value.schedule&&!value.schedule.deadline&&<div className="draft-confirm-help"><p>确认前请填写截止时间，也可以明确选择以本次安排结束时间为截止。</p><button className="button secondary" disabled={busy||!previewCompletionDeadline(draft)} onClick={useCompletionDeadline}>以安排结束时间作为截止</button></div>}
       <fieldset disabled={busy||!editable} className="draft-editor-fields">
       {kind==='breakdown'?<BreakdownEditor content={value} expected={value.children.reduce((sum,c)=>sum+Number(c.duration_minutes||0),0)} onChange={change}/>:
         value.schedule?<ScheduleFields value={value.schedule} onChange={schedule=>change({schedule})}/>:
         kind==='review_record'?<><p>{value.start_date} 至 {value.end_date}（不含）</p><ReviewFields value={value} onChange={change}/></>:
         <>{(value.operations||value.actions||[]).map((op,index)=><section className="draft-operation" key={index}><h3>{op.op==='add'?'新增任务建议':op.op==='record_feedback'?'执行反馈建议':op.op==='create_goal'?'目标建议':'资料修改建议'}</h3><Fields value={op} onChange={next=>{const key=kind==='planning'?'actions':'operations';change({...value,[key]:value[key].map((old,i)=>i===index?next:old)})}}/></section>)}</>}
-      </fieldset>{kind==='planning'&&draft.items.length>0&&<details open><summary>{draft.status==='applied'?'已采用安排':'候选安排 · 尚未正式采用'}</summary>{draft.items.map((item,index)=><p key={index}>{item.title} · {toDatetimeLocalValue(item.start_at).replace('T',' ')} 至 {toDatetimeLocalValue(item.end_at).replace('T',' ')}</p>)}</details>}<div className="button-row"><button className="button secondary" disabled={busy||!dirty||!editable} onClick={()=>{setBusy(true);save().catch(()=>{}).finally(()=>setBusy(false))}}>保存草案编辑</button><button className="button primary" disabled={busy||draft.status!=='ready'||Boolean(draft.unresolved?.length)} onClick={()=>act('confirm')}>{kind==='planning'?'确认采用方案':'确认正式保存'}</button><button className="button subtle" disabled={busy||draft.status==='applied'} onClick={()=>act('discard')}>放弃草案</button></div>
+      </fieldset>{kind==='planning'&&draft.items.length>0&&<details open><summary>{draft.status==='applied'?'已采用安排':'候选安排 · 尚未正式采用'}</summary>{draft.items.map((item,index)=><p key={index}>{item.title} · {toDatetimeLocalValue(item.start_at).replace('T',' ')} 至 {toDatetimeLocalValue(item.end_at).replace('T',' ')}</p>)}</details>}<div className="button-row"><button className="button secondary" disabled={busy||!dirty||!editable} onClick={()=>{setBusy(true);save().catch(()=>{}).finally(()=>setBusy(false))}}>保存草案编辑</button><button className="button primary" disabled={busy||!canConfirmDraft(draft,dirty)} onClick={()=>act('confirm')}>{kind==='planning'?'确认采用方案':'确认正式保存'}</button><button className="button subtle" disabled={busy||draft.status==='applied'} onClick={()=>act('discard')}>放弃草案</button></div>
       {draft.receipt&&<p role="status">保存结果：已正式保存。任务与日程已刷新；复盘可在复盘记录中查看。</p>}<p className="helper">保存编辑仍是草案；只有确认后才写入正式业务。旧卡片与冲突版本无法直接执行。</p>
     </>:<p role="status">正在读取草案…</p>}
   </section>

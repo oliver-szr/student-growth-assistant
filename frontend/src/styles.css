@@ -625,6 +625,14 @@ input:focus, select:focus, textarea:focus { border-color: #3b9b86; }
 .compact-shell.v2-shell .workspace-message .workspace-draft>.button {justify-self:start}
 .compact-shell.v2-shell .workspace-draft.panel {border:1px solid #d7c9a7;background:#fdfbf5;padding:20px;box-shadow:none}
 .compact-shell.v2-shell .workspace-draft.panel h2 {font-size:18px}
+.compact-shell.v2-shell #v2-draft-preview .workspace-draft.panel {margin:0;padding:16px}
+.compact-shell.v2-shell #v2-draft-preview .section-heading {flex-wrap:wrap;gap:8px;margin-bottom:0;align-items:center}
+.compact-shell.v2-shell #v2-draft-preview .section-heading h2 {min-width:0;overflow-wrap:anywhere}
+.compact-shell.v2-shell #v2-draft-preview :is(p,h2,.helper) {margin:0}
+.compact-shell.v2-shell #v2-draft-preview .helper p+p {margin-top:6px}
+.compact-shell.v2-shell #v2-draft-preview .button-row>.primary {flex:1 1 100%;order:-1}
+.draft-confirm-help {display:grid;gap:8px}
+.draft-confirm-help p {margin:0}
 .compact-shell.v2-shell .workspace-draft .breakdown-children>.item-card {border:0;border-top:1px solid #e5dcc7;border-radius:0;background:transparent;padding:20px 0;box-shadow:none}
 .compact-shell.v2-shell .workspace-draft .breakdown-total {background:transparent;border-bottom:1px solid #e5dcc7;border-radius:0;padding:12px 0}
 .compact-shell.v2-shell .v2-tool-page .workspace-draft .form-grid {grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr))}

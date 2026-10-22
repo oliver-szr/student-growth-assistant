@@ -10,6 +10,26 @@ test('generic chat navigation has one header entry while genuine resource links 
   assert.deepEqual(toolNotices([{tool:'tasks'}]),['已查询：任务。'])
 })
 import { startConversationRun, getConversationRun, stopConversationRun, retryConversationRun } from '../src/api.js'
+import { canConfirmDraft,previewCompletionDeadline } from '../src/draftCoordination.js'
+
+test('edited incomplete previews can submit for validation without enabling stale or final drafts',()=>{
+  const partial={status:'needs_input',content:{schedule:{}},unresolved:['请填写截止时间']}
+  assert.equal(canConfirmDraft(partial,false),false)
+  assert.equal(canConfirmDraft(partial,true),true)
+  assert.equal(canConfirmDraft({status:'ready'},false),true)
+  assert.equal(canConfirmDraft(null,true),false)
+  for(const status of ['applied','discarded','superseded','stale'])assert.equal(canConfirmDraft({...partial,status},true),false)
+})
+
+test('explicit completion deadline uses the last segment of the target rather than unrelated tasks',()=>{
+  const draft={schedule_target:'draft:preview-7',items:[
+    {ref:'draft:preview-7',end_at:'2026-10-14T19:45:00+08:00'},
+    {ref:'task:5',end_at:'2026-10-17T22:00:00+08:00'},
+    {ref:'draft:preview-7',end_at:'2026-10-14T20:40:00+08:00'}]}
+  assert.equal(previewCompletionDeadline(draft),'2026-10-14T20:40:00+08:00')
+  assert.equal(previewCompletionDeadline({...draft,items:[]}),null)
+  assert.equal(previewCompletionDeadline({...draft,schedule_target:null}),null)
+})
 import { getCalendarEvents, getReviewFacts, saveReviewRecord, editWorkspaceDraft, actWorkspaceDraft, createReviewDraft } from '../src/api.js'
 import { calendarEvent, reviewRange } from '../src/calendar.js'
 import { registerEditor, coordinateDrafts, hasUnsavedDraft } from '../src/draftCoordination.js'

@@ -146,6 +146,19 @@ test('primary calendar hides chat while keeping the common auxiliary controls', 
   assert.ok(html.includes('恢复默认宽度'))
 })
 
+test('a draft is mounted once in the auxiliary pane while the primary page remains selected',()=>{
+  for(const navigation of ['home','schedule','review','profile']){
+    const state={...initialWorkbench,navigation,auxiliaryPage:'schedule'}
+    const html=renderToStaticMarkup(React.createElement(WorkspaceShell,{state,dispatch:()=>{},draftPage:'schedule',draftPanel:'SHARED_DRAFT_EDITOR',auxiliarySchedule:'DAY_PREVIEW'},'FULL_CALENDAR'))
+    const auxiliary=html.slice(html.indexOf('id="v2-auxiliary-shared"'))
+    assert.ok(auxiliary.includes('SHARED_DRAFT_EDITOR'))
+    assert.equal((html.match(/SHARED_DRAFT_EDITOR/g)||[]).length,1)
+    assert.match(auxiliary, /id="v2-draft-preview" tabindex="-1">SHARED_DRAFT_EDITOR/)
+    assert.match(auxiliary, /<div hidden="" inert="">DAY_PREVIEW/)
+    assert.ok(html.includes(`data-navigation="${navigation}"`))
+  }
+})
+
 test('each desktop primary page exposes the same accessible width separator and reset control', () => {
   for (const page of ['home', 'schedule', 'review', 'profile']) {
     const html = renderShell(workbenchReducer(initialWorkbench, { type: 'navigate', page }))
