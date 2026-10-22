@@ -5,6 +5,24 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
+.memory-panel,.conversation-summary,.summary-content { display:grid; gap:12px; min-width:0; }
+.profile-sections { display:flex; flex-wrap:wrap; gap:6px; }
+.profile-sections [aria-selected=true] { background:#d5e8df; color:#086853; }
+.memory-card { display:grid; gap:8px; padding:16px; border:1px solid #dbe6e8; border-radius:12px; }
+.memory-card p,.summary-content p,.workspace-message { overflow-wrap:anywhere; white-space:pre-wrap; }
+.memory-card small { color:#526974; }
+.summary-content { max-height:45dvh; overflow:auto; padding:12px; background:#f5faf7; border-radius:10px; }
+.summary-content article+article { border-top:1px solid #cadbd4; padding-top:12px; }
+.memory-editor textarea { width:100%; min-height:120px; box-sizing:border-box; }
+@media (max-width:1023px) {
+  .compact-shell.v2-shell[style] { height:var(--sga-viewport-height,100dvh); min-height:0; }
+  .compact-shell.v2-shell[data-keyboard] .v2-navigation { display:none; }
+  .compact-shell.v2-shell .conversation-chat .workspace-chat-input { position:sticky; bottom:0; background:#fff; z-index:3; padding-bottom:env(safe-area-inset-bottom); }
+  .compact-shell.v2-shell .workspace-message { max-width:100%; min-width:0; }
+  .compact-shell.v2-shell .button,.profile-sections button,.memory-card button { min-height:44px; }
+  .memory-editor { scroll-margin-bottom:100px; }
+  .conversation-chat .workspace-chat-input textarea { font-size:16px; max-height:22dvh; }
+}
 
 /* V2 shell. Specificity keeps legacy page styling separate from the new layout. */
 .compact-shell.v2-shell {--ink:#183b48;--muted:#526974;--line:#dbe6e8;height:100dvh;min-height:480px;display:flex;flex-direction:column;overflow:hidden;background:#f5f7f8}

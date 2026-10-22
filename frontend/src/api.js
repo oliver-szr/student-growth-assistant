@@ -162,3 +162,12 @@ export const getWorkspaceDraft = (kind,id) => request(`/api/workspace/drafts/${k
 export const editWorkspaceDraft = (kind,id,version,content) => request(`/api/workspace/drafts/${kind}/${id}`,{method:'PATCH',body:JSON.stringify({expected_version:version,content})})
 export const actWorkspaceDraft = (kind,id,version,action) => request(`/api/workspace/drafts/${kind}/${id}/${action}`,{method:'POST',body:JSON.stringify({expected_version:version})})
 export const createReviewDraft = (id,data) => request(`/api/conversations/${id}/review-drafts`,{method:'POST',body:JSON.stringify(data)},125000)
+
+export const getMemories=(values={})=>request(`/api/memories?${conversationQuery(values)}`)
+export const getMemory=id=>request(`/api/memories/${id}`)
+export const createMemory=data=>request('/api/memories',{method:'POST',body:JSON.stringify(data)})
+export const editMemory=(id,data)=>request(`/api/memories/${id}`,{method:'PATCH',body:JSON.stringify(data)})
+export const actMemory=(id,data)=>request(`/api/memories/${id}/actions`,{method:'POST',body:JSON.stringify(data)})
+export const getConversationSummaries=id=>request(`/api/conversations/${id}/summaries`)
+export const createConversationSummary=(id,data)=>request(`/api/conversations/${id}/summaries`,{method:'POST',body:JSON.stringify(data)},125000)
+export const getSummaryRequest=(id,key)=>request(`/api/conversations/${id}/summaries/requests/${encodeURIComponent(key)}`)

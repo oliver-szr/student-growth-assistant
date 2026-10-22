@@ -4,6 +4,20 @@ export const PRIORITY_LABELS = { low: '低', normal: '普通', high: '高' }
 export const RECURRENCE_LABELS = { weekly: '每周', once: '仅一次' }
 
 const CODE_MESSAGES = {
+  MEMORY_VERSION_CONFLICT:'记忆已在其他入口修改，本地文字保留，请核对最新版本。',
+  MEMORY_ALREADY_EXISTS:'已有相同记忆，请在档案中审核或编辑现有项。',
+  MEMORY_USE_PREFERENCE:'这属于排程约束，请使用正式偏好或时间规则草案；记忆不会改变日程。',
+  MEMORY_DELETED:'记忆已从活动检索中移除；历史聊天和既有备份可能仍有原文。',
+  MEMORY_NOT_FOUND:'记忆不存在或当前不可访问。',
+  MEMORY_EXPLICIT_INTENT_REQUIRED:'临时表达不会保存为长期记忆，请明确希望以后记住的内容。',
+  INVALID_MEMORY_ACTION:'记忆状态已经改变，请重新读取后操作。',
+  SUMMARY_EMPTY:'还没有可以整理的有效会话消息。',
+  SUMMARY_IN_PROGRESS:'小结仍在生成，请查询同一请求结果，避免重复调用。',
+  SUMMARY_INTERRUPTED:'小结运行已中断，请查询原请求后重试。',
+  SUMMARY_NOT_FOUND:'没有找到原小结请求，请核对后重新读取。',
+  SOURCE_UNAVAILABLE:'来源消息或会话已不可访问。',
+  LEGACY_RESTORE_SECRETARY_PRESENT:'当前已有记忆或会话小结，旧备份恢复已拒绝。请先导出v5并在独立空库恢复旧备份。',
+
   DRAFT_COORDINATION_REQUIRED:'请先打开草案并保存有效编辑，再让 AI 修改。',
   RECORD_VERSION_CONFLICT:'复盘记录已在其他入口修改，本地输入保留，请比较后重新读取。',
   RECORD_RANGE_IMMUTABLE:'已存记录的事实范围固定；不同范围请新建记录。',
@@ -39,6 +53,7 @@ const CODE_MESSAGES = {
   INVALID_TASKS: '所选任务信息无效，请检查任务时长、截止时间和状态。',
   INVALID_TIME_RULES: '时间规则无效，请检查课程是否重叠，以及日期和起止时间是否正确。',
   AI_NOT_CONFIGURED: '尚未配置 AI，仍可手动拆解任务、添加任务、课程和保护时间。',
+  AI_CONTEXT_TOO_LARGE: '所选资料超过安全请求上限，请缩小问题范围或到工作区核对；原消息和草案未改变。',
   AI_UNAVAILABLE: 'AI 暂时不可用，仍可手动操作。',
   AI_RESPONSE_INVALID: 'AI 返回的内容未通过校验，请补充描述后重试或手动添加。',
   STALE_DRAFT: '任务、目标或计划已变化，请取消旧草案并按最新资料重新生成。',

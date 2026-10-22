@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState,lazy,Suspense } from 'react'
 import { getConversation, getConversationMessages, getConversationRuns, getConversationRun, startConversationRun, stopConversationRun, retryConversationRun, createReviewDraft } from '../api.js'
 import { applyReply, mergeMessages, requestGate } from '../workbench.js'
 import { localizedError } from '../localization.js'
@@ -7,11 +7,13 @@ import ChatMessages from './ChatMessages.jsx'
 import { coordinateDrafts } from '../draftCoordination.js'
 import { DraftCard, draftEvent } from './WorkspaceDraft.jsx'
 import { reviewRange } from '../calendar.js'
+import ConversationSummary from './ConversationSummary.jsx'
+const MemoryCard=lazy(()=>import('./MemoryPanel.jsx').then(module=>({default:module.MemoryCard})))
 import SafeMessage from './SafeMessage.jsx'
 
 const statuses = { completed: '回复已完成', failed: '回复未完成', cancelled: '已停止生成', interrupted: '回复已中断，可重试' }
 
-export default function ConversationChat({ workspace, id, target, revision, onChanged, active = true, onNavigate, today, intent }) {
+export default function ConversationChat({ workspace, id, target, revision, onChanged, active = true, onNavigate, today, intent,onLocate }) {
   const [meta, setMeta] = useState(null), [messages, setMessages] = useState([]), [next, setNext] = useState(null)
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState('')
   const [run, setRun] = useState(null), [observing, setObserving] = useState(true), [reload, setReload] = useState(0)
@@ -48,12 +50,13 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
     setLoading(true); setError(''); setUnavailable(false)
     ;(async () => {
       const current = await getConversation(id)
+      let anchor=null;try{anchor=JSON.parse(sessionStorage.getItem(`sga-chat-scroll:${workspace}:${id}`))?.first_id}catch{/* optional scroll preference */}
       const [page, runs] = await Promise.all([
-        getConversationMessages(id, { after_id: target ? Math.max(0, target - 1) : 0, limit: 30 }),
+        getConversationMessages(id, target?{after_id:Math.max(0,target-1),limit:30}:Number.isSafeInteger(anchor)&&anchor>0?{after_id:anchor-1,limit:30}:{latest:true,limit:30}),
         current.scope === 'conversation' ? getConversationRuns(id) : Promise.resolve({ items: [] }),
       ])
       if (!alive.current || !gate.current.current(token)) return
-      setMeta(current); setMessages(page.items); setNext(page.next_after_id)
+      setMeta(current); setMessages(page.items);setWindowStart(0); setNext(page.next_after_id)
       const latest = runs.items[0]
       if (latest) receive(latest)
       else setRun(null)
@@ -83,8 +86,10 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
     return () => { cancelled = true; clearTimeout(timer) }
   }, [active, observing, loading, run?.id, run?.attempt, run?.status])
   useEffect(() => {
-    if (!loading && target && active) document.getElementById(`conversation-message-${id}-${target}`)?.scrollIntoView({ block: 'center' })
+    if (!loading && target && active){const item=document.getElementById(`conversation-message-${id}-${target}`);item?.scrollIntoView({ block: 'center' });item?.focus({preventScroll:true})}
   }, [loading, target, id, active])
+  const [windowStart,setWindowStart]=useState(0)
+  const visibleMessages=messages.slice(windowStart,windowStart+120)
   async function loadMore(before = false) {
     if (locked.current || loading || unavailable) return
     locked.current = true; setBusy(true); setError('')
@@ -92,7 +97,7 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
     try {
       const page = await getConversationMessages(id, before ? { before_id: messages[0]?.id, limit: 30 } : { after_id: next, limit: 30 })
       if (!alive.current || !gate.current.current(token)) return
-      setMessages(current => mergeMessages(current, page.items))
+      setMessages(current => mergeMessages(current, page.items));if(before)setWindowStart(0)
       if (!before) setNext(page.next_after_id)
     } catch (cause) { if (alive.current && gate.current.current(token)) setError(cause.message) }
     finally { locked.current = false; if (alive.current) setBusy(false) }
@@ -119,6 +124,7 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
       if (!alive.current) return
       setMessages(current => mergeMessages(current, [{ id: response.user_message_id, session_id: id, role: 'user', text: payload.text }]))
       receive(response); setObserving(true)
+      setWindowStart(current=>Math.max(current,messages.length-118))
       setInput(current => current.text === payload.text ? { text: '', requestId: null } : current)
       onChanged()
     })
@@ -136,15 +142,18 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
     {error && <p className="error-box" role="alert">{error}<button className="button subtle" onClick={() => setReload(value => value + 1)}>重新读取</button></p>}
     {meta?.archived_at && !unavailable && <p role="status">当前会话已归档，请在会话栏恢复后再发送。</p>}
     <EditRecovery recovery={recovery} label="聊天输入" /><EditRecovery recovery={reviewRecovery} label="复盘整理请求" />
-    <ChatMessages revision={`${messages.at(-1)?.id}:${messages.at(-1)?.text?.length}`}>
+    <ConversationSummary workspace={workspace} id={id} active={active} unavailable={unavailable||meta?.scope!=='conversation'} onLocate={onLocate}/>
+    <ChatMessages storageKey={workspace?`sga-chat-scroll:${workspace}:${id}`:null} revision={`${windowStart}:${messages[0]?.id}:${messages.length}:${messages.at(-1)?.id}:${messages.at(-1)?.text?.length}`}>
       {!unavailable && <>
         {messages.length > 0 && <button className="button subtle" disabled={busy || loading} onClick={() => loadMore(true)}>加载更早消息</button>}
-        {messages.map(message => <article tabIndex={-1} id={`conversation-message-${id}-${message.id}`} key={message.id} className={`workspace-message ${message.role} ${target === message.id ? 'search-match' : ''}`}>
+        {windowStart>0&&<button className="button subtle" onClick={()=>setWindowStart(Math.max(0,windowStart-100))}>显示前一段已加载消息</button>}
+        {visibleMessages.map(message => <article tabIndex={-1} id={`conversation-message-${id}-${message.id}`} key={message.id} className={`workspace-message ${message.role} ${target === message.id ? 'search-match' : ''}`}>
           <strong>{message.role === 'user' ? '我' : '成长助手'}</strong><SafeMessage text={message.text} />
           {message.content?.status && message.content.status !== 'completed' && <small>{statuses[message.content.status] || '正在生成…'}</small>}
-          {(message.content?.tools||[]).map((result,index)=>result.draft?<DraftCard key={index} reference={result.draft} active={active} onOpen={link=>onNavigate?.({...link,conversationId:id,messageId:message.id})}/>:<p className="helper" key={index}>{result.error?result.message:result.questions?.join('；')||'已读取正式记录，供本次回答参考。'}</p>)}
+          {(message.content?.tools||[]).map((result,index)=>result.memory?<Suspense key={index} fallback={<p role="status">正在读取记忆建议…</p>}><MemoryCard id={result.memory.id} active={active} onOpen={onNavigate}/></Suspense>:result.draft?<DraftCard key={index} reference={result.draft} active={active} onOpen={link=>onNavigate?.({...link,conversationId:id,messageId:message.id})}/>:<p className="helper" key={index}>{result.error?result.message:result.questions?.join('；')||'已读取正式记录，供本次回答参考。'}</p>)}
           <div className="button-row">{(Array.isArray(message.content?.links)?message.content.links:[]).filter(link=>link&&typeof link.label==='string'&&['schedule','review','profile'].includes(link.page)).map((link, i) => <button className="button subtle" key={i} onClick={() => onNavigate?.({...link,conversationId:id,messageId:message.id})}>{link.label}</button>)}</div>
         </article>)}
+        {windowStart+120<messages.length&&<button className="button subtle" onClick={()=>setWindowStart(Math.max(0,messages.length-120))}>显示最新已加载消息</button>}
         {next !== null && <button className="button subtle" disabled={busy || loading} onClick={() => loadMore()}>加载后续消息</button>}
         {!loading && !messages.length && <p className="growth-empty">还没有消息。</p>}
       </>}

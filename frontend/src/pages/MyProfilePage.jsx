@@ -5,6 +5,7 @@ import {
   getLocalBackups, getPreferenceRules, getTaskCategories, getTaskGrowthContext, getTasks, importGrowthData,
   saveTaskGrowthContext, updateGoal, updatePreferenceRule, updateTaskCategory,
 } from '../api.js'
+import MemoryPanel from '../components/MemoryPanel.jsx'
 import TimeRulesPage from './TimeRulesPage.jsx'
 import WorkspaceChat from '../components/WorkspaceChat.jsx'
 import { goalPayload } from '../goals.js'
@@ -26,8 +27,12 @@ function describeRule(rule) {
   return parameters.text || rule.description || '只供 AI 参考，不直接参与排程'
 }
 
-export default function MyProfilePage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null, recoveryWorkspace, onDataChanged, onBusinessChat, onReturnChat }) {
+export default function MyProfilePage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null, recoveryWorkspace, onDataChanged, onBusinessChat, onReturnChat, resource, onOpenConversation, primaryActive=active }) {
   const Content = embedded ? Fragment : WorkspaceChat
+  const [section,setSection]=useState('preferences'),[memoryVisited,setMemoryVisited]=useState(false)
+  const sectionRecovery=useEditRecovery({workspace:recoveryWorkspace,resource:'profile-section',base:recoveryWorkspace?'profile-sections-v1':undefined,
+    value:{section},dirty:true,automatic:true,restore:value=>{if(['goals','time','preferences','memories','data'].includes(value.section)){setSection(value.section);if(value.section==='memories')setMemoryVisited(true)}}})
+  useEffect(()=>{if(resource?.kind==='memory'){setSection('memories');setMemoryVisited(true)}},[resource?.requestKey])
   const [profile, setProfile] = useState(null)
   const [goals, setGoals] = useState([])
   const [tasks, setTasks] = useState([])
@@ -146,7 +151,7 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
     const file = event.target.files?.[0]
     if (!file) return
     event.target.value = ''
-    if (!window.confirm('导入会替换当前本地任务、目标、偏好、复盘和聊天记录。系统会先创建本地安全备份。确定继续吗？')) return
+    if (!window.confirm('导入会替换当前本地任务、目标、偏好、复盘、记忆及聊天小结。系统会先创建本地安全备份。确定继续吗？')) return
     setBusy(true); setError(''); setNotice('')
     try {
       await importGrowthData(JSON.parse(await file.text()))
@@ -170,11 +175,13 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
   return <><section className="growth-page profile-page" aria-labelledby="profile-heading">
     {onReturnChat&&<button className="button subtle" onClick={onReturnChat}>返回相关对话</button>}
     <div className="growth-page-heading"><div><h2 id="profile-heading">我的档案</h2></div>{onBusinessChat&&<button className="button secondary" onClick={onBusinessChat}>用 AI 整理目标或偏好</button>}</div>
+    <div className="profile-sections" role="tablist" aria-label="档案分区">{[['goals','目标'],['time','时间与课程'],['preferences','偏好'],['memories','记忆'],['data','数据管理']].map(([key,label])=><button className="button subtle" key={key} role="tab" aria-selected={section===key} onClick={()=>{setSection(key);if(key==='memories')setMemoryVisited(true)}}>{label}</button>)}</div>
+    {memoryVisited&&<div hidden={section!=='memories'} inert={section!=='memories'}><MemoryPanel workspace={recoveryWorkspace} active={primaryActive&&section==='memories'} resource={resource} onSource={onOpenConversation} onPreferences={()=>setSection('preferences')}/></div>}
     <Content {...(embedded ? {} : { scope: 'profile', onAdjustTask, onDraftConfirmed: load })}>
-    <EditRecovery recovery={recovery} label="目标与偏好编辑"/>
+    <EditRecovery recovery={recovery} label="目标与偏好编辑"/><EditRecovery recovery={sectionRecovery} label="档案分区"/>
     {error && <p className="error-box" role="alert">{error}</p>}{notice && <p className="success-box" role="status">{notice}</p>}
 
-    <section className="growth-section profile-wide">
+    <section hidden={section!=='preferences'} inert={section!=='preferences'} className="growth-section profile-wide">
       <div className="growth-section-heading"><div><h3>安排偏好</h3></div><button className="button secondary" type="button" onClick={startNewRule}>新增偏好</button></div>
       {!rules.length ? <p className="growth-empty">暂无偏好。</p> : <><div className="preference-rule-list">{rules.filter(item=>item.enabled).map(renderRule)}</div><details><summary>已停用</summary><div className="preference-rule-list">{rules.filter(item=>!item.enabled).map(renderRule)}</div></details></>}
       {showRuleEditor && <form id="preference-editor" className="growth-form preference-rule-editor" onSubmit={saveRule}>
@@ -190,7 +197,7 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
       </form>}
     </section>
 
-    <section className="growth-section profile-wide">
+    <section hidden={section!=='goals'} inert={section!=='goals'} className="growth-section profile-wide">
       <div className="growth-section-heading"><div><h3>长期目标</h3></div><button type="button" className="button secondary" onClick={()=>setShowGoalEditor(v=>!v)}>新增目标</button></div>
       <form hidden={!showGoalEditor} id="goal-editor" onSubmit={saveGoal} className="growth-form">
         <label>目标名称<input required maxLength="160" value={goalForm.title} onChange={(event) => setGoalForm({ ...goalForm, title: event.target.value })} placeholder="例如：每周阅读三篇论文" /></label>
@@ -203,7 +210,7 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
       {!goals.length ? <p className="growth-empty">暂无目标。</p> : <><div className="goal-list">{goals.filter(item=>item.status==='active').map(renderGoal)}</div><details><summary>其他目标</summary><div className="goal-list">{goals.filter(item=>item.status!=='active').map(renderGoal)}</div></details></>}
     </section>
 
-    <details className="growth-section profile-wide"><summary>类别与关联</summary>
+    <details hidden={section!=='goals'} inert={section!=='goals'} className="growth-section profile-wide"><summary>类别与关联</summary>
       <div className="growth-section-heading"><div><h3>任务类别与目标关联</h3></div></div>
       <form className="category-add-form" onSubmit={saveCategory}><label>{editingCategoryKey ? '修改类别名称' : '新增类别'}<input required maxLength="80" value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="例如：编程、英语、实验" /></label><button className="button secondary" disabled={busy}>{editingCategoryKey ? '保存名称' : '添加类别'}</button>{editingCategoryKey && <button className="button subtle" type="button" onClick={() => { setEditingCategoryKey(null); setCategoryName('') }}>取消</button>}</form>
       <div className="category-list">{categories.map((category) => <article className={`category-row ${category.active ? '' : 'rule-disabled'}`} key={category.key}><div><strong>{category.name}</strong><small>{category.is_default ? '默认类别' : '自定义类别'} · {category.active ? '可用于新任务' : '已停用'}</small></div><div className="button-row"><button className="button subtle" disabled={busy} onClick={() => { setEditingCategoryKey(category.key); setCategoryName(category.name) }}>改名</button><button className="button subtle" disabled={busy || (category.key === 'other' && category.active)} onClick={() => runAction(() => updateTaskCategory(category.key, { active: !category.active }), category.active ? '类别已停用；已有任务及历史仍保留。' : '类别已重新启用。')}>{category.active ? '停用' : '启用'}</button></div></article>)}</div>
@@ -213,8 +220,8 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
       })}</div>}
     </details>
 
-    <details className="growth-section course-settings profile-wide" onToggle={event=>{if(event.currentTarget.open)setCourseVisited(true)}}><summary><strong>课程与保护时间</strong></summary>{courseVisited&&<TimeRulesPage onDataChanged={onDataChanged} />}</details>
-    <details className="growth-section profile-wide"><summary>历史与备份</summary>
+    <details hidden={section!=='time'} inert={section!=='time'} className="growth-section course-settings profile-wide" onToggle={event=>{if(event.currentTarget.open)setCourseVisited(true)}}><summary><strong>课程与保护时间</strong></summary>{courseVisited&&<TimeRulesPage onDataChanged={onDataChanged} />}</details>
+    <details hidden={section!=='data'} inert={section!=='data'} className="growth-section profile-wide"><summary>历史与备份</summary>
       <div className="growth-section-heading"><div><h3>档案历史与数据管理</h3></div></div>
       {!profile?.history?.length ? <p className="growth-empty">尚无资料历史版本。</p> : <details className="insight-history"><summary>查看资料修改版本（{profile.history.length}）</summary><ol className="revision-list">{[...profile.history].reverse().map((revision) => <li key={revision.version}><strong>版本 v{revision.version}</strong><time>{new Date(revision.changed_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</time><p>{revision.direction || '长期方向通过目标管理'}</p></li>)}</ol></details>}
       <div className="button-row"><button className="button secondary" disabled={busy} onClick={exportData}>下载数据备份</button><label className="button subtle file-button">从 JSON 备份恢复<input type="file" accept="application/json,.json" disabled={busy} onChange={importDataFile} /></label></div>

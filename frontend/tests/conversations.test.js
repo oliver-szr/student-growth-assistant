@@ -6,6 +6,29 @@ import { startConversationRun, getConversationRun, stopConversationRun, retryCon
 import { getCalendarEvents, getReviewFacts, saveReviewRecord, editWorkspaceDraft, actWorkspaceDraft, createReviewDraft } from '../src/api.js'
 import { calendarEvent, reviewRange } from '../src/calendar.js'
 import { registerEditor, coordinateDrafts, hasUnsavedDraft } from '../src/draftCoordination.js'
+import { getMemories,getMemory,createMemory,editMemory,actMemory,getConversationSummaries,createConversationSummary,getSummaryRequest } from '../src/api.js'
+
+test('secretary uses real memory versions, explicit summary requests and stable retry identifiers',async context=>{
+  const calls=[];context.mock.method(globalThis,'fetch',async(url,options)=>{calls.push({url:new URL(url),...options});return new Response('{}')})
+  await getMemories({status:'suggested',q:'100% 学习',offset:25});await getMemory(3)
+  await createMemory({client_request_id:'once',text:'先看例子',scope:'study'})
+  await editMemory(3,{expected_version:2,text:'修改参考',scope:'study'})
+  await actMemory(3,{expected_version:3,action:'disable'})
+  await getConversationSummaries(7);await createConversationSummary(7,{client_request_id:'summary-once'})
+  await getSummaryRequest(7,'summary-once');await createConversationSummary(7,{client_request_id:'summary-once',retry_attempt:1})
+  await getConversationMessages(7,{latest:true,limit:30})
+  assert.equal(calls[0].url.searchParams.get('q'),'100% 学习');assert.equal(calls[0].url.searchParams.get('offset'),'25')
+  assert.equal(calls[3].method,'PATCH');assert.equal(JSON.parse(calls[4].body).expected_version,3)
+  assert.equal(calls[5].method,undefined);assert.equal(calls[7].url.pathname,'/api/conversations/7/summaries/requests/summary-once')
+  assert.equal(JSON.parse(calls[8].body).client_request_id,'summary-once');assert.equal(JSON.parse(calls[8].body).retry_attempt,1)
+  assert.equal(calls[9].url.searchParams.get('latest'),'true')
+  assert.ok(calls.every(c=>!c.url.pathname.includes('/assistant/')))
+})
+
+for(const [code,message] of [['MEMORY_VERSION_CONFLICT','核对'],['SOURCE_UNAVAILABLE','来源'],['SUMMARY_IN_PROGRESS','小结'],['AI_CONTEXT_TOO_LARGE','上限']])test(`secretary ${code} preserves actionable error code`,async context=>{
+  context.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({detail:{code}}),{status:409}))
+  await assert.rejects(()=>actMemory(3,{expected_version:1,action:'confirm'}),e=>e.code===code&&e.message.includes(message))
+})
 
 test('stage2 saves local valid draft edits before providing exact current server references',async()=>{
   let dirty=true,version='old';const order=[]

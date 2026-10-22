@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, Suspense } from 'react'
 import { defaultSplitRatio, renderedSplitRatio, splitBounds, toolPlacement, workbenchPanel, workbenchVisibility, workspacePages } from '../workbench.js'
 
 const labels = { home: '首页', schedule: '日程', review: '复盘', profile: '档案' }
@@ -19,6 +19,18 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
   const resizable = !narrow && panel === 'normal'
   const controls = 'v2-auxiliary-shared'
 
+  useEffect(()=>{
+    const viewport=window.visualViewport
+    const update=()=>{
+      const height=viewport?.height||window.innerHeight
+      root.current?.style.setProperty('--sga-viewport-height',height+'px')
+      const editing=document.activeElement?.matches('textarea,input,select')
+      root.current?.toggleAttribute('data-keyboard',Boolean(editing&&window.innerHeight-height>120))
+      if(editing&&height<window.innerHeight-120)requestAnimationFrame(()=>document.activeElement?.scrollIntoView({block:'nearest'}))
+    }
+    update();viewport?.addEventListener('resize',update);window.addEventListener('resize',update)
+    return()=>{viewport?.removeEventListener('resize',update);window.removeEventListener('resize',update)}
+  },[])
   useEffect(() => {
     const media = window.matchMedia('(max-width: 1023px)')
     const change = () => setNarrow(media.matches)
@@ -126,7 +138,7 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
         return <section key={page} id={'v2-page-' + page} className="v2-tool-page" data-placement={placement} role="main" tabIndex={-1} aria-labelledby={'v2-primary-' + page} hidden={!shown} inert={!shown}>
           <header className="v2-primary-page-heading"><h1 id={'v2-primary-' + page}>{labels[page]}</h1><span className="workspace-clock">{clock}</span></header>
           {draftPage===page&&draftPanel}
-          {page !== 'schedule' && isValidElement(content) ? cloneElement(content, { auxiliaryTarget: target }) : content}
+          {page !== 'schedule' && isValidElement(content) ? <Suspense fallback={<p role="status">正在加载{labels[page]}…</p>}>{cloneElement(content, { auxiliaryTarget: target })}</Suspense> : content}
         </section>
       })}
       <div id="v2-auxiliary-shared" className="v2-tool-page" data-placement="auxiliary" role="tabpanel" aria-labelledby={'v2-tab-' + state.auxiliaryPage} hidden={!visible.auxiliary} inert={!visible.auxiliary}>

@@ -1,9 +1,9 @@
-import { useEffect, useReducer, useState } from 'react'
+import { useEffect, useReducer, useState,lazy,Suspense } from 'react'
 import { getAssistantSettings } from './api.js'
 import TasksPage from './pages/TasksPage.jsx'
 import AssistantPage from './pages/AssistantPage.jsx'
-import ReviewPage from './pages/GoalsGrowthPage.jsx'
-import MyProfilePage from './pages/MyProfilePage.jsx'
+const ReviewPage=lazy(()=>import('./pages/GoalsGrowthPage.jsx'))
+const MyProfilePage=lazy(()=>import('./pages/MyProfilePage.jsx'))
 import WorkspaceShell from './components/WorkspaceShell.jsx'
 import ConversationManager from './components/ConversationManager.jsx'
 import WorkspaceDraft from './components/WorkspaceDraft.jsx'
@@ -85,7 +85,7 @@ function WorkspaceApp() {
     renderWorkbench={({ chat, children, conversation, auxiliarySchedule }) => <WorkspaceShell state={state} dispatch={dispatch} chatNote={planning?'规划操作沿用原草案与确认流程。':'自由交流与业务入口共用此工作台。'} conversationContent={<><EditRecovery recovery={layoutRecovery} label="界面状态" /><EditRecovery recovery={draftRecovery} label="草案选择" />{sidebar}</>} chat={<><div className="v2-chat-surface" hidden={!planning} inert={!planning}>{chat}</div><div className="v2-chat-surface" hidden={planning} inert={planning}>{conversationChat}</div></>} conversation={conversation} auxiliarySchedule={auxiliarySchedule}
       clock={clock} draftPage={draftResource?.page} draftPanel={draftResource&&<WorkspaceDraft key={`${draftResource.kind}:${draftResource.id}`} workspace={settings.workspace_id} kind={draftResource.kind} id={draftResource.id} onSaved={()=>dataChanged()} onClose={()=>setDraftResource(null)}/>}
       review={state.visited.includes('review') && <ReviewPage embedded primaryActive={state.navigation==='review'} workspace={settings.workspace_id} today={settings.now.slice(0,10)} onDiscuss={discussReview} resource={resource} onOpenTask={id=>openResource({page:'schedule',kind:'task',id})} onReturnChat={resource?.conversationId?()=>openConversation(resource.conversationId,resource.messageId):undefined} onDataChanged={()=>dataChanged('review')} onBusinessChat={()=>openBusiness('review')} active={toolActive('review')} refreshVersion={versions.review} onAdjustTask={requestAdjustment} />}
-      profile={state.visited.includes('profile') && <MyProfilePage embedded onReturnChat={resource?.conversationId?()=>openConversation(resource.conversationId,resource.messageId):undefined} onDataChanged={()=>dataChanged('profile')} onBusinessChat={()=>openBusiness('profile')} recoveryWorkspace={settings?.workspace_id} active={toolActive('profile')} refreshVersion={versions.profile} onAdjustTask={requestAdjustment} />}>
+      profile={state.visited.includes('profile') && <MyProfilePage embedded resource={resource} onOpenConversation={openConversation} primaryActive={state.navigation==='profile'} onReturnChat={resource?.conversationId?()=>openConversation(resource.conversationId,resource.messageId):undefined} onDataChanged={()=>dataChanged('profile')} onBusinessChat={()=>openBusiness('profile')} recoveryWorkspace={settings?.workspace_id} active={toolActive('profile')} refreshVersion={versions.profile} onAdjustTask={requestAdjustment} />}>
       {resource?.conversationId&&<button className="button subtle" onClick={()=>openConversation(resource.conversationId,resource.messageId)}>返回相关对话</button>}{children}
     </WorkspaceShell>} />}</ConversationManager>
 }
@@ -119,8 +119,8 @@ function LegacyApp() {
         {tab === 'planning' && <>
           <AssistantPage active refreshVersion={planningVersion} onPlanConfirmed={()=>setTaskVersion(v=>v+1)} requestedAction={adjustment} onActionHandled={() => setAdjustment(null)} onManagePreferences={()=>setTab('profile')} taskTools={<TasksPage refreshVersion={taskVersion} onDataChanged={()=>setPlanningVersion(v=>v+1)} onAdjustTask={requestAdjustment} />} />
         </>}
-        {tab === 'review' && <ReviewPage onAdjustTask={requestAdjustment} />}
-        {tab === 'profile' && <MyProfilePage onAdjustTask={requestAdjustment} />}
+        {tab === 'review' && <Suspense fallback={<p role="status">加载复盘…</p>}><ReviewPage onAdjustTask={requestAdjustment} /></Suspense>}
+        {tab === 'profile' && <Suspense fallback={<p role="status">加载档案…</p>}><MyProfilePage onAdjustTask={requestAdjustment} /></Suspense>}
       </main>
     </div>
   )
