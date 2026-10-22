@@ -6,7 +6,32 @@ def test_empty_upgrade_and_repeat(tmp_path):
     engine=create_sqlite_engine(f'sqlite:///{tmp_path / "empty.db"}')
     upgrade_database(engine);upgrade_database(engine)
     assert set(Base.metadata.tables)<=set(inspect(engine).get_table_names())
-    with engine.connect() as c:assert c.execute(text('SELECT version_num FROM alembic_version')).scalar()=='0003_conversations'
+    with engine.connect() as c:assert c.execute(text('SELECT version_num FROM alembic_version')).scalar()=='0004_review_records'
+    engine.dispose()
+
+
+def test_stage2_upgrade_failure_rolls_back_new_table_index_and_version(tmp_path,monkeypatch):
+    from alembic import command
+    from alembic.config import Config
+    from pathlib import Path
+    import pytest
+    monkeypatch.setenv('SGA_BACKUP_DIR',str(tmp_path/'backups'))
+    engine=create_sqlite_engine(f'sqlite:///{tmp_path / "stage2-old.db"}')
+    config=Config();config.set_main_option('script_location',str(Path(__file__).parents[1]/'alembic'))
+    with engine.connect() as connection:
+        config.attributes['connection']=connection;command.upgrade(config,'0003_conversations')
+    def fail(connection,cursor,statement,parameters,context,executemany):
+        if 'CREATE UNIQUE INDEX review_record_once' in statement:raise RuntimeError('stage2 injected index failure')
+    event.listen(engine,'before_cursor_execute',fail)
+    try:
+        with pytest.raises(RuntimeError,match='stage2 injected'):upgrade_database(engine)
+    finally:event.remove(engine,'before_cursor_execute',fail)
+    assert 'review_records' not in inspect(engine).get_table_names()
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql('SELECT version_num FROM alembic_version').scalar()=='0003_conversations'
+    upgrade_database(engine);upgrade_database(engine)
+    assert inspect(engine).get_indexes('review_records')[0]['unique']
+    with engine.connect() as connection:assert connection.exec_driver_sql('PRAGMA foreign_key_check').all()==[]
     engine.dispose()
 
 def test_recognized_legacy_columns_retained(tmp_path,monkeypatch):
@@ -112,6 +137,6 @@ def test_migration_failure_rolls_back_ddl_data_and_version_then_can_retry(tmp_pa
             assert connection.exec_driver_sql('PRAGMA foreign_key_check').all() == []
         upgrade_database(engine)
         with engine.connect() as connection:
-            assert connection.exec_driver_sql('SELECT version_num FROM alembic_version').scalar() == '0003_conversations'
+            assert connection.exec_driver_sql('SELECT version_num FROM alembic_version').scalar() == '0004_review_records'
     finally:
         engine.dispose()

@@ -124,7 +124,7 @@ def test_v3_export_restore_preserves_partial_reply_and_interrupts_running(client
     sid=conversation(client);initial=start(client,sid)
     wait(client,sid,initial['id'])
     snapshot=client.get('/api/data/export').json()
-    assert snapshot['format_version']==3
+    assert snapshot['format_version']==4
     r=client.post('/api/data/import',json=snapshot);assert r.status_code==200,r.text
     restored=client.get(f"/api/conversations/{sid}/runs/{initial['id']}").json()
     assert restored['delta'].startswith('你好') and restored['status']=='completed'

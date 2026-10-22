@@ -9,6 +9,7 @@ from ..database import get_db
 from ..models import AssistantSession, AssistantMessage, AssistantRun, utc_now
 from ..assistant_schemas import ConversationCreate, ConversationPatch, ConversationMessageCreate, ConversationRunAttempt
 from ..services import conversation_runs
+from ..workspace_schemas import ConversationToolRun
 from ..services.planning_state import planning_transaction
 from ..services.conversations import error, local_owner, require_conversation, require_idle, summary, message_data, list_conversations
 
@@ -138,7 +139,7 @@ def runs(id: ConversationId, limit: int = Query(default=20, ge=1, le=50), db: Se
 
 
 @router.post('/{id}/runs', status_code=202)
-async def start(id: ConversationId, payload: ConversationMessageCreate, db: Session = Depends(get_db)):
+async def start(id: ConversationId, payload: ConversationToolRun, db: Session = Depends(get_db)):
     result, created = conversation_runs.create_run(db, id, payload)
     if created:
         conversation_runs.launch(db, result['id'])

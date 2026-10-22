@@ -37,6 +37,19 @@ def require_idle(db, session_id):
         AssistantProposal.status.notin_(['applied', 'discarded', 'superseded'])).limit(1))
     draft = db.scalar(select(GrowthChangeDraft.id).where(GrowthChangeDraft.session_id == session_id,
         GrowthChangeDraft.status.notin_(['applied', 'discarded', 'superseded'])).limit(1))
+    # Stage 2 tools keep legacy business sessions. Their unresolved drafts still
+    # belong to this conversation's workflow, and must not be silently hidden.
+    for payload in db.scalars(select(AssistantRun.payload).where(AssistantRun.session_id==session_id)):
+        for result in payload.get('tool_results',[]):
+            ref=result.get('draft') or {}
+            if ref.get('kind') and ref.get('id'):
+                model=AssistantProposal if ref['kind']=='planning' else GrowthChangeDraft
+                row=db.get(model,ref['id'])
+                if row is not None and model is AssistantProposal and row.status=='superseded':
+                    session=db.get(AssistantSession,row.session_id)
+                    row=db.get(AssistantProposal,session.latest_proposal_id) if session.latest_proposal_id else row
+                if row is not None and row.status not in ('applied','discarded','superseded'):
+                    draft=row.id
     if proposal is not None or draft is not None:
         error('CONVERSATION_HAS_DRAFTS', '会话仍有未处理草案，请显式处理后重试；本操作不会自动采用或放弃草案。')
 

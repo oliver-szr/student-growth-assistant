@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from . import models  # Register all tables with the existing Base.
 from .models import AssistantRun
 from .database import Base, engine
-from .routers import dashboard, constraints, data, execution, goals, growth, plan_explanations, plans, tasks, task_breakdown, time_rules, assistant, taxonomy, conversations
+from .routers import dashboard, constraints, data, execution, goals, growth, plan_explanations, plans, tasks, task_breakdown, time_rules, assistant, taxonomy, conversations, workspace
 from .services.growth_migrations import apply_growth_migrations
 from .services.growth_data import create_daily_backup
 from .services.schema_migrations import upgrade_database
@@ -64,6 +64,7 @@ app.include_router(constraints.router)
 app.include_router(plan_explanations.router)
 app.include_router(assistant.router)
 app.include_router(conversations.router)
+app.include_router(workspace.router)
 app.include_router(taxonomy.categories_router)
 app.include_router(taxonomy.preferences_router)
 app.include_router(taxonomy.settings_router)

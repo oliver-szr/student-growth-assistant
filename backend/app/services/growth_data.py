@@ -16,11 +16,11 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from ..database import UTCDateTime
-from ..models import AssistantProposal, AssistantRun, AssistantSession, AssistantMessage, Base, GrowthChangeDraft, PlanningState, utc_now
+from ..models import AssistantProposal, AssistantRun, AssistantSession, AssistantMessage, Base, GrowthChangeDraft, PlanningState, ReviewRecord, utc_now
 from .planning_state import begin_planning_transaction, get_or_create_planning_state
 
 
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
 MAX_SNAPSHOT_BYTES = 25 * 1024 * 1024
 RETAIN_BACKUPS = 5
 
@@ -192,7 +192,7 @@ def _convert_legacy_v2(snapshot):
         if not isinstance(tables[name], list) or any(not isinstance(row, dict) or set(row) != expected for row in tables[name]):
             raise HTTPException(422, detail=f'旧v2备份数据表 {name} 的字段不匹配')
     converted = deepcopy(snapshot)
-    converted['format_version'] = FORMAT_VERSION
+    converted['format_version'] = 3
     rows = converted['tables']
     identities = rows['workspace_metadata']
     if not identities:
@@ -213,6 +213,25 @@ def _convert_legacy_v2(snapshot):
     return converted
 
 
+def _convert_legacy_v3(snapshot):
+    """Freeze v3 columns explicitly; never infer old contracts from new models."""
+    from copy import deepcopy
+    import importlib.util
+    spec=importlib.util.spec_from_file_location('sga_backup_v3_base',Path(__file__).resolve().parents[2]/'alembic'/'baseline_models.py')
+    baseline=importlib.util.module_from_spec(spec);spec.loader.exec_module(baseline)
+    additions={'tasks':{'parent_task_id','task_kind','sort_order'},'workspace_metadata':{'owner_id'},
+        'assistant_sessions':{'owner_id','title','title_source','client_request_id','version','updated_at','last_activity_at','pinned_at','archived_at','deleted_at'},
+        'assistant_messages':{'owner_id','created_at'}}
+    if set(snapshot['tables'])!=set(baseline.Base.metadata.tables):
+        raise HTTPException(422,detail='旧v3备份的数据表与冻结版本不匹配')
+    for name,table in baseline.Base.metadata.tables.items():
+        expected=set(table.columns.keys())|additions.get(name,set())
+        if not isinstance(snapshot['tables'][name],list) or any(not isinstance(row,dict) or set(row)!=expected for row in snapshot['tables'][name]):
+            raise HTTPException(422,detail=f'旧v3备份数据表{name}的字段不匹配')
+    result=deepcopy(snapshot);result['format_version']=4;result['tables']['review_records']=[]
+    return result
+
+
 def _prepare_snapshot(snapshot: dict) -> tuple[list[tuple[Table, list[dict]]], int]:
     if not isinstance(snapshot, dict) or set(snapshot) != {"format_version", "exported_at", "timezone", "revision", "tables"}:
         raise HTTPException(status_code=422, detail="备份文件结构不正确")
@@ -222,7 +241,7 @@ def _prepare_snapshot(snapshot: dict) -> tuple[list[tuple[Table, list[dict]]], i
         raise HTTPException(status_code=422, detail="备份文件包含无法读取的数据")
     if size > MAX_SNAPSHOT_BYTES:
         raise HTTPException(status_code=413, detail="备份文件超过 25 MB 限制")
-    if type(snapshot["format_version"]) is not int or snapshot["format_version"] not in (1, 2, FORMAT_VERSION):
+    if type(snapshot["format_version"]) is not int or snapshot["format_version"] not in (1, 2, 3, FORMAT_VERSION):
         raise HTTPException(status_code=422, detail="不支持此备份版本")
     if snapshot["timezone"] != "UTC" or not isinstance(snapshot["tables"], dict):
         raise HTTPException(status_code=422, detail="备份时区或数据表结构无效")
@@ -238,6 +257,8 @@ def _prepare_snapshot(snapshot: dict) -> tuple[list[tuple[Table, list[dict]]], i
         snapshot = _convert_legacy_v1(snapshot)
     if snapshot['format_version'] == 2:
         snapshot = _convert_legacy_v2(snapshot)
+    if snapshot['format_version'] == 3:
+        snapshot = _convert_legacy_v3(snapshot)
 
     metadata = Base.metadata
     expected = set(metadata.tables)
@@ -279,6 +300,14 @@ def _prepare_snapshot(snapshot: dict) -> tuple[list[tuple[Table, list[dict]]], i
     from .task_hierarchy import validate_backup_hierarchy
     validate_backup_hierarchy({table.name: rows for table, rows in prepared})
     _validate_conversations({table.name: rows for table, rows in prepared})
+    from ..workspace_schemas import ReviewContent
+    tables={table.name:rows for table,rows in prepared}
+    owners={r['owner_id'] for r in tables['workspace_metadata']}
+    for record in tables['review_records']:
+        try:
+            ReviewContent.model_validate({key:record[key] for key in ReviewContent.model_fields})
+            if record['owner_id'] not in owners or record['version']<1 or not isinstance(record['facts'],dict) or not isinstance(record['history'],list) or not isinstance(record['sources'],dict):raise ValueError()
+        except Exception:raise HTTPException(422,detail='复盘记录或来源格式无效') from None
     return prepared, snapshot["revision"]
 
 
@@ -326,7 +355,7 @@ def _protect_legacy_restore(db):
     message = db.scalar(select(AssistantMessage.id).where(AssistantMessage.created_at.is_not(None)).limit(1))
     if session is not None or message is not None:
         raise HTTPException(409, detail={'code': 'LEGACY_RESTORE_CONVERSATIONS_PRESENT',
-            'message': '当前库已有升级后的会话内容，旧v1/v2备份无法表达这些数据，恢复已拒绝。请先导出v3，并在独立空库恢复旧备份。'})
+            'message': '当前库已有升级后的会话内容，旧v1/v2备份无法表达这些数据，恢复已拒绝。请先导出v4，并在独立空库恢复旧备份。'})
 
 
 def restore_snapshot(db: Session, snapshot: dict) -> int:
@@ -335,6 +364,11 @@ def restore_snapshot(db: Session, snapshot: dict) -> int:
     try:
         if snapshot['format_version'] in (1, 2):
             _protect_legacy_restore(db)
+        if snapshot['format_version']<4:
+            if db.scalar(select(ReviewRecord.id).limit(1)) or db.scalar(select(GrowthChangeDraft.id).where(GrowthChangeDraft.scope=='review_record').limit(1)):
+                raise HTTPException(409,detail={'code':'LEGACY_RESTORE_REVIEWS_PRESENT','message':'当前已有新式复盘记录或草案，旧备份无法表达，恢复已拒绝。请先导出v4并在独立空库恢复旧备份。'})
+        if snapshot['format_version']<4 and db.scalar(select(AssistantRun.id).where(AssistantRun.payload['tool_plan'].is_not(None),AssistantRun.payload['tool_plan'].as_string()!='null').limit(1)):
+            raise HTTPException(409,detail={'code':'LEGACY_RESTORE_TOOLS_PRESENT','message':'当前已有阶段2工具运行资料；旧备份不能表达，恢复已拒绝。请先导出v4并在独立空库恢复旧备份。'})
         db.execute(text("PRAGMA defer_foreign_keys=ON"))
         state = get_or_create_planning_state(db)
         next_revision = max(state.revision, imported_revision) + 1

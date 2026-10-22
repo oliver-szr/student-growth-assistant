@@ -114,12 +114,17 @@ def _ready(db, draft, version):
         hierarchy_error("DRAFT_VERSION_CONFLICT", "草案已在其他页面修改，请重新加载。", 409)
 
 
-def edit_draft(db, draft_id, request):
+def edit_draft(db, draft_id, request, expected_token=None):
     with planning_transaction(db):
         draft = require_draft(db, draft_id)
+        from .workspace_drafts import check
+        content=request.content.model_dump(mode='json')
+        if expected_token and draft.payload.get('edit_receipt')=={'from':expected_token,'content':content}:
+            return _response(db,draft)
+        check(db,draft,expected_token)
         _ready(db, draft, request.version)
         _dates(request.content, assistant_clock.assistant_now())
-        draft.payload = {**draft.payload, "content": request.content.model_dump(mode="json"), "version": request.version+1}
+        draft.payload = {**draft.payload, "content": request.content.model_dump(mode="json"), "version": request.version+1, "edit_receipt":{"from":expected_token,"content":content}}
         return _response(db, draft)
 
 

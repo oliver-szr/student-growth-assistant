@@ -465,6 +465,28 @@ class WorkspaceMetadata(Base):
     owner_id: Mapped[str] = mapped_column(String(36), default=lambda: str(uuid4()), server_default='local', nullable=False)
 
 
+class ReviewRecord(Base):
+    """Explicitly saved review, separate from legacy generated weekly text."""
+    __tablename__ = 'review_records'
+    __table_args__ = (Index('review_record_once', 'owner_id', 'client_request_id', unique=True),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_id: Mapped[str] = mapped_column(String(36), nullable=False, default=workspace_owner)
+    client_request_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    period: Mapped[str] = mapped_column(String(10), nullable=False)
+    start_date: Mapped[DateValue] = mapped_column(Date, nullable=False)
+    end_date: Mapped[DateValue] = mapped_column(Date, nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    conclusion: Mapped[str] = mapped_column(Text, nullable=False)
+    next_steps: Mapped[str] = mapped_column(Text, nullable=False, default='')
+    facts: Mapped[dict] = mapped_column(JSON, nullable=False)
+    sources: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    history: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, default=utc_now)
+
+
 @event.listens_for(AssistantMessage, 'after_insert')
 def touch_conversation(mapper, connection, message):
     if message.created_at is not None:

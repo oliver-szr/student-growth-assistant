@@ -607,13 +607,15 @@ async def message(id:int,payload:MessageRequest,db:Session=Depends(get_db)):
 
 
 @router.post('/proposals/{id}/preview')
-def preview(id:int,payload:PreviewRequest,db:Session=Depends(get_db)):
+def preview(id:int,payload:PreviewRequest,db:Session=Depends(get_db),expected_version:str|None=None):
     try:
         begin_planning_transaction(db)
         old=require(db,AssistantProposal,id); s=require(db,AssistantSession,old.session_id); require_current(s)
+        from ..services.workspace_drafts import check
         if payload.client_message_id:
             duplicate=db.scalar(select(AssistantMessage).where(AssistantMessage.session_id==s.id,AssistantMessage.client_message_id==payload.client_message_id))
             if duplicate: return response(require(db,AssistantProposal,duplicate.proposal_id))
+        check(db,old,expected_version)
         if s.latest_proposal_id!=old.id or old.source_revision!=get_or_create_planning_state(db).revision:
             fail('STALE_CANDIDATE','资料或候选已变化，请重新生成；不会覆盖最新任务修改。')
         if old.status in ('applied','discarded','superseded'): fail('PROPOSAL_INACTIVE','请修改最新候选。')
@@ -662,11 +664,13 @@ def discard(id:int,db:Session=Depends(get_db)):
 
 
 @router.post('/proposals/{id}/confirm')
-def confirm(id:int,db:Session=Depends(get_db)):
+def confirm(id:int,db:Session=Depends(get_db),expected_version:str|None=None):
     try:
         begin_planning_transaction(db)
         p=require(db,AssistantProposal,id)
         if p.status=='applied': return response(p)
+        from ..services.workspace_drafts import check
+        check(db,p,expected_version)
         if p.status!='ready': fail('PROPOSAL_NOT_READY','当前方案不可采用。')
         s=require(db,AssistantSession,p.session_id); require_current(s)
         if s.latest_proposal_id!=p.id or p.source_revision!=get_or_create_planning_state(db).revision:
@@ -753,12 +757,14 @@ def confirm(id:int,db:Session=Depends(get_db)):
 
 
 @router.post('/drafts/{id}/confirm')
-def confirm_growth_draft(id:int,db:Session=Depends(get_db)):
+def confirm_growth_draft(id:int,db:Session=Depends(get_db),expected_version:str|None=None):
     try:
         begin_planning_transaction(db)
         draft=require(db,GrowthChangeDraft,id)
         if draft.scope not in ('profile','review'): fail('INVALID_DRAFT','请使用任务拆解专用确认入口。',422)
         if draft.status=='applied': return {'id':draft.id,'status':'applied'}
+        from ..services.workspace_drafts import check
+        check(db,draft,expected_version)
         if draft.status!='ready' or draft.source_revision!=_revision(db): fail('STALE_DRAFT','资料已变化，请重新生成草案。')
         session=require(db,AssistantSession,draft.session_id)
         if session.scope!=draft.scope: fail('INVALID_DRAFT','草案类型不正确。',422)
@@ -774,7 +780,7 @@ def confirm_growth_draft(id:int,db:Session=Depends(get_db)):
                 elif operation['op']=='update_category':
                     fields=operation.get('fields') or {}
                     row=update_category(db,operation['key'],**fields)
-        for operation in operations:
+        for operation_index, operation in enumerate(operations):
             op=operation.get('op')
             if draft.scope=='profile' and op in ('create_category','update_category'):
                 continue
@@ -824,6 +830,9 @@ def confirm_growth_draft(id:int,db:Session=Depends(get_db)):
                 task=require(db,Task,int(operation['task_id']))
                 values={k:v for k,v in operation.items() if k in {'outcome','actual_minutes','remaining_minutes','reason'}}
                 values['client_action_id']=f'chat-draft-{draft.id}'
+                if draft.payload.get('tool_key'):
+                    values={k:v for k,v in operation.items() if k in TaskFeedbackCreate.model_fields and k!='client_action_id'}
+                    values['client_action_id']=f'chat-draft-{draft.id}-{operation_index}'
                 if operation.get('corrects_feedback_id') is not None: values['corrects_feedback_id']=operation['corrects_feedback_id']
                 feedback=TaskFeedbackCreate(**values)
                 from ..services.growth_tracking import record_feedback
