@@ -93,6 +93,7 @@ npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ## 测试与审计
 
 ```powershell
+New-Item -ItemType Directory -Force scripts/.local | Out-Null
 cd backend
 conda run -n app_env python -m pytest -p no:cacheprovider --basetemp=../scripts/.local/pytest
 cd ..
