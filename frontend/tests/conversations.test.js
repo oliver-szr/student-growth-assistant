@@ -32,6 +32,21 @@ test('explicit completion deadline uses the last segment of the target rather th
 })
 import { getCalendarEvents, getReviewFacts, saveReviewRecord, editWorkspaceDraft, actWorkspaceDraft, createReviewDraft } from '../src/api.js'
 import { calendarEvent, reviewRange } from '../src/calendar.js'
+import { dayPreviewData } from '../src/calendar.js'
+
+test('single day preview projects workspace facts without a conversation or candidate',()=>{
+  const settings={now:'2026-10-14T18:00:00+08:00',week_start:'2026-10-12'}
+  const snapshot={events:[
+    {id:'plan:1',kind:'formal_task',task_id:9,start:'2026-10-14T19:00:00+08:00',end:'2026-10-14T20:30:00+08:00'},
+    {id:'rule:2',kind:'course',start:'2026-10-14T14:00:00+08:00',end:'2026-10-14T15:00:00+08:00'},
+    {id:'deadline:9',kind:'deadline',allDay:true,start:'2026-10-14'},
+    {id:'protected:3',kind:'protected',start:'2026-10-14T12:00:00+08:00',end:'2026-10-14T13:00:00+08:00'}]}
+  const before=JSON.stringify(snapshot),data=dayPreviewData(snapshot,settings)
+  assert.equal(data.confirmed_items.length,1);assert.equal(data.confirmed_items[0].ref,'task:9')
+  assert.equal(data.courses.length,1);assert.equal(data.courses[0].ref,'rule:2')
+  assert.equal(data.proposal,undefined);assert.equal(data.id,undefined)
+  assert.equal(JSON.stringify(snapshot),before)
+})
 import { registerEditor, coordinateDrafts, hasUnsavedDraft } from '../src/draftCoordination.js'
 import { getMemories,getMemory,createMemory,editMemory,actMemory,getConversationSummaries,createConversationSummary,getSummaryRequest } from '../src/api.js'
 import React from 'react'

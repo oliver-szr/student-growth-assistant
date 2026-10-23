@@ -1,4 +1,10 @@
 import { shanghaiTime } from './assistant.js'
+export function dayPreviewData(snapshot,settings){
+  const timed=(snapshot.events||[]).filter(event=>!event.allDay&&['formal_task','course','course_snapshot'].includes(event.kind)).map(event=>({
+    ...event,ref:event.task_id?`task:${event.task_id}`:event.id,kind:event.kind==='formal_task'?'task':'course',start_at:event.start,end_at:event.end,
+  }))
+  return {settings,week_start:settings.week_start,courses:timed.filter(event=>event.kind==='course'),confirmed_items:timed.filter(event=>event.kind==='task'),tasks:[]}
+}
 export const shiftDate=(date,days)=>new Date(Date.parse(date+'T00:00:00Z')+days*86400000).toISOString().slice(0,10)
 export function reviewRange(date,period){
   if(period==='day')return [date,shiftDate(date,1)]

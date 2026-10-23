@@ -20,7 +20,7 @@ const stamp=value=>shanghaiTime(value).replace('T',' ')
 const short=value=>shanghaiTime(value).slice(11)
 const CALENDAR_PIXELS_PER_MINUTE=.7
 
-function Calendar({data,offset=0,selectedDate,formalOnly=false}){
+export function Calendar({data,offset=0,selectedDate,formalOnly=false}){
   const detailId=useId()
   const [selected,setSelected]=useState(null)
   const dialog=useRef(null)
@@ -36,7 +36,7 @@ function Calendar({data,offset=0,selectedDate,formalOnly=false}){
   return <><div className="week-scroll"><div className={`week-grid ${selectedDate?'day-grid':''}`}>
     <div className="week-axis"><div className="day-heading">时间</div><div className="hours">{Array.from({length:15},(_,i)=><span key={i} style={{top:i*42}}>{String(i+8).padStart(2,'0')}:00</span>)}</div></div>
     {dates.map((date,i)=><div className="day-column" key={date}><div className={`day-heading ${data.settings.now.startsWith(date)?'today':''}`}><strong>{weekDays[(new Date(`${date}T12:00:00+08:00`).getUTCDay()+6)%7]}</strong><span>{date.slice(5)}</span></div><div className="day-body">
-      {items.filter(x=>calendarPosition(x).date===date).map(x=>{const pos=calendarPosition(x),changed=changes.has(x.ref),past=x.end_at<data.settings.now,label=segmentLabels.get(`${x.ref}:${x.start_at}:${x.end_at}`),locked=(p?.tasks||data.tasks).find(t=>t.ref===x.ref)?.profile?.locked;return <button type="button" onClick={()=>setSelected({...x,label,locked,changed})} aria-label={`${x.title} ${short(x.start_at)}至${short(x.end_at)}，查看详情`} key={`${x.ref}:${x.start_at}:${x.end_at}`} className={`calendar-block ${x.kind==='course'?'course':'task'} ${changed?'changed':''} ${past?'past':''} ${pos.height*CALENDAR_PIXELS_PER_MINUTE<32?'short-block':''}`} style={{top:pos.top*CALENDAR_PIXELS_PER_MINUTE,height:pos.height*CALENDAR_PIXELS_PER_MINUTE}} title={`${x.title}\n${short(x.start_at)}–${short(x.end_at)}${label?` · ${label}`:''}`}><span>{short(x.start_at)}–{short(x.end_at)}</span><strong>{x.title}</strong><small>{x.kind==='course'?'课程':`${changed?'待确认':''}${locked?' · 锁定':''}${label?` · ${label}`:''}`}</small></button>})}
+      {items.filter(x=>calendarPosition(x).date===date).map(x=>{const pos=calendarPosition(x),changed=changes.has(x.ref),past=Date.parse(x.end_at)<Date.parse(data.settings.now),label=segmentLabels.get(`${x.ref}:${x.start_at}:${x.end_at}`),locked=(p?.tasks||data.tasks).find(t=>t.ref===x.ref)?.profile?.locked;return <button type="button" onClick={()=>setSelected({...x,label,locked,changed})} aria-label={`${x.title} ${short(x.start_at)}至${short(x.end_at)}，查看详情`} key={`${x.ref}:${x.start_at}:${x.end_at}`} className={`calendar-block ${x.kind==='course'?'course':'task'} ${changed?'changed':''} ${past?'past':''} ${pos.height*CALENDAR_PIXELS_PER_MINUTE<32?'short-block':''}`} style={{top:pos.top*CALENDAR_PIXELS_PER_MINUTE,height:pos.height*CALENDAR_PIXELS_PER_MINUTE}} title={`${x.title}\n${short(x.start_at)}–${short(x.end_at)}${label?` · ${label}`:''}`}><span>{short(x.start_at)}–{short(x.end_at)}</span><strong>{x.title}</strong><small>{x.kind==='course'?'课程':`${changed?'待确认':''}${locked?' · 锁定':''}${label?` · ${label}`:''}`}</small></button>})}
     </div></div>)}
   </div></div><dialog ref={dialog} className="schedule-detail" aria-labelledby={detailId} onClose={()=>setSelected(null)}>
     {selected&&<><h3 id={detailId}>{selected.title}</h3><p>{stamp(selected.start_at)}–{short(selected.end_at)}</p><div className="detail-tags"><span>{selected.kind==='course'?'课程':selected.changed?'待确认':'正式任务'}</span>{selected.locked&&<span>锁定</span>}{selected.label&&<span>{selected.label}</span>}</div></>}
@@ -44,7 +44,7 @@ function Calendar({data,offset=0,selectedDate,formalOnly=false}){
   </dialog></>
 }
 
-export default function AssistantPage({active, requestedAction, onActionHandled,onManagePreferences,taskTools,refreshVersion=0,onPlanConfirmed,renderWorkbench,onOpenSchedule,onFocusChat,fullCalendar=false,observeChat=true,recoveryWorkspace,resource,initialSettings}){
+export default function AssistantPage({active, requestedAction, onActionHandled,onManagePreferences,taskTools,refreshVersion=0,onPlanConfirmed,renderWorkbench,onOpenSchedule,onFocusChat,fullCalendar=false,observeChat=true,recoveryWorkspace,resource,initialSettings,enabled=true,chatOnly=false}){
   const [calendarVisited,setCalendarVisited]=useState(false)
   useEffect(()=>{if(fullCalendar)setCalendarVisited(true)},[fullCalendar])
   const [weekOffset,setWeekOffset]=useState(0)
@@ -74,7 +74,7 @@ export default function AssistantPage({active, requestedAction, onActionHandled,
       if(['day','week'].includes(value.calendarView)){setCalendarView(value.calendarView);openedFullCalendar.current=true}
     }})
   async function load(id){const [d,focus]=await Promise.all([getAssistantSession(id),getGrowthAttention().catch(()=>null)]);setData(d);setAttention(focus?focus.items||[]:null);return d}
-  useEffect(()=>{let cancelled=false;async function init(){
+  useEffect(()=>{if(!enabled)return;let cancelled=false;async function init(){
     const workspace=initialSettings||await getAssistantSettings(),key=`sga-assistant-session:${workspace.workspace_id}:${workspace.week_start}`
     let id,d
     try{id=localStorage.getItem(key)}catch{setError('浏览器存储不可用，规划会话刷新恢复受限。')}
@@ -86,7 +86,7 @@ export default function AssistantPage({active, requestedAction, onActionHandled,
   }
   initialization.current ||= init()
   initialization.current.then(({d,focus})=>{if(!cancelled){setData(d);setAttention(focus?focus.items||[]:null)}}).catch(e=>{if(!cancelled)setError(e.message)})
-  return()=>{cancelled=true;observing.current=false}},[])
+  return()=>{cancelled=true;observing.current=false}},[enabled])
   useEffect(()=>{if(active&&data)load(data.id).catch(e=>setError(e.message))},[active,refreshVersion])
   useEffect(()=>{if(observeChat&&data)load(data.id).catch(e=>setError(e.message))},[observeChat,data?.id])
 
@@ -180,7 +180,7 @@ export default function AssistantPage({active, requestedAction, onActionHandled,
     <p className="v2-calendar-note">仅显示正式课程与任务；可查看本周及下周已有安排。</p>
   </section>
   const layout=<WorkbenchLayout view={view} onViewChange={setView} resultLabel="日程" chat={chat} renderLayout={renderWorkbench} conversation={data.id} auxiliarySchedule={auxiliarySchedule}>
-    {renderWorkbench?<div className="assistant-workspace v2-planning-content">{content}{overview}{tasks}</div>:content}
+    {renderWorkbench?<div className="assistant-workspace v2-planning-content">{content}{!chatOnly&&<>{overview}{tasks}</>}</div>:content}
   </WorkbenchLayout>
   return renderWorkbench?layout:<section className="assistant-workspace" aria-labelledby="planning-heading">
     <div className="growth-page-heading planning-page-heading"><div><h2 id="planning-heading">规划</h2></div></div>

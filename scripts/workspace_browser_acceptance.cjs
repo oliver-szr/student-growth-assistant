@@ -11,6 +11,73 @@ async function call(path, method='GET', body) {
   assert.equal(response.headers.get('x-sga-integration-mock'),'1');
   const value=await response.json();assert.ok(response.ok,JSON.stringify(value));return value;
 }
+async function verifyIndependentScheduleUI(){
+  assert.deepEqual((await call('/api/conversations?scope=all')).items,[]);
+  const settings=await call('/api/assistant/settings');
+  const task=await call('/api/tasks','POST',{title:'独立日程正式作业',duration_minutes:90,deadline:'2026-10-14T22:00:00+08:00',priority:'normal'});
+  await call('/api/time-rules','POST',{title:'独立日程正式课程',kind:'course',recurrence:'weekly',weekday:3,start_time:'15:00',end_time:'16:00'});
+  const candidate=await call('/api/plans/candidates','POST',{week_start:settings.week_start,task_ids:[task.id]});
+  await call(`/api/plans/${candidate.candidate.id}/confirm`,'POST');
+  await call('/api/goals','POST',{title:'独立日程月末目标',metric_kind:'count',weekly_target:1,due_date:'2026-10-30'});
+  const planning=await call('/api/assistant/sessions','POST',{});
+  let deleted=await call(`/api/conversations/${planning.id}`);
+  await call(`/api/conversations/${planning.id}?expected_version=${deleted.version}`,'DELETE');
+  const conversation=await call('/api/conversations','POST',{client_request_id:'deleted-chat-fixture'});
+  await call(`/api/conversations/${conversation.id}?expected_version=${conversation.version}`,'DELETE');
+  const before=await call('/api/calendar/events?start=2026-10-12&end=2026-10-19');
+  const browser=await chromium.launch({channel:'msedge',headless:true}),page=await browser.newPage({viewport:{width:1440,height:1000},locale:'zh-CN'});
+  const errors=[],checks=[],sessionRequests=[],writes=[];page.on('pageerror',e=>errors.push(e.message));
+  page.on('request',request=>{
+    const path=new URL(request.url()).pathname;
+    if(path.startsWith('/api/assistant/sessions'))sessionRequests.push({path,method:request.method()});
+    if(request.url().startsWith(api)&&['POST','PUT','PATCH','DELETE'].includes(request.method()))writes.push(path);
+  });
+  const checked=name=>{checks.push(name);console.log('PASS '+name)};
+  try{
+    await page.addInitScript(({workspace,week,planning,conversation})=>{
+      if(sessionStorage.getItem('independent-schedule-fixture'))return;
+      sessionStorage.setItem('independent-schedule-fixture','1');
+      localStorage.setItem(`sga-assistant-session:${workspace}:${week}`,String(planning));
+      const save=(key,value)=>sessionStorage.setItem(`sga-edit-v1:${JSON.stringify([workspace,key])}`,JSON.stringify({schema:1,base:key==='layout'?'layout-v1':null,value}));
+      save('selection',conversation);save('layout',{navigation:'schedule',auxiliaryPage:'schedule',panel:'normal',conversations:true,mobile:'primary'});
+    },{workspace:settings.workspace_id,week:settings.week_start,planning:planning.id,conversation:conversation.id});
+    await page.goto(web);
+    const nav=page.getByRole('navigation',{name:'主导航'}),primary=page.locator('#v2-page-schedule'),calendar=primary.getByRole('region',{name:'完整日历'});
+    await expect(calendar).toBeVisible();await expect(calendar.locator('.calendar-formal_task').first()).toBeVisible();
+    await expect(calendar.locator('.calendar-course').first()).toBeVisible();
+    await expect(primary).not.toContainText('会话已删除');assert.equal(sessionRequests.length,0);
+    await primary.locator('.task-memory').getByText('任务与执行',{exact:true}).click();
+    await expect(primary.locator(`[data-resource-task="${task.id}"]`)).toContainText('独立日程正式作业');
+    checked('deleted_cached_planning_and_chat_do_not_gate_formal_calendar_courses_tasks_or_create_sessions');
+    await nav.getByRole('button',{name:'首页',exact:true}).click();await expect(page.locator('.conversation-chat [role="alert"]')).toContainText('会话已删除');
+    await nav.getByRole('button',{name:'日程',exact:true}).click();await expect(calendar).toBeVisible();
+    await nav.getByRole('button',{name:'首页',exact:true}).click();await page.getByRole('button',{name:'本周规划入口',exact:true}).click();
+    await expect(page.locator('#v2-chat')).toContainText('会话已删除');
+    await nav.getByRole('button',{name:'日程',exact:true}).click();await expect(calendar.locator('.calendar-formal_task').first()).toBeVisible();
+    assert.equal(sessionRequests.filter(r=>r.method==='POST').length,0);
+    checked('unavailable_regular_or_legacy_chat_errors_stay_in_chat_and_never_replace_primary_schedule');
+    const auxiliaryDate=page.getByLabel('辅助日程日期',{exact:true});
+    await expect(auxiliaryDate).toHaveValue('2026-10-14');
+    await calendar.getByRole('button',{name:'天',exact:true}).click();await calendar.getByLabel('日历日期',{exact:true}).fill('2026-10-15');
+    await expect(auxiliaryDate).toHaveValue('2026-10-14');await auxiliaryDate.fill('2026-10-16');
+    await expect(calendar.getByLabel('日历日期',{exact:true})).toHaveValue('2026-10-15');
+    await calendar.getByRole('button',{name:'月',exact:true}).click();await expect(calendar.locator('.calendar-goal').first()).toBeVisible();
+    await calendar.getByRole('button',{name:'年',exact:true}).click();await expect(calendar.locator('.fc-multimonth-month')).toHaveCount(12);
+    await expect(page.locator('#v2-auxiliary-shared .day-column')).toHaveCount(1);
+    checked('all_four_calendar_views_read_all_workspace_sources_independent_of_auxiliary_date_and_chat');
+    await page.reload();await expect(calendar).toBeVisible();await expect(calendar.getByRole('button',{name:'年',exact:true})).toHaveAttribute('aria-pressed','true');
+    await expect(auxiliaryDate).toHaveValue('2026-10-16');
+    for(const width of [1440,1280,390]){
+      await page.setViewportSize({width,height:900});await nav.getByRole('button',{name:'日程',exact:true}).click();
+      await expect(calendar).toBeVisible();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+      if(width<700){await page.getByRole('button',{name:'辅助栏',exact:true}).click();await expect(page.getByRole('region',{name:'单日日程预览'})).toBeVisible()}
+    }
+    const after=await call('/api/calendar/events?start=2026-10-12&end=2026-10-19');
+    assert.deepEqual(after,before);assert.deepEqual(writes,[]);assert.deepEqual(errors,[]);
+    checked('reload_and_1440_1280_390_browsing_preserve_ui_without_writes_or_replacement_sessions');
+    console.log(JSON.stringify({checks,consoleErrors:errors,provider:'Mock only',database:'new anonymous database'}));
+  }finally{await browser.close()}
+}
 async function verifySkillsUI() {
   assert.deepEqual((await call('/api/conversations?scope=all')).items,[], 'Use a new anonymous database');
   const browser=await chromium.launch({channel:'msedge',headless:true});
@@ -414,7 +481,7 @@ async function verifyConversationUI() {
     checked('refresh_recovery_waits_for_server_then_preserves_first_replacement_input');
     await mobile.getByRole('button',{name:'辅助栏',exact:true}).tap();
     await mobile.getByRole('tablist',{name:'辅助栏页签'}).getByRole('tab',{name:'日程',exact:true}).tap();
-    assert.equal(await mobile.locator('#v2-auxiliary-shared .day-column').count(),1);await expect(mobile.getByRole('separator')).toBeHidden();
+    await expect(mobile.locator('#v2-auxiliary-shared .day-column')).toHaveCount(1);await expect(mobile.getByRole('separator')).toBeHidden();
     for(let i=0;i<15;i++){await mobile.keyboard.press('Tab');assert.equal(await mobile.evaluate(()=>Boolean(document.activeElement.closest('[hidden],[inert]'))),false)}
     assert.ok(await mobile.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     checked('390_touch_menu_single_surface_draft_refresh_independent_day_preview_focus');
@@ -428,6 +495,7 @@ async function verifyConversationUI() {
   assert.deepEqual(await call('/api/tasks'),[], 'Use a fresh anonymous demo server');
   if(process.argv.includes('--ui')) {await verifyConversationUI();return}
   if(process.argv.includes('--skills')) {await verifySkillsUI();return}
+  if(process.argv.includes('--schedule-independent')) {await verifyIndependentScheduleUI();return}
   if(process.argv.includes('--draft-sidebar')) {await verifyDraftSidebarUI();return}
   if(process.argv.includes('--defaults')) {await verifyDefaultDraftUI();return}
   const checks=[],errors=[];const checked=text=>{checks.push(text);console.log('PASS '+text)};
@@ -562,7 +630,7 @@ async function verifyConversationUI() {
     const previewDate=page.getByLabel('辅助日程日期',{exact:true});const beforePreview=await previewDate.inputValue();
     await expect(previewDate).toHaveValue(beforePreview);
     await previewDate.fill('2026-10-16');await expect(calendar.getByLabel('日历日期',{exact:true})).toHaveValue('2026-10-15');
-    assert.equal(await page.locator('#v2-auxiliary-shared .day-column').count(),1);
+    await expect(page.locator('#v2-auxiliary-shared .day-column')).toHaveCount(1);
     checked('calendar:day_week_month_year_12_months_real_goal_dates_independent_auxiliary_day');
     const task=tasks.find(t=>t.task_kind==='executable');
     await call(`/api/tasks/${task.id}/feedback`,'POST',{client_action_id:'browser-feedback',outcome:'completed',actual_minutes:35});
@@ -651,7 +719,7 @@ async function verifyConversationUI() {
         await page.getByRole('button',{name:'收起辅助栏',exact:true}).click();await page.getByRole('button',{name:'恢复辅助栏',exact:true}).click();
         await page.getByRole('button',{name:'恢复默认宽度',exact:true}).click();
         assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
-        assert.equal(await page.locator('#v2-auxiliary-shared .day-column').count(),1);
+        await expect(page.locator('#v2-auxiliary-shared .day-column')).toHaveCount(1);
       }
     }
     const auxiliary=page.getByRole('tablist',{name:'辅助栏页签'});
@@ -728,7 +796,7 @@ async function verifyConversationUI() {
     await page.setViewportSize({width:390,height:844});
     await page.getByRole('button',{name:'辅助栏',exact:true}).click();
     await auxiliary.getByRole('tab',{name:'日程',exact:true}).click();
-    assert.equal(await page.locator('#v2-auxiliary-shared .day-column').count(),1);
+    await expect(page.locator('#v2-auxiliary-shared .day-column')).toHaveCount(1);
     await expect(page.getByRole('separator')).toBeHidden();
     for(let i=0;i<25;i++){await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>Boolean(document.activeElement.closest('[hidden],[inert]'))),false)}
     for(const name of ['首页','日程','复盘','档案']) {
