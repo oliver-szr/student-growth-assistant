@@ -1,0 +1,34 @@
+{
+  "revision": "1c5b2cbca0273521a57bdecb6389cfbb79179ec7",
+  "scheduler_sha256": "3e5d40f826540531fa60241cca048a5308576cfe7f658e61e33b2e680ff33038",
+  "cases": {
+    "deadlines": {
+      "input_sha256": "80144b6edc2d8610ba3ad8d88a2c827d36c68430de573be12e4ec44b12174c7c",
+      "output_sha256": "890912207cea3802d09ef495c765d4fb306249d0fd4cc33d714b000b0b9fa912"
+    },
+    "split": {
+      "input_sha256": "3204b4364d2239c4020efcd2b6f67d46c0432c04ef3e01b8b62940be5958142f",
+      "output_sha256": "0cc9a97cef779d30b1365db11638bf3fb1b44d7dd82217e1952c70d5e07f8cc9"
+    },
+    "locked_history": {
+      "input_sha256": "37d838cb1aa1ae8e8f7dbd5eab427e6fdc1359c0a9971cadf29fd8b5683f991c",
+      "output_sha256": "75b68e2704afecb82befcf04c3cb22f739b28645c99a16b24f2ed64e354c1847"
+    },
+    "local_one": {
+      "input_sha256": "27d14223704b4a637bcf1804d10a8cb292905067b7c9627efeea61061dcf7ab8",
+      "output_sha256": "23214980708a6a22cfb8f84d78d5d4167660150406093cb6fae3dd36a8e7a53e"
+    },
+    "new_course": {
+      "input_sha256": "bc11ea7a290d836cc95aeccec8a1a8bd6f5acb8a72dc3b99824c64c6d6792ccb",
+      "output_sha256": "1c15d14aff98b9fc6c9aecea7f0358d112f1a29234091f96f8f22b83a6899e5c"
+    },
+    "two_weeks": {
+      "input_sha256": "41ab5141ac8311f79bb988943203d3367f12522658290afde2b3a226d1d95e96",
+      "output_sha256": "ed32fa7833f8ca72d7cf5fc2f87adca7487c11380b1ba6165d1110a1074b6145"
+    },
+    "impossible": {
+      "input_sha256": "d62978e1f7631918b1f57ed826911d26af566731faa7381aebc20fe73114808c",
+      "output_sha256": "7049bfcdb1150938272d8d7f02b2721a6195d8a4cff391dc5532579be96eab5a"
+    }
+  }
+}

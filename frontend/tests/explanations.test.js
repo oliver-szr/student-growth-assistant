@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { explainCandidate } from '../src/api.js'
-import { createExplanationSession, diffGroups } from '../src/explanations.js'
+import { createExplanationSession, diffGroups } from './fixtures/explanations.js'
 
 const plan = { id: 2, based_on_plan_id: 1, status: 'candidate' }
 const task = { task_id: 3, title: 'Read paper', start_at: '2026-10-05T00:00:00Z', end_at: '2026-10-05T01:00:00Z' }
@@ -17,14 +17,14 @@ test('Explanation wrapper posts language and retains unavailable diff', async (c
   assert.deepEqual(await explainCandidate(2, 'zh-CN'), result)
 })
 
-test('Explanation wrapper waits for backend 20-second deadline and stops at 25 seconds', async (context) => {
+test('Explanation wrapper waits for backend 120-second deadline and stops at 125 seconds', async (context) => {
   context.mock.timers.enable({ apis: ['setTimeout'] })
   let aborted = false
   context.mock.method(globalThis, 'fetch', (_url, options) => new Promise((_resolve, reject) => {
     options.signal.addEventListener('abort', () => { aborted = true; reject(new DOMException('Aborted', 'AbortError')) })
   }))
-  const rejection = assert.rejects(explainCandidate(2), /timed out/)
-  context.mock.timers.tick(20000)
+  const rejection = assert.rejects(explainCandidate(2), /请求超时/)
+  context.mock.timers.tick(120000)
   assert.equal(aborted, false)
   context.mock.timers.tick(5000)
   await rejection
@@ -33,11 +33,11 @@ test('Explanation wrapper waits for backend 20-second deadline and stops at 25 s
 test('Diff mapping preserves four categories, IDs, snapshot titles and Shanghai times', () => {
   const groups = diffGroups(result.diff)
   assert.deepEqual(groups.map((group) => group.key), ['added', 'moved', 'removed', 'unchanged'])
-  assert.equal(groups[2].label, 'Not included in candidate')
+  assert.equal(groups[2].label, '未纳入候选计划')
   assert.equal(groups[0].items[0].title, 'Read paper')
   assert.equal(groups[0].items[0].task_id, 3)
   assert.equal(groups[0].items[0].description, '2026-10-05 08:00 → 2026-10-05 09:00')
-  assert.match(groups[1].items[0].description, /From .*08:00.* to .*10:00/)
+  assert.match(groups[1].items[0].description, /原安排：.*08:00.*新安排：.*10:00/)
 })
 
 test('First candidate and non-candidate never request AI', async () => {

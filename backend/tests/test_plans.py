@@ -20,6 +20,7 @@ from .test_time_rules import COURSE, PROTECTED_ONCE
 
 
 WEEK = "2026-10-05"
+pytestmark = pytest.mark.usefixtures("legacy_plan_clock")
 
 
 def create_task(client, **changes):

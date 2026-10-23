@@ -1,0 +1,15 @@
+{
+  "name": "2026-秋季第7教学周工作台演示",
+  "week_start": "2026-10-12",
+  "now": "2026-10-14T18:00:00+08:00",
+  "protection_windows": [
+    {"start": "12:00", "end": "14:00", "label": "午间"},
+    {"start": "18:00", "end": "19:00", "label": "晚餐"},
+    {"start": "21:00", "end": "22:00", "label": "休息"}
+  ],
+  "tasks": [
+    {"title": "云计算作业", "duration_minutes": 90, "priority": "normal", "deadline": "2026-10-16T22:00:00+08:00", "start_at": "2026-10-16T19:00:00+08:00", "category_key": "other"},
+    {"title": "软件工程报告", "duration_minutes": 120, "priority": "high", "deadline": "2026-10-18T20:00:00+08:00", "start_at": "2026-10-14T19:00:00+08:00", "category_key": "writing"},
+    {"title": "文献阅读", "duration_minutes": 60, "priority": "low", "deadline": "2026-10-18T22:00:00+08:00", "start_at": "2026-10-17T19:00:00+08:00", "category_key": "reading"}
+  ]
+}

@@ -75,6 +75,8 @@ def validate_response(raw: str) -> ConstraintParseResult:
         body = json.loads(normalize_fence(raw), object_pairs_hook=unique_object, parse_constant=reject_constant)
         result = RESULT_ADAPTER.validate_python(body)
         if isinstance(result, ParsedResult):
+            if result.proposal.kind == 'course' and result.proposal.recurrence != 'weekly':
+                raise ValueError('Original AI course parser supports weekly courses only')
             # Reuse the existing CRUD validator, including date/time parsing and
             # course/recurrence/weekday combinations; do not copy its rules.
             validated = TimeRuleCreate.model_validate(result.proposal.model_dump())

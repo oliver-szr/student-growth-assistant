@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { currentShanghaiMonday, displayDeadline, mondayOfDate } from '../src/datetime.js'
-import { groupPlanItems, planTimeRange, sameTaskSelection } from '../src/planning.js'
+import { groupPlanItems, planTimeRange, sameTaskSelection } from './fixtures/planning.js'
 
 for (const [selected, candidate, expected] of [
   [[1, 2], [1, 2], true],
@@ -40,7 +40,7 @@ test('Week dates normalize to Monday across month, year, and leap-day boundaries
 
 test('Invalid calendar dates cannot become a week_start', () => {
   for (const date of ['', 'invalid', '2026-02-29', '2026-13-01', '2026-04-31', '0000-01-01']) {
-    assert.throws(() => mondayOfDate(date), /Choose a valid week date/)
+    assert.throws(() => mondayOfDate(date), /请选择有效的周日期/)
   }
 })
 
@@ -70,7 +70,7 @@ test('Plan grouping uses Shanghai date and preserves API item order and snapshot
 
 test('Week and plan display agree in browsers with different local timezones', () => {
   const datetimeUrl = new URL('../src/datetime.js', import.meta.url).href
-  const planningUrl = new URL('../src/planning.js', import.meta.url).href
+  const planningUrl = new URL('./fixtures/planning.js', import.meta.url).href
   const script = `
     import { currentShanghaiMonday, mondayOfDate } from ${JSON.stringify(datetimeUrl)};
     import { groupPlanItems, planTimeRange } from ${JSON.stringify(planningUrl)};

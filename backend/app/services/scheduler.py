@@ -1,4 +1,5 @@
-"""Deterministic earliest-slot heuristic on a bounded local 1-minute grid."""
+from .grid import GRID_MINUTES
+"""Deterministic earliest-slot heuristic on a bounded local 5-minute grid."""
 
 from collections.abc import Sequence
 from datetime import date, datetime, time, timedelta
@@ -50,8 +51,8 @@ def schedule_week(
                 day = week_start + timedelta(days=day_offset)
                 opens = datetime.combine(day, time(8), SHANGHAI)
                 closes = datetime.combine(day, time(22), SHANGHAI)
-                for grid_step in range(14 * 60):
-                    start = opens + timedelta(minutes=grid_step)
+                for grid_step in range(840 // GRID_MINUTES):
+                    start = opens + timedelta(minutes=GRID_MINUTES * grid_step)
                     end = start + duration
                     if end > closes or end > deadline:
                         continue

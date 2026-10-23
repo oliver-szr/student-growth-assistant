@@ -8,13 +8,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Plan, PlanItem, PlanItemKind, PlanStatus, Task, TaskStatus, TimeRule, utc_now
+from ..models import Plan, PlanItem, PlanItemKind, PlanStatus, Task, TaskStatus, utc_now
 from ..schemas import CandidateCreate, CandidateResponse, PlanItemResponse, PlanResponse, monday_date
 from ..services.planning_state import (
-    begin_planning_transaction, bump_revision, get_or_create_planning_state,
+    bump_revision, get_or_create_planning_state, planning_transaction,
 )
 from ..services.scheduler import schedule_week
-from ..services.scheduling_types import SchedulingInputError, TaskInput, TimeRuleInput
+from ..services import assistant_clock
+from ..services.plan_safety import prepare_plan_rules, validate_saved_plan
+from ..services.scheduling_types import SchedulingInputError, TaskInput
 from ..services.validator import expand_time_rules, validate_schedule
 
 
@@ -49,78 +51,73 @@ def require_plan(db: Session, plan_id: int) -> Plan:
 
 @router.post("/candidates", response_model=CandidateResponse, responses={
     409: {"description": "UNSCHEDULABLE: the current heuristic did not produce a complete plan."},
+    422: {"description": "Invalid input, PAST_PLANNING_WINDOW, or PLAN_REQUIRES_ASSISTANT."},
     500: {"description": "GENERATED_SCHEDULE_INVALID: the generated schedule failed independent validation."},
 })
 def create_candidate(payload: CandidateCreate, db: Session = Depends(get_db)) -> CandidateResponse:
     try:
-        begin_planning_transaction(db)
-        state = get_or_create_planning_state(db)
-        tasks = db.scalars(select(Task).where(Task.id.in_(payload.task_ids))).all()
-        tasks_by_id = {task.id: task for task in tasks}
-        missing = [task_id for task_id in payload.task_ids if task_id not in tasks_by_id]
-        if missing:
-            raise HTTPException(422, detail={
-                "code": "TASK_NOT_FOUND", "message": "All selected tasks must exist.", "task_ids": missing,
-            })
-        not_todo = [task.id for task in tasks if task.status != TaskStatus.todo]
-        if not_todo:
-            raise HTTPException(422, detail={
-                "code": "TASK_NOT_TODO", "message": "All selected tasks must be todo.", "task_ids": not_todo,
-            })
-        rules = db.scalars(select(TimeRule).order_by(TimeRule.id)).all()
-        current = confirmed_plan(db, payload.week_start)
-        task_inputs = [TaskInput(
-            id=task.id, title=task.title, duration_minutes=task.duration_minutes,
-            deadline=task.deadline, priority=task.priority.value, status=task.status.value,
-        ) for task in (tasks_by_id[task_id] for task_id in payload.task_ids)]
-        rule_inputs = [TimeRuleInput(
-            id=rule.id, kind=rule.kind.value, title=rule.title, recurrence=rule.recurrence.value,
-            start_time=rule.start_time, end_time=rule.end_time, weekday=rule.weekday,
-            date=rule.date, active=rule.active,
-        ) for rule in rules]
-        result = schedule_week(payload.week_start, task_inputs, rule_inputs)
-        if result.status == "unschedulable":
-            raise HTTPException(409, detail={
-                "code": "UNSCHEDULABLE",
-                "message": "Could not generate a complete plan under the current scheduling heuristic.",
-                "unscheduled_tasks": [asdict(task) for task in result.unscheduled_tasks],
-            })
-        validation = validate_schedule(payload.week_start, task_inputs, rule_inputs, result.assignments)
-        if not validation.valid:
-            raise HTTPException(500, detail={
-                "code": "GENERATED_SCHEDULE_INVALID", "message": "Generated schedule failed validation.",
-                "violations": [asdict(violation) for violation in validation.violations],
-            })
-        # Use Phase 4's expansion for courses; protected intervals are never persisted.
-        intervals = expand_time_rules(payload.week_start, rule_inputs)
-        plan = Plan(
-            week_start=payload.week_start, status=PlanStatus.candidate,
-            source_revision=state.revision, based_on_plan_id=current.id if current else None,
-            task_ids=list(payload.task_ids),
-        )
-        db.add(plan)
-        db.flush()
-        db.add_all([PlanItem(
-            plan_id=plan.id, kind=PlanItemKind.task, task_id=assignment.task_id,
-            title_snapshot=tasks_by_id[assignment.task_id].title,
-            start_at=assignment.start_at, end_at=assignment.end_at,
-        ) for assignment in result.assignments])
-        rules_by_id = {rule.id: rule for rule in rules}
-        db.add_all([PlanItem(
-            plan_id=plan.id, kind=PlanItemKind.course, time_rule_id=interval.time_rule_id,
-            title_snapshot=rules_by_id[interval.time_rule_id].title,
-            start_at=interval.start_at, end_at=interval.end_at,
-        ) for interval in intervals if interval.kind == "course"])
-        db.flush()
-        response = CandidateResponse(candidate=plan_response(db, plan))
-        db.commit()
-        return response
+        with planning_transaction(db):
+            state = get_or_create_planning_state(db)
+            tasks = db.scalars(select(Task).where(Task.id.in_(payload.task_ids))).all()
+            tasks_by_id = {task.id: task for task in tasks}
+            missing = [task_id for task_id in payload.task_ids if task_id not in tasks_by_id]
+            if missing:
+                raise HTTPException(422, detail={
+                    "code": "TASK_NOT_FOUND", "message": "All selected tasks must exist.", "task_ids": missing,
+                })
+            not_todo = [task.id for task in tasks if task.status != TaskStatus.todo]
+            from ..services.task_hierarchy import require_executable
+            for task in tasks:
+                require_executable(task)
+            if not_todo:
+                raise HTTPException(422, detail={
+                    "code": "TASK_NOT_TODO", "message": "All selected tasks must be todo.", "task_ids": not_todo,
+                })
+            current = confirmed_plan(db, payload.week_start)
+            task_inputs = [TaskInput(
+                id=task.id, title=task.title, duration_minutes=task.duration_minutes,
+                deadline=task.deadline, priority=task.priority.value, status=task.status.value,
+            ) for task in (tasks_by_id[task_id] for task_id in payload.task_ids)]
+            rule_inputs = prepare_plan_rules(
+                db, payload.week_start, payload.task_ids, current, assistant_clock.assistant_now(),
+            )
+            result = schedule_week(payload.week_start, task_inputs, rule_inputs)
+            if result.status == "unschedulable":
+                raise HTTPException(409, detail={
+                    "code": "UNSCHEDULABLE",
+                    "message": "Could not generate a complete plan under the current scheduling heuristic.",
+                    "unscheduled_tasks": [asdict(task) for task in result.unscheduled_tasks],
+                })
+            validation = validate_schedule(payload.week_start, task_inputs, rule_inputs, result.assignments)
+            if not validation.valid:
+                raise HTTPException(500, detail={
+                    "code": "GENERATED_SCHEDULE_INVALID", "message": "Generated schedule failed validation.",
+                    "violations": [asdict(violation) for violation in validation.violations],
+                })
+            intervals = expand_time_rules(payload.week_start, rule_inputs)
+            plan = Plan(
+                week_start=payload.week_start, status=PlanStatus.candidate,
+                source_revision=state.revision, based_on_plan_id=current.id if current else None,
+                task_ids=list(payload.task_ids),
+            )
+            db.add(plan)
+            db.flush()
+            db.add_all([PlanItem(
+                plan_id=plan.id, kind=PlanItemKind.task, task_id=assignment.task_id,
+                title_snapshot=tasks_by_id[assignment.task_id].title,
+                start_at=assignment.start_at, end_at=assignment.end_at,
+            ) for assignment in result.assignments])
+            rules_by_id = {rule.id: rule for rule in rule_inputs}
+            db.add_all([PlanItem(
+                plan_id=plan.id, kind=PlanItemKind.course, time_rule_id=interval.time_rule_id,
+                title_snapshot=rules_by_id[interval.time_rule_id].title,
+                start_at=interval.start_at, end_at=interval.end_at,
+            ) for interval in intervals if interval.kind == "course"])
+            db.flush()
+            response = CandidateResponse(candidate=plan_response(db, plan))
     except SchedulingInputError as error:
-        db.rollback()
         raise HTTPException(422, detail={"code": error.code, "message": str(error)}) from error
-    except Exception:
-        db.rollback()
-        raise
+    return response
 
 
 # Static path must be registered before /{plan_id}.
@@ -149,11 +146,10 @@ def get_plan(plan_id: int, db: Session = Depends(get_db)) -> PlanResponse:
 
 @router.post("/{plan_id}/confirm", response_model=PlanResponse, responses={
     404: {"description": "PLAN_NOT_FOUND: the requested plan does not exist."},
-    409: {"description": "PLAN_NOT_CANDIDATE or STALE_CANDIDATE: the stored plan cannot be confirmed."},
+    409: {"description": "PLAN_NOT_CANDIDATE or STALE_CANDIDATE: version, current time, or constraints changed."},
 })
 def confirm_candidate(plan_id: int, db: Session = Depends(get_db)) -> PlanResponse:
-    try:
-        begin_planning_transaction(db)
+    with planning_transaction(db):
         state = get_or_create_planning_state(db)
         plan = require_plan(db, plan_id)
         if plan.status != PlanStatus.candidate:
@@ -166,6 +162,12 @@ def confirm_candidate(plan_id: int, db: Session = Depends(get_db)) -> PlanRespon
                 "message": "The candidate plan was generated from an older planning state. Generate a new candidate before confirming.",
             })
         current = confirmed_plan(db, plan.week_start)
+        try:
+            validate_saved_plan(db, plan, current, assistant_clock.assistant_now())
+        except SchedulingInputError as error:
+            raise HTTPException(409, detail={
+                "code": "STALE_CANDIDATE", "reason_code": error.code, "message": str(error),
+            }) from error
         if current is not None:
             current.status = PlanStatus.superseded
             # Release the unique-index entry before setting the new confirmed status.
@@ -176,8 +178,4 @@ def confirm_candidate(plan_id: int, db: Session = Depends(get_db)) -> PlanRespon
         bump_revision(db)
         db.flush()
         response = plan_response(db, plan)
-        db.commit()
-        return response
-    except Exception:
-        db.rollback()
-        raise
+    return response

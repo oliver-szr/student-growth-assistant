@@ -1,4 +1,5 @@
 import { WEEKDAYS } from './constants.js'
+import { clarificationMessage } from './localization.js'
 
 export function proposalToFormRule(proposal) {
   return {
@@ -17,7 +18,7 @@ export function proposalDay(proposal) {
 }
 
 export function timeRuleFormPayload({ kind, title, recurrence, weekday, date, startTime, endTime }, originalRule) {
-  const repeats = kind === 'course' ? 'weekly' : recurrence
+  const repeats = recurrence
   return {
     kind,
     title,
@@ -30,7 +31,7 @@ export function timeRuleFormPayload({ kind, title, recurrence, weekday, date, st
 }
 
 export function parsingNotice(result) {
-  if (result.status === 'needs_clarification') return { heading: 'More information needed', message: result.message }
-  if (result.status === 'unsupported') return { heading: 'Unsupported request', message: 'This AI feature only understands courses and protected time.' }
+  if (result.status === 'needs_clarification') return { heading: '需要补充信息', message: clarificationMessage(result.message) }
+  if (result.status === 'unsupported') return { heading: '暂不支持此请求', message: '此功能只支持添加课程和保留时间，不处理任务或计划操作。' }
   return null
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { parseConstraint } from '../api.js'
 import { parsingNotice, proposalDay, proposalToFormRule } from '../timeRules.js'
 import TimeRuleForm from './TimeRuleForm.jsx'
+import { RECURRENCE_LABELS } from '../localization.js'
 
 export default function NaturalLanguageTimeRule({ onApply, manualPending }) {
   const [text, setText] = useState('')
@@ -64,36 +65,36 @@ export default function NaturalLanguageTimeRule({ onApply, manualPending }) {
 
   return (
     <section className="panel" aria-labelledby="natural-language-heading">
-      <h3 id="natural-language-heading">Natural Language</h3>
-      <p className="helper">Describe one course or protected interval. AI proposes a rule for you to review.</p>
+      <h3 id="natural-language-heading">自然语言添加</h3>
+      <p className="helper">描述一段课程或保留时间，AI 会生成提案，供你检查和修改。</p>
       <form onSubmit={parse}>
-        <label htmlFor="constraint-text">Describe your time rule</label>
+        <label htmlFor="constraint-text">描述你的时间安排</label>
         <textarea id="constraint-text" rows={3} maxLength={4000} value={text} disabled={parsing || saving}
-          placeholder="Every Wednesday 2pm to 4pm is lab time."
+          placeholder="每周三下午 2 点到 4 点是实验课。"
           onChange={(event) => { setText(event.target.value); setResult({ status: 'idle' }); setSaved(false); setApplyError('') }} />
-        <div className="button-row"><button className="button secondary" type="submit" disabled={parsing || saving || !text.trim()}>{parsing ? 'Parsing...' : 'Parse with AI'}</button></div>
+        <div className="button-row"><button className="button secondary" type="submit" disabled={parsing || saving || !text.trim()}>{parsing ? '正在解析…' : '用 AI 解析'}</button></div>
       </form>
       <div aria-live="polite">
-        {parsing && <p role="status">Parsing your description...</p>}
-        {notice && <div className="state-box ai-result"><h4>{notice.heading}</h4><p>{notice.message}</p><p className="helper">Edit the description and parse again.</p></div>}
-        {result.status === 'error' && <div className="error-box ai-result" role="alert">AI parsing is temporarily unavailable. Manual TimeRule creation remains available.</div>}
-        {saved && <p className="success-box">Time rule applied. It is now visible in the list.</p>}
+        {parsing && <p role="status">正在解析你的描述…</p>}
+        {notice && <div className="state-box ai-result"><h4>{notice.heading}</h4><p>{notice.message}</p><p className="helper">修改或补充描述后重新解析。</p></div>}
+        {result.status === 'error' && <div className="error-box ai-result" role="alert">AI 解析暂不可用，仍可在下方手动添加课程和保留时间。</div>}
+        {saved && <p className="success-box">时间规则已添加，可在下方列表中查看。</p>}
       </div>
       {proposal && <div className="ai-result">
-        <h4>AI Proposal</h4>
-        <p className="helper">Review before applying. You can edit the fields below. Nothing is saved until you click Apply time rule.</p>
+        <h4>AI 提案</h4>
+        <p className="helper">请检查并修改下方内容；只有点击“应用时间规则”后才会保存。</p>
         <dl className="details">
-          <div><dt>Type</dt><dd>{proposal.kind === 'course' ? 'Course' : 'Protected time'}</dd></div>
-          <div><dt>Title</dt><dd>{proposal.title}</dd></div>
-          <div><dt>Recurrence</dt><dd>{proposal.recurrence}</dd></div>
-          <div><dt>{proposal.recurrence === 'weekly' ? 'Weekday' : 'Date'}</dt><dd>{proposalDay(proposal)}</dd></div>
-          <div><dt>Start</dt><dd>{proposal.start_time}</dd></div>
-          <div><dt>End</dt><dd>{proposal.end_time}</dd></div>
+          <div><dt>类型</dt><dd>{proposal.kind === 'course' ? '课程' : '保留时间'}</dd></div>
+          <div><dt>标题</dt><dd>{proposal.title}</dd></div>
+          <div><dt>重复方式</dt><dd>{RECURRENCE_LABELS[proposal.recurrence]}</dd></div>
+          <div><dt>{proposal.recurrence === 'weekly' ? '星期' : '日期'}</dt><dd>{proposalDay(proposal)}</dd></div>
+          <div><dt>开始时间</dt><dd>{proposal.start_time}</dd></div>
+          <div><dt>结束时间</dt><dd>{proposal.end_time}</dd></div>
         </dl>
         {applyError && <p className="error-box" role="alert">{applyError}</p>}
         <TimeRuleForm key={proposalVersion} kind={proposal.kind} rule={proposal} pending={saving || manualPending}
           onSubmit={apply} onCancel={() => { setResult({ status: 'idle' }); setApplyError('') }}
-          submitLabel="Apply time rule" cancelLabel="Discard" />
+          submitLabel="应用时间规则" cancelLabel="放弃提案" />
       </div>}
     </section>
   )

@@ -1,3 +1,5 @@
+import { localizedError } from './localization.js'
+
 const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 
 export function readableDetail(detail) {
@@ -17,7 +19,7 @@ export function readableDetail(detail) {
 
 export class ApiError extends Error {
   constructor(status, detail) {
-    super(readableDetail(detail) || `Request failed (${status}).`)
+    super(localizedError(status, detail))
     this.name = 'ApiError'
     this.status = status
     this.code = typeof detail?.code === 'string' ? detail.code : ''
@@ -42,13 +44,13 @@ async function request(path, options = {}, timeoutMs = 15000) {
     return body
   } catch (error) {
     if (controller.signal.aborted) {
-      throw new Error('The request timed out. Reload the latest state before retrying a change.')
+      throw new Error('请求超时。请重新加载最新状态，再重试操作。')
     }
     if (error instanceof TypeError) {
-      throw new Error('Could not connect to the backend. Check that it is running.')
+      throw new Error('无法连接后端，请检查后端服务是否正在运行。')
     }
     if (error instanceof SyntaxError) {
-      throw new Error('The backend returned an unreadable response.')
+      throw new Error('后端返回了无法读取的内容，请稍后重试。')
     }
     throw error
   } finally {
@@ -57,19 +59,123 @@ async function request(path, options = {}, timeoutMs = 15000) {
 }
 
 export const getTasks = () => request('/api/tasks')
+export async function ensureConversationRuntime(){
+  const health=await request('/api/health')
+  if(health.runtime?.protocol!=='draft-recovery-v3'||health.runtime?.skills_available!==true){
+    throw new Error('后端尚未加载当前草案修复。请重启后端后再发送；本次消息尚未发送，输入已保留。')
+  }
+  return health.runtime
+}
 export const createTask = (data) => request('/api/tasks', { method: 'POST', body: JSON.stringify(data) })
 export const updateTask = (id, data) => request(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+export const createTaskBreakdown = data => request('/api/tasks/breakdown-drafts', { method: 'POST', body: JSON.stringify(data) }, 125000)
+export const getTaskBreakdowns = () => request('/api/tasks/breakdown-drafts')
+export const getTaskBreakdown = id => request(`/api/tasks/breakdown-drafts/${id}`)
+export const editTaskBreakdown = (id, data) => request(`/api/tasks/breakdown-drafts/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+export const confirmTaskBreakdown = (id, version) => request(`/api/tasks/breakdown-drafts/${id}/confirm`, { method: 'POST', body: JSON.stringify({ version }) })
+export const discardTaskBreakdown = (id, version) => request(`/api/tasks/breakdown-drafts/${id}/discard`, { method: 'POST', body: JSON.stringify({ version }) })
+export const submitTaskFeedback = (id, data) => request(`/api/tasks/${id}/feedback`, { method: 'POST', body: JSON.stringify(data) })
+export const getTaskFeedback = (id) => request(`/api/tasks/${id}/feedback`)
+export const getTaskGrowthContext = (id) => request(`/api/tasks/${id}/growth-context`)
+export const saveTaskGrowthContext = (id, data) => request(`/api/tasks/${id}/growth-context`, { method: 'PUT', body: JSON.stringify(data) })
+export const getDurationAdvice = (id) => request(`/api/growth/tasks/${id}/duration-advice`)
+export const startWorkSession = (data) => request('/api/work-sessions/start', { method: 'POST', body: JSON.stringify(data) })
+export const getCurrentWorkSession = (id) => request(`/api/tasks/${id}/work-sessions/current`)
+export const pauseWorkSession = (id) => request(`/api/work-sessions/${id}/pause`, { method: 'POST' })
+export const resumeWorkSession = (id) => request(`/api/work-sessions/${id}/resume`, { method: 'POST' })
+export const finishWorkSession = (id) => request(`/api/work-sessions/${id}/finish`, { method: 'POST' })
 
 export const getTimeRules = () => request('/api/time-rules')
 export const createTimeRule = (data) => request('/api/time-rules', { method: 'POST', body: JSON.stringify(data) })
 export const updateTimeRule = (id, data) => request(`/api/time-rules/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 
-// Allow the backend's bounded 20-second provider request to finish first.
-export const parseConstraint = (text) => request('/api/constraints/parse', { method: 'POST', body: JSON.stringify({ text }) }, 25000)
+// Allow the backend's bounded 120-second provider request to finish first.
+export const parseConstraint = (text) => request('/api/constraints/parse', { method: 'POST', body: JSON.stringify({ text }) }, 125000)
 
 export const createCandidatePlan = (data) => request('/api/plans/candidates', { method: 'POST', body: JSON.stringify(data) })
 export const getPlan = (id) => request(`/api/plans/${id}`)
 export const getConfirmedPlan = (weekStart) => request(`/api/plans/confirmed?week_start=${encodeURIComponent(weekStart)}`)
 export const confirmPlan = (id) => request(`/api/plans/${id}/confirm`, { method: 'POST' })
 
-export const explainCandidate = (id, language = 'en') => request(`/api/plans/${id}/explanation`, { method: 'POST', body: JSON.stringify({ language }) }, 25000)
+export const explainCandidate = (id, language = 'zh-CN') => request(`/api/plans/${id}/explanation`, { method: 'POST', body: JSON.stringify({ language }) }, 125000)
+
+export const createAssistantSession=()=>request('/api/assistant/sessions',{method:'POST',body:'{}'})
+export const openWorkspaceSession=(scope,week_start)=>request('/api/assistant/sessions/open',{method:'POST',body:JSON.stringify({scope,...(week_start?{week_start}:{})})})
+export const confirmGrowthDraft=id=>request(`/api/assistant/drafts/${id}/confirm`,{method:'POST'})
+export const discardGrowthDraft=id=>request(`/api/assistant/drafts/${id}/discard`,{method:'POST'})
+export const getAssistantSession=id=>request(`/api/assistant/sessions/${id}`)
+export const sendAssistantMessage=(id,data)=>request(`/api/assistant/sessions/${id}/messages`,{method:'POST',body:JSON.stringify(data)},125000)
+export const previewAssistant=(id,data)=>request(`/api/assistant/proposals/${id}/preview`,{method:'POST',body:JSON.stringify(data)})
+export const replanAssistant=(id,target)=>sendAssistantMessage(id,{client_message_id:crypto.randomUUID(),text:target?'重新安排所选任务，尽量保留其他安排':'局部重规划，尽量保留其他安排',replan:true,...(target?{actions:[{op:'update',target,fields:{}}]}:{})})
+export const expandAssistantScope=id=>previewAssistant(id,{client_message_id:crypto.randomUUID(),expand_scope:true})
+export const confirmAssistant=id=>request(`/api/assistant/proposals/${id}/confirm`,{method:'POST'})
+export const discardAssistant=id=>request(`/api/assistant/proposals/${id}/discard`,{method:'POST'})
+export const explainAssistant=id=>request(`/api/assistant/proposals/${id}/explanation`,{method:'POST'},125000)
+export const getAssistantPreferences=()=>request('/api/assistant/preferences')
+export const saveAssistantPreferences=data=>request('/api/assistant/preferences',{method:'PUT',body:JSON.stringify(data)})
+export const getAssistantSettings=()=>request('/api/assistant/settings')
+export const getTaskCategories=(active)=>request(`/api/task-categories${active===undefined?'':`?active=${active}`}`)
+export const createTaskCategory=data=>request('/api/task-categories',{method:'POST',body:JSON.stringify(data)})
+export const updateTaskCategory=(key,data)=>request(`/api/task-categories/${encodeURIComponent(key)}`,{method:'PATCH',body:JSON.stringify(data)})
+export const getPreferenceRules=()=>request('/api/assistant/preference-rules')
+export const createPreferenceRule=data=>request('/api/assistant/preference-rules',{method:'POST',body:JSON.stringify(data)})
+export const updatePreferenceRule=(id,data)=>request(`/api/assistant/preference-rules/${id}`,{method:'PATCH',body:JSON.stringify(data)})
+export const createAssistantRun=(id,data)=>request(`/api/assistant/sessions/${id}/runs`,{method:'POST',body:JSON.stringify(data)})
+export const getAssistantRun=id=>request(`/api/assistant/runs/${id}`)
+export const cancelAssistantRun=id=>request(`/api/assistant/runs/${id}/cancel`,{method:'POST'})
+export const retryAssistantRun=id=>request(`/api/assistant/runs/${id}/retry`,{method:'POST'})
+
+export const getGoals = () => request('/api/goals')
+export const createGoal = (data) => request('/api/goals', { method: 'POST', body: JSON.stringify(data) })
+export const updateGoal = (id, data) => request(`/api/goals/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+export const updateGrowthDirection = (direction) => request('/api/goals/direction', { method: 'PUT', body: JSON.stringify({ direction }) })
+export const getGrowthProfile = () => request('/api/growth/profile')
+export const getGrowthAttention = () => request('/api/growth/attention')
+export const createAttentionDraft = (id,data) => request(`/api/growth/tasks/${id}/schedule-draft`,{method:'POST',body:JSON.stringify(data)},65000)
+export const getGrowthInsights = () => request('/api/growth/insights')
+export const analyzeGrowthInsights = () => request('/api/growth/insights/analyze', { method: 'POST' }, 125000)
+export const editGrowthInsight = (id, time_window) => request(`/api/growth/insights/${id}`, { method: 'PATCH', body: JSON.stringify({ time_window }) })
+export const acceptGrowthInsight = (id) => request(`/api/growth/insights/${id}/accept`, { method: 'POST' })
+export const ignoreGrowthInsight = (id) => request(`/api/growth/insights/${id}/ignore`, { method: 'POST' })
+export const getGrowthReviews = (weekStart) => request(`/api/growth/reviews${weekStart ? `?week_start=${encodeURIComponent(weekStart)}` : ''}`)
+export const getGrowthStatistics = (weeks = 4, endWeek) => request(`/api/growth/statistics?weeks=${encodeURIComponent(weeks)}${endWeek ? `&end_week=${encodeURIComponent(endWeek)}` : ''}`)
+export const createGrowthReview = (weekStart) => request('/api/growth/reviews', { method: 'POST', body: JSON.stringify({ week_start: weekStart }) })
+export const getLocalBackups = () => request('/api/data/backups')
+export const exportGrowthData = () => request('/api/data/export', {}, 60000)
+export const importGrowthData = (snapshot) => request('/api/data/import', { method: 'POST', body: JSON.stringify(snapshot) }, 60000)
+
+export const getTasksDashboard=()=>request('/api/tasks/dashboard')
+export const getProfileContext=()=>request('/api/profile/context')
+export const getReviewContext=()=>request('/api/review/context')
+
+const conversationQuery = values => new URLSearchParams(Object.entries(values).filter(([, value]) => value !== undefined && value !== null && value !== '')).toString()
+export const getConversations = (values = {}) => request(`/api/conversations?${conversationQuery(values)}`)
+export const createConversation = data => request('/api/conversations', { method: 'POST', body: JSON.stringify(data) })
+export const getConversation = id => request(`/api/conversations/${id}`)
+export const updateConversation = (id, data) => request(`/api/conversations/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+export const deleteConversation = (id, version) => request(`/api/conversations/${id}?expected_version=${encodeURIComponent(version)}`, { method: 'DELETE' })
+export const getConversationMessages = (id, values = {}) => request(`/api/conversations/${id}/messages?${conversationQuery(values)}`)
+export const saveConversationMessage = (id, data) => request(`/api/conversations/${id}/messages`, { method: 'POST', body: JSON.stringify(data) })
+export const getConversationRuns = id => request(`/api/conversations/${id}/runs`)
+export const startConversationRun = (id, data) => request(`/api/conversations/${id}/runs`, { method: 'POST', body: JSON.stringify(data) })
+export const getConversationRun = (id, run, cursor = 0, attempt) => request(`/api/conversations/${id}/runs/${run}?${conversationQuery({ after: cursor, attempt })}`)
+export const stopConversationRun = (id, run, attempt) => request(`/api/conversations/${id}/runs/${run}/stop`, { method: 'POST', body: JSON.stringify({ expected_attempt: attempt }) })
+export const retryConversationRun = (id, run, attempt) => request(`/api/conversations/${id}/runs/${run}/retry`, { method: 'POST', body: JSON.stringify({ expected_attempt: attempt }) })
+export const getCalendarEvents = (start,end) => request(`/api/calendar/events?${conversationQuery({start,end})}`)
+export const getReviewFacts = (start,end) => request(`/api/reviews/facts?${conversationQuery({start,end})}`)
+export const getReviewRecords = (values={}) => request(`/api/reviews/records?${conversationQuery(values)}`)
+export const getReviewRecord = id => request(`/api/reviews/records/${id}`)
+export const saveReviewRecord = (data,id) => request(`/api/reviews/records${id?'/'+id:''}`,{method:id?'PATCH':'POST',body:JSON.stringify(data)})
+export const getWorkspaceDraft = (kind,id) => request(`/api/workspace/drafts/${kind}/${id}`)
+export const editWorkspaceDraft = (kind,id,version,content) => request(`/api/workspace/drafts/${kind}/${id}`,{method:'PATCH',body:JSON.stringify({expected_version:version,content})})
+export const actWorkspaceDraft = (kind,id,version,action) => request(`/api/workspace/drafts/${kind}/${id}/${action}`,{method:'POST',body:JSON.stringify({expected_version:version})})
+export const createReviewDraft = (id,data) => request(`/api/conversations/${id}/review-drafts`,{method:'POST',body:JSON.stringify(data)},125000)
+
+export const getMemories=(values={})=>request(`/api/memories?${conversationQuery(values)}`)
+export const getMemory=id=>request(`/api/memories/${id}`)
+export const createMemory=data=>request('/api/memories',{method:'POST',body:JSON.stringify(data)})
+export const editMemory=(id,data)=>request(`/api/memories/${id}`,{method:'PATCH',body:JSON.stringify(data)})
+export const actMemory=(id,data)=>request(`/api/memories/${id}/actions`,{method:'POST',body:JSON.stringify(data)})
+export const getConversationSummaries=id=>request(`/api/conversations/${id}/summaries`)
+export const createConversationSummary=(id,data)=>request(`/api/conversations/${id}/summaries`,{method:'POST',body:JSON.stringify(data)},125000)
+export const getSummaryRequest=(id,key)=>request(`/api/conversations/${id}/summaries/requests/${encodeURIComponent(key)}`)

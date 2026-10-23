@@ -15,6 +15,8 @@ from app.services.constraint_parser import current_shanghai_date, validate_respo
 from .test_planning_state import revision
 from .test_plans import candidate, confirm, create_task
 
+pytestmark = pytest.mark.usefixtures("legacy_plan_clock")
+
 
 COURSE_PROPOSAL = {
     "kind": "course", "title": "Machine Learning", "recurrence": "weekly",
@@ -26,7 +28,7 @@ ONCE_PROPOSAL = {**PROTECTED_PROPOSAL, "recurrence": "once", "weekday": None, "d
 
 @pytest.fixture
 def mock_parser(monkeypatch):
-    app.dependency_overrides[configured_claude] = lambda: ClaudeConfig("test-only-placeholder", "test-model", "https://gateway.example")
+    app.dependency_overrides[configured_claude] = lambda: ClaudeConfig("test-only-placeholder", "test-model")
     app.dependency_overrides[current_shanghai_date] = lambda: date(2026, 10, 1)
 
     def respond(body):
@@ -42,8 +44,7 @@ def mock_parser(monkeypatch):
         app.dependency_overrides.pop(current_shanghai_date, None)
 
 
-@pytest.mark.parametrize("proposal", [COURSE_PROPOSAL, PROTECTED_PROPOSAL, ONCE_PROPOSAL,
-                                      {**PROTECTED_PROPOSAL, "start_time": "14:07", "end_time": "15:23"}])
+@pytest.mark.parametrize("proposal", [COURSE_PROPOSAL, PROTECTED_PROPOSAL, ONCE_PROPOSAL])
 def test_valid_proposal(client, mock_parser, proposal):
     mock_parser({"status": "parsed", "proposal": proposal})
     response = client.post("/api/constraints/parse", json={"text": "A time rule description"})
@@ -156,11 +157,10 @@ def test_apply_existing_endpoint_bumps_once_and_old_candidate_is_stale(client, t
     assert revision(test_engine) == before + 1
 
 
-@pytest.mark.parametrize("missing", ["CLAUDE_API_KEY", "CLAUDE_MODEL", "CLAUDE_BASE_URL"])
+@pytest.mark.parametrize("missing", ["CLAUDE_API_KEY", "CLAUDE_MODEL"])
 def test_missing_configuration_does_not_break_manual_mvp(client, test_engine, monkeypatch, missing):
-    for name, value in {"CLAUDE_API_KEY": "mock-key", "CLAUDE_MODEL": "mock-model", "CLAUDE_BASE_URL": "https://gateway.example"}.items():
-        monkeypatch.setenv(name, value)
-    monkeypatch.delenv(missing)
+    other = "CLAUDE_MODEL" if missing == "CLAUDE_API_KEY" else "CLAUDE_API_KEY"
+    monkeypatch.setenv(other, "test-only-placeholder")
     before = database_snapshot(test_engine)
     response = client.post("/api/constraints/parse", json={"text": "Example"})
     assert response.status_code == 503

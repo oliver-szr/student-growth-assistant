@@ -12,6 +12,8 @@ from app.models import Plan, PlanItem, PlanItemKind, Task, TimeRule
 from .test_plans import candidate, create_task
 from .test_time_rules import COURSE
 
+pytestmark = pytest.mark.usefixtures("legacy_plan_clock")
+
 
 def test_foreign_keys_enabled_on_each_connection_and_after_dispose(test_engine: Engine) -> None:
     # Hold both checkouts at once so they cannot reuse the same DBAPI connection.

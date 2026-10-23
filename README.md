@@ -1,287 +1,147 @@
-# Student Growth Assistant
+# 个人成长助手 · Student Growth Assistant
 
-## Project Overview
+软件工程课程项目，使用 **React + Vite + JavaScript、FastAPI + Python、SQLAlchemy + SQLite、Alembic**，提供本地单用户的“规划—执行—复盘—改进”工作台。
 
-Student Growth Assistant is a deterministic weekly planning and replanning web application with optional AI-assisted input parsing and plan-change explanation.
+当前为 **V2 开发版本**：前端入口只使用新版工作台，提供独立会话、日历、任务、复盘、档案、记忆与右侧草案审核。尚未实现正式多用户账号及生产级安全隔离，仅适合在可信本地环境使用，不应直接开放给陌生用户。
 
-## Features
+V2 当前设计和各阶段验证记录集中在 [V2 架构说明](docs/v2/v2-architecture-proposal.md)，产品范围见 [产品框架设计](docs/v2产品框架设计.md)。`backend/app/skills/` 的 Core、Schedule、Task、Review、Memory、Query、Chat 是产品运行时依赖，需随源码保留；本地 `.agents/` 等开发工具不属于运行依赖。
 
-- Task management
-- Course and protected time management
-- Weekly deterministic scheduling
-- Candidate preview
-- User confirmation
-- Emergency replanning
-- Stale candidate protection
-- Natural-language TimeRule proposal
-- Deterministic Plan diff
-- Optional AI explanation
+- **规划**：两周安排、5 分钟网格、明确允许后分段、候选比较与局部重规划。未受影响的合法安排保持原位；局部失败后，用户明确同意才扩大范围。
+- **任务拆解**：AI 或手动生成父子任务草案，编辑、保存并确认后创建。父任务只汇总进度，子任务参与已有排程和执行反馈；无 AI Key 可使用手动拆解。
+- **复盘**：记录实际投入、完成/部分完成/暂缓；查看最近 4/8/12 周完成与投入趋势、类别分布、原始估时偏差和目标进展。未知耗时与零值分开显示，日程或计时结束不自动完成任务。
+- **我的档案**：管理长期目标、类别、偏好、课程、保护时间和数据备份。
 
-## Tech Stack
+AI 只生成建议和草案。用户确认后，后端重新校验当前时间、DDL、课程、锁定、历史和版本，并在一个事务中保存两周日程；无 AI 配置仍可手动规划和管理数据。
 
-Backend: Python 3.11+, FastAPI, SQLAlchemy, SQLite, Pydantic and pytest. Frontend: React, Vite, JavaScript and native CSS. AI: Anthropic Messages-compatible API via a configurable gateway; the actual model is configurable and may not be Claude.
+![匿名规划工作台](docs/images/planning.png)
 
-## Current status
+## 环境与安装
 
-`v1.1.0` introduced 1-minute scheduling granularity and positive integer-minute Task durations. Current `main` retains that behavior together with optional AI parsing and explanation, deterministic scheduling, and the Candidate/Confirm workflow. `v1.0.0` remains an immutable historical release.
+需要 **Python 3.11、Node.js 22 和 npm**；本机 Node.js 24 也已通过测试。以下命令从仓库根目录运行。
 
-Historical verification details are available in [Phase 7A verification](docs/phase7a-verification.md) and [Phase 7B verification](docs/phase7b-verification.md).
-
-## Backend setup
-
-Use a terminal where `conda` is available (Anaconda Prompt or an initialized PowerShell). From the project root, create the dedicated Conda environment and install dependencies into it:
+新组员可以自行选择环境名称，例如首次建立独立 Conda 环境：
 
 ```powershell
-conda create -n app_env python=3.11 -y
-cd backend
-conda run -n app_env python -m pip install -r requirements.txt
+conda create -n sga_dev python=3.11 pip
+conda activate sga_dev
+python -m pip install -r backend/requirements.txt -c backend/constraints.txt
+python -m pip check
 ```
 
-If PowerShell is already in `backend`, omit `cd backend`. `conda run -n app_env` ensures that the commands use `app_env`, even if Conda activation is not configured in the shell.
-If `app_env` already exists, skip the `conda create` command.
-
-## Run backend
-
-From `backend`:
+已有兼容 Python 环境的组员可直接激活后执行后两条命令，不必使用固定名称。当前维护者继续使用已有 **app_env**，不创建 `.venv`、不重建环境或改动 base；先检查依赖，避免不必要的升级：
 
 ```powershell
-conda run -n app_env --no-capture-output python -m uvicorn app.main:app --reload
+conda env list
+conda run -n app_env python --version
+conda run -n app_env python -m pip check
+# 先检查缺失依赖和冲突；需要安装时使用原版本约束
+conda run -n app_env python -m pip install -r backend/requirements.txt -c backend/constraints.txt
+npm --prefix frontend ci
+# 仅首次配置；不要覆盖已有 .env
+if (!(Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
 ```
 
-From the project root:
-
-```powershell
-conda run -n app_env --no-capture-output python -m uvicorn app.main:app --app-dir backend --reload
-```
-
-The SQLite database path is based on `backend/app/database.py`, so either command uses `backend/data/app.db`.
-The backend runs at http://127.0.0.1:8000. Start the frontend in a second terminal using the commands below.
-
-## Test
-
-From `backend`:
-
-```powershell
-conda run -n app_env --no-capture-output python -m pytest
-```
-
-API and persistence tests use temporary SQLite files under `backend/.pytest_tmp/` and remove those files afterward. Scheduler and Validator tests use plain Python data in memory. Tests do not connect to or modify `backend/data/app.db`.
-
-GitHub Actions runs backend tests, frontend tests, and the frontend production build on pushes and pull requests to `main`.
-
-If an old pytest temporary directory has local ACL errors, use a fresh isolated path instead of changing application code:
-
-```powershell
-conda run -n app_env --no-capture-output python -m pytest --basetemp=../.pytest_tmp/final-regression-fresh
-```
-
-## Optional AI Configuration
-
-AI parsing and explanation are optional. They share the **Anthropic Messages-compatible API via configurable New API gateway**, with `POST /v1/messages` on the configured gateway and top-level `system`. The model name comes from your gateway console and is never hardcoded.
-
-The actual model is configurable and may not be Claude. Existing `claude_client.py` / `CLAUDE_*` names are retained for compatibility, not as a model claim. `CLAUDE_BASE_URL` accepts a gateway origin or its `/v1` API base, with an optional trailing slash; do not append `/messages`. The client normalizes the version suffix to avoid `/v1/v1/messages`.
-
-Copy `backend/.env.example` to `backend/.env` and configure locally:
+可选 AI 配置保存在本地 `backend/.env`：
 
 ```dotenv
-CLAUDE_API_KEY=
-CLAUDE_BASE_URL=https://your-gateway.example
-CLAUDE_MODEL=
-CLAUDE_API_VERSION=2023-06-01
+AI_API_FORMAT=openai
+OPENAI_BASE_URL=https://api.deepseek.com/v1
+OPENAI_MODEL=填写服务支持的模型名称
+OPENAI_API_KEY=填写自己的密钥
+AI_TIMEOUT_SECONDS=120
 ```
 
-The shown gateway URL is a placeholder; supply the key, URL and model from your provider. The backend loads only its own `.env`; process environment takes precedence. Restart after changing configuration. `.env` is ignored by Git. Keep the key backend-only; never use a `VITE_` key or send it to the browser. Phase 7A added `python-dotenv`; HTTP uses the existing `httpx`, and the minute-level change adds no dependencies.
+也支持 `AI_API_FORMAT=anthropic` 及 `CLAUDE_*` 配置，两组密钥不混用。需要模型的功能在配置缺失时会明确提示；模型请求会发送相关任务与执行事实，不要在业务字段中填写密钥或敏感身份信息。
 
-`CLAUDE_API_KEY`, `CLAUDE_MODEL`, and `CLAUDE_BASE_URL` are all required to enable AI. Missing any of them does not prevent startup or manual Task/TimeRule/planning use. Parsing returns `503 AI_NOT_CONFIGURED`; explanation still returns the deterministic diff with an unavailable explanation. Provider requests have a total 20-second deadline, and the frontend parse request has a 25-second timeout. Network/HTTP failures return `503 AI_UNAVAILABLE`; invalid content, JSON, schemas, or TimeRule combinations return `502 AI_RESPONSE_INVALID`, with fixed safe messages.
+## 本地运行
 
-Provider availability is external; core planning remains available when AI is unavailable. There is no automatic retry or fallback model.
-
-The configured model produces an untrusted structured proposal. The proposal is validated by deterministic backend rules. The user must review and explicitly apply it through the existing TimeRule workflow. AI does not directly modify Tasks, Plans, or the database.
-
-### Parse and apply a TimeRule
-
-In **Courses & Protected Time**, enter one interval in natural language and click **Parse with AI**. Supported results are weekly courses, weekly protected time, and one-time protected time. Missing or ambiguous details produce **More information needed**; Task and Plan commands produce **Unsupported request**. Dates and clock times use Shanghai semantics, and the backend supplies the current Shanghai date explicitly.
-
-Review **AI Proposal**, check or edit the prefilled `TimeRuleForm`, then click **Apply time rule**. Only Apply uses the existing `POST /api/time-rules` endpoint to save the rule and increment revision once. Older Candidates then become stale through the existing checks. Parse, **Discard**, clarification, and unsupported results never write to the database. Manual create/edit/deactivate remains available when AI fails.
-
-## Phase 7B: Explain candidate changes
-
-In Weekly Plan, **Explain Changes** is available for a Candidate with a saved confirmed baseline. It runs only when clicked. **Changes** lists Added, Moved, Not included in candidate, and Unchanged using saved Task IDs/times and Shanghai display time. The comparison uses `candidate.based_on_plan_id`, including a now-superseded historical snapshot, rather than whichever plan is currently confirmed. A first Candidate displays **First plan for this week.** without calling AI.
-
-AI summarizes the observable differences between the confirmed snapshot and candidate plan. It receives only the locally computed structured diff and an independent explanation prompt. No scheduler decision trace exists, so the explanation does not infer hidden causal reasoning. General scheduling policy is documented as background; first-version prose is restricted to observed changes. Removed means not included in the candidate, never deletion of a Task.
-
-`POST /api/plans/{candidate_id}/explanation` returns HTTP 200 with the diff even if AI is unconfigured, unavailable, or rejected. **AI explanation unavailable** keeps planning and Confirm usable. The endpoint reads snapshots, releases its read transaction before waiting on the shared 20-second provider request, and does not persist explanations or change revision. The frontend deadline is 25 seconds; there is no automatic retry. New Candidates, week changes, and successful Confirm clear explanation state; late responses from old Candidates are ignored. Outdated Candidates may still be explained but retain their deterministic warning and blocked Confirm.
-
-Changes uses Shanghai display time; AI explanation times are labeled UTC. Historical verification details are available in the [AI Layer independent review](docs/ai-layer-review.md).
-
-To explicitly run three real smoke cases using synthetic plans and isolated SQLite, from `backend`:
+首次安装或升级前先备份已有数据，再显式检查迁移：
 
 ```powershell
-conda run -n app_env --no-capture-output python scripts/smoke_explanations.py --output ../.pytest_tmp/phase7b-evidence/new-smoke.json
+# 在已激活的 Python 3.11 项目环境中
+python scripts/migrate.py
 ```
 
-This consumes provider calls, loads local backend configuration, and makes one call per case without retries. Normal pytest mocks AI and does not consume provider usage.
+新库会依次执行完整迁移链，当前 head 为 `0005_secretary_memory`；旧库通过结构检查后增量升级。不要删除旧库或修改历史 revision；迁移失败的处理见 [数据库说明](docs/database.md)。
 
-The [Chinese user guide](docs/USER_GUIDE_ZH.md#6-ai-natural-language) provides an additional Chinese walkthrough of parsing, proposal review, and Apply.
-
-Automated pytest and Node tests use mocked AI/HTTP and never call a paid provider. A manual provider smoke checklist is available in [Phase 7A verification](docs/phase7a-verification.md); perform Apply demos only on an isolated database.
-
-## In-memory scheduling (Phase 4)
-
-Tasks accept durations of any positive integer number of minutes, with a minimum of 1 minute. The Scheduler uses a **1-minute grid**, trying starts from 08:00 through 21:59. Assignments have zero seconds and microseconds and must finish by 22:00 and the deadline. See the [Chinese user guide](docs/USER_GUIDE_ZH.md) for a Chinese explanation of the minute-level workflow.
-
-`backend/app/services/scheduler.py` exposes `schedule_week(week_start, selected_tasks, time_rules)`. Inputs use the small frozen dataclasses in `scheduling_types.py`; `week_start` is a Monday date, deadlines are timezone-aware, and TimeRule clock times describe local Shanghai time. The scheduler returns either complete task assignments or `unschedulable` with reasons and no partial assignments. It validates a successful result using `validator.py` before returning it.
-
-The greedy heuristic sorts by deadline, priority, and task ID, then chooses each task's earliest continuous slot. It does not backtrack or split tasks and does not guarantee optimality. `unschedulable` does not prove that no legal schedule exists. See [Phase 4 implementation](docs/architecture.md#phase-4-当前实现) for the Python interface, checks, and limitations.
-
-## Persisted plans (Phase 5)
-
-Use Swagger at `/docs` to exercise the new backend flow:
-
-1. Create the Tasks and TimeRules, then send `POST /api/plans/candidates` with a Monday `week_start` and a nonempty list of unique `todo` Task IDs, for example `{"week_start":"2026-10-05","task_ids":[1]}`.
-2. On success, HTTP `200` returns `status: "feasible"`, a saved `candidate`, and an empty `unscheduled_tasks`. Inspect the saved plan with `GET /api/plans/{id}`.
-3. Send `POST /api/plans/{id}/confirm` with no body to confirm that stored Candidate. Query the official plan with `GET /api/plans/confirmed?week_start=2026-10-05`.
-
-Candidate generation calls the Scheduler and independently validates its assignments before saving task and active course snapshots. Protected intervals constrain placement and are never PlanItems. Existing official plans remain unchanged until Confirm; `based_on_plan_id` records the current same-week official plan when generating a Candidate.
-
-Startup creates the missing tables and safely initializes `PlanningState(id=1, revision=0)`. Task/TimeRule creation, every successful PATCH (including empty or unchanged PATCH), and successful confirmation increment the global revision once. GET, Candidate generation, and rejected operations do not increment it. Every write route reserves SQLite's writer with `BEGIN IMMEDIATE` before reading, then commits business writes and any revision increment together. Candidate computation holds that reservation until it is saved, keeping its input snapshot consistent.
-
-Confirm rejects stale Candidates with HTTP `409 STALE_CANDIDATE`; generate a new Candidate after a Task, TimeRule, or official plan changes. Confirm uses the saved items without rerunning Scheduler. It atomically supersedes the previous same-week official plan, confirms the Candidate, and increments revision. A partial unique index enforces one confirmed plan per week. Other Candidates remain viewable but become stale; confirming a confirmed or superseded plan returns `409 PLAN_NOT_CANDIDATE`.
-
-An incomplete greedy result returns HTTP `409 UNSCHEDULABLE` with task reasons and saves no plan. A feasible result rejected by Validator is HTTP `500`; it is never persisted. See [API contract](docs/api-contract.md) and [architecture](docs/architecture.md) for response fields and transaction details. The Phase 6 UI uses these existing APIs without changing their contract.
-
-## Frontend setup and run
-
-Open a second Windows PowerShell window. From the project root:
-
-Use Node.js 20.19+ or 22.12+.
+打开两个终端，在根目录分别执行：
 
 ```powershell
-cd frontend
-npm install
-npm run dev
+# 终端一
+conda run -n app_env --no-capture-output python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+# 终端二
+npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-Open http://localhost:5173. Vite requires port 5173 and exits if it is occupied, keeping its origin consistent with backend CORS. Keep the backend running in the first window. The frontend uses `http://127.0.0.1:8000` by default. To use a different backend URL, copy `.env.example` to `.env` in `frontend`, edit `VITE_API_BASE_URL`, and restart Vite. No secret belongs in this frontend setting.
+使用其他环境的组员，在已激活的环境中将上述后端命令前缀 `conda run -n app_env --no-capture-output python` 换成 `python` 即可；测试、迁移和审计同理。匿名演示 PowerShell 启动器目前专用于维护者的 `app_env`，其他环境可按 [演示文档](docs/demo.md) 的手动启动命令运行。
 
-To check the frontend from `frontend`:
+页面：http://localhost:5173/ ，API 文档：http://127.0.0.1:8000/docs 。正常模式使用真实北京时间和 `backend/data/app.db`，启动时检查 Alembic 版本；显式升级和恢复见 [数据库说明](docs/database.md)。
+
+## 匿名演示
 
 ```powershell
-npm test
-npm run build
+& .\scripts\启动演示版.ps1
+& .\scripts\停止演示版.ps1
+# 新建另一份匿名样例，保留之前的数据库
+& .\scripts\启动演示版.ps1 -Reset -OpenBrowser
+# 从空匿名库开始，禁止真实模型请求，仅 Mock 任务拆解
+& .\scripts\启动演示版.ps1 -MockIntegration
 ```
 
-Task deadlines are entered and displayed in fixed Shanghai time (UTC+08:00). The frontend sends an offset-aware value such as `2026-10-05T22:00:00+08:00`; the API may return the same instant as `2026-10-05T14:00:00Z`. Weekly and one-time protected time use Shanghai local dates and clock times.
+脚本从已有 `app_env` 解析解释器及环境，不硬编码 Conda 安装路径。默认前端 5174、后端 8001；模拟时间为 **2026-10-14 18:00，北京时间**。新数据写到忽略的 `scripts/.runtime/`，不重置正常库或已有本地资料，不停止未知进程。详见 [演示与浏览器验证](docs/demo.md)。
 
-## Isolated Demo Database
-
-Normal startup uses `backend/data/app.db`; there is no environment variable for changing this path. For a clean classroom demo, stop the normal backend and run the following from the project root in PowerShell. It uses the same `app.state.db_engine` and `get_db` overrides as the existing test harness, without changing project files or touching the development database:
+## 测试与审计
 
 ```powershell
-@'
-import sys
-import tempfile
-from pathlib import Path
-sys.path.insert(0, str(Path("backend").resolve()))
-import uvicorn
-from sqlalchemy.orm import Session
-from app.main import app
-from app.database import create_sqlite_engine, get_db
-
-with tempfile.TemporaryDirectory(prefix="sga-demo-") as directory:
-    engine = create_sqlite_engine(f"sqlite:///{Path(directory).as_posix()}/demo.db")
-    def demo_db():
-        with Session(engine, autoflush=False) as session:
-            yield session
-    app.state.db_engine = engine
-    app.dependency_overrides[get_db] = demo_db
-    try:
-        uvicorn.run(app, host="127.0.0.1", port=8000)
-    finally:
-        engine.dispose()
-'@ | conda run -n app_env --no-capture-output python -
+New-Item -ItemType Directory -Force scripts/.local | Out-Null
+cd backend
+conda run -n app_env python -m pytest -p no:cacheprovider --basetemp=../scripts/.local/pytest
+cd ..
+npm --prefix frontend test
+npm --prefix frontend run build
+conda run -n app_env python scripts/publication_audit.py
+conda run -n app_env python scripts/check_repository.py
 ```
 
-Start Vite normally in a second terminal. The demo starts empty; enter the data below through the UI. Stop this backend with Ctrl+C when finished; normal shutdown removes its temporary database. Do not use `--reload` with this in-process harness. Restarting the normal backend returns to the unchanged development database; no backup/restore or new database configuration is needed.
+测试使用隔离数据库和固定时钟，不自动调用付费模型；测试产物、审计清单和演示日志不进入 Git。安装约束与 npm 锁文件不随整理升级。
 
-## Demo Flow
+GitHub Actions 配置在 `.github/workflows/ci.yml`，PR 和 main 更新时分别运行 Python 3.11 后端全量测试、依赖/文件引用检查，以及 Node.js 22 的 `npm ci`、前端测试和构建。工作流使用 YAML 1.2 的 JSON 子集，可用上述标准库检查命令验证语法与路径；本地通过不代表远程 Runner 已通过。CI 不使用本地 Conda、个人密钥或数据库，压力基准不进入每次 PR。
 
-Use an isolated temporary database for acceptance demos and keep development data unchanged. All planning dates/times use Shanghai time.
+手动性能基准（纯函数、固定匿名输入、无数据库/AI；每个场景独立子进程，默认110秒超时）与跨阶段 Mock 演示见 [演示文档](docs/demo.md)：
 
-1. Add two Tasks with 60-minute durations and deadlines within the selected week.
-2. Add a weekly Course and a Protected Time interval through the manual form.
-3. Open Weekly Plan and choose the intended week's Monday.
-4. Select both Tasks and click Generate Candidate.
-5. Review the timeline and click Confirm Candidate.
-6. Add an emergency Task with high priority and an earlier deadline.
-7. Select the original Tasks plus the emergency Task and generate a new Candidate. Review it alongside the unchanged Confirmed Plan.
-8. Optionally use Explain Changes, then confirm the replacement Candidate when satisfied. AI parsing can also be used during rule entry in step 2: review/Apply one protected interval proposal. If AI is unavailable, use the manual form and deterministic Changes.
-
-The app generates a complete selected week; it does not freeze past or started blocks. For a presentation, select a future week and use matching deadlines. Replanning requires selecting all Tasks you want in the replacement plan. A smaller selection excludes omitted Tasks from the Candidate without deleting them.
-
-## Complete browser workflow
-
-1. In **Tasks**, add at least two todo tasks with a duration, deadline, and priority. Choose deadlines that allow scheduling in the week you intend to demonstrate. Use **Edit** to update a task, **Mark Done** to finish it, or **Cancel task** to cancel it.
-2. In **Courses & Protected Time**, add weekly courses and any protected intervals. Courses appear in plans; protected time constrains placement without becoming a PlanItem.
-3. Open **Weekly Plan**. It defaults to the current Shanghai week's Monday. Selecting any date converts it to that week's Monday, displayed as **Week of YYYY-MM-DD**. Changing weeks clears the selection and Candidate, then loads that week's Confirmed Plan.
-4. Select the todo tasks to schedule. Each checkbox shows title, duration, Shanghai deadline, and priority. Done and cancelled tasks are excluded. Select at least one task before generating.
-5. Click **Generate Candidate** and review its Task and Course timeline in Shanghai time. **Plan details** shows source revision and the previous official plan ID. A Candidate remains separate from **Current Confirmed Plan**.
-6. Click **Confirm Candidate**. Only a successful server response replaces the displayed Confirmed Plan and clears the Candidate. The page then reloads the official plan from the backend. If task selection changed, restore the original Candidate task set or generate a new Candidate before confirming.
-7. To replan for an emergency, create a normal Task with **high** priority and a deadline, return to Weekly Plan, and select the original tasks plus the new task. Generate and review the new Candidate alongside the unchanged current plan, then Confirm to supersede the old plan.
-8. If a Task, TimeRule, or official plan changes after generation, Confirm may return **STALE_CANDIDATE**. The outdated preview stays visible and Confirm is disabled; explicitly generate a new Candidate. **UNSCHEDULABLE** lists task IDs, titles where available, and backend reasons; it means the current greedy heuristic did not find a complete plan.
-
-The [Chinese user guide](docs/USER_GUIDE_ZH.md) provides an additional Chinese walkthrough of these workflows.
-
-Leaving Weekly Plan for another tab preserves its Candidate and selections; returning reloads Tasks and the official plan. A full browser refresh resets the selected week to the current Shanghai week and discards the in-memory Candidate and selections. Open Weekly Plan to reload the persisted Confirmed Plan. Candidates remain stored in SQLite but are not automatically restored; there is no localStorage or latest-Candidate endpoint.
-
-Loading and request errors appear on the page. **Reload tasks & confirmed plan** and **Retry** allow recovery after the backend returns. Failed Generate/Reload requests retain previously displayed plans for the selected week. A missing official plan (`404 PLAN_NOT_FOUND`) displays **No confirmed plan for this week.** as a normal empty state. Generate and Confirm cannot overlap or be submitted repeatedly while pending.
-
-Historical verification details are available in [Phase 6 evidence](docs/architecture.md#phase-6-浏览器联调与回归).
-
-## Limitations
-
-- The MVP is single-user, with no login or multi-user isolation.
-- Scheduling is greedy: it does not backtrack, split tasks, or guarantee optimality, and it may miss feasible schedules.
-- TimeRules do not span midnight; tasks must fit continuously within one day's 08:00–22:00 scheduling window.
-- There is no Plan History page, and Candidates are not automatically restored after a browser refresh.
-- Replanning covers a complete selected week and does not freeze already started or completed time blocks.
-
-## Verify
-
-- Health: http://127.0.0.1:8000/api/health
-- Swagger UI: http://127.0.0.1:8000/docs
-
-The browser app supports Task and TimeRule management and the full Candidate/Confirm flow without Swagger. Swagger UI remains available to inspect the API. For example, create a Task with this JSON:
-
-```json
-{
-  "title": "Finish report",
-  "description": "Coursework",
-  "duration_minutes": 90,
-  "deadline": "2026-10-05T18:00:00+08:00",
-  "priority": "high"
-}
+```powershell
+conda run -n app_env python scripts/scheduling_benchmark.py --repeats 3 --output scripts/.local/scheduling-benchmark.json
 ```
 
-Create a weekly course with:
+## 目录与协作
 
-```json
-{
-  "kind": "course",
-  "title": "Software Engineering",
-  "recurrence": "weekly",
-  "weekday": 3,
-  "start_time": "10:00",
-  "end_time": "12:00"
-}
+```text
+backend/                 后端应用、正式测试、constraints.txt
+  alembic/               冻结迁移基线与版本文件
+frontend/                React 页面与正式测试；tests/fixtures 为兼容测试辅助函数
+scripts/                 演示、迁移、导入、审计及显式验收工具
+  .runtime/、.local/     本地运行和验证产物（忽略）
+docs/                    现行架构、API、数据库、演示、协作说明
+  images/                原有匿名界面预览
+  archive/               少量历史验收记录
 ```
 
-New Tasks default to `status: "todo"`; new TimeRules default to `active: true`. To cancel a Task, `PATCH` its `status` to `"cancelled"`. To deactivate a TimeRule, `PATCH` its `active` field to `false`. There are no DELETE endpoints.
+[现行架构](docs/architecture.md) · [API 契约](docs/api-contract.md) · [小组协作](docs/collaboration.md)
 
-Task deadlines must include a timezone offset, such as `2026-10-05T22:00:00+08:00`. The API returns UTC with an offset (for example, `2026-10-05T14:00:00Z`). SQLite stores UTC clock values without an offset; the SQLAlchemy model restores UTC timezone information when reading them. Python code should compare these timezone-aware model datetimes with other timezone-aware datetimes. TimeRule dates and clock times describe local `Asia/Shanghai` time.
+[阶段 0 安全验收](docs/archive/阶段0开发基线与安全验收.md) · [阶段 1 局部重规划验收](docs/archive/阶段1局部重规划与冲突解释验收.md) · [目录整理验收](docs/archive/仓库整理验收.md)
 
-The app uses a local SQLite database and creates missing tables on startup with `Base.metadata.create_all`. This keeps the course MVP simple; it does not change existing table schemas. A production application should use database migrations, but this MVP does not use Alembic.
+[阶段 2 任务拆解与层级验收](docs/archive/阶段2任务拆解与层级管理验收.md)：仅支持父容器和子任务两级，每个父任务最多 20 项。建议顺序不是强制依赖；草案确认创建任务后，需另行生成并采用日程。该记录对应当时的 `0002_task_hierarchy` 与 JSON v2；当前迁移 head 为 `0005_secretary_memory`，JSON 导出为 v5。
 
-The backend allows browser requests from `http://localhost:5173` and `http://127.0.0.1:5173` for local development. Other frontend origins need an explicit CORS configuration change.
+[阶段 3 成长统计与可视化验收](docs/archive/阶段3成长统计与可视化验收.md)：统计直接读取有效执行反馈与当前正式计划，排除父容器和已撤回反馈，不重复加计时器；无需 AI。缺少可靠历史分母与取消时间日志，因此不显示历史完成率或周取消事件数；只单列全库当前取消状态数。本阶段无数据库结构或依赖变更。
 
-See [Phase 3 verification](docs/phase3-verification.md) for historical CRUD/UI browser checks and test results.
+[阶段 4 性能与工程质量验收](docs/archive/阶段4性能与工程质量验收.md)：先测量再复用搜索中的重复评分，保留原策略、预算、候选与独立校验；新增可重复基准、CI、固定测试时钟及跨阶段匿名集成演示。
+
+SQLite、备份、`.env`、个人课表、日志和临时截图只保留本地。历史验收中的路径与结果对应当时版本，当前操作以本 README 为准。
+
+## 数据与限制
+
+“我的档案”提供完整 JSON 导出/恢复；当前导出为 v5，兼容 v1–v4 的既有校验与转换，拒绝会丢失现有新版数据的旧格式恢复，恢复会使旧候选失效。恢复前保留独立备份并停止其他写入同库的服务；不要直接覆盖运行中的 SQLite 文件。详见 [数据库与备份](docs/database.md)。
+
+当前是本地单用户课程项目。仅两级任务，建议顺序不构成依赖网络；30/100 个任务可能达到搜索预算而没有完整方案，每策略 20 秒不是整个 HTTP 请求的硬超时。AI 功能需要自行配置 Provider，手动任务、排程和统计不依赖 AI。最终 Mock、浏览器、迁移、性能及未验证范围见 [最终集成验收](docs/archive/最终集成与交付验收.md)。
+
+项目保留原小组仓库 [oliver-szr/student-growth-assistant](https://github.com/oliver-szr/student-growth-assistant) 的提交历史与作者贡献。本次未新增许可证；仓库公开不等于授予额外使用、修改或分发许可。

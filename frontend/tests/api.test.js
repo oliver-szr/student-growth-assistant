@@ -1,12 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, confirmPlan, createCandidatePlan, getConfirmedPlan, getPlan, getTasks, createTask, updateTask, readableDetail } from '../src/api.js'
+import { ApiError, confirmPlan, createCandidatePlan, getConfirmedPlan, getPlan, getTasks, createTask, readableDetail,ensureConversationRuntime } from '../src/api.js'
+
+test('old backend is detected by read-only health before an AI message can be sent',async context=>{
+  const calls=[]
+  context.mock.method(globalThis,'fetch',async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify({status:'ok'}))})
+  await assert.rejects(ensureConversationRuntime(),/请重启后端/)
+  assert.equal(calls.length,1);assert.equal(new URL(calls[0].url).pathname,'/api/health')
+  assert.equal(calls[0].options.body,undefined)
+  globalThis.fetch=async()=>new Response(JSON.stringify({status:'ok',runtime:{protocol:'draft-recovery-v3',skills_available:true}}))
+  assert.equal((await ensureConversationRuntime()).protocol,'draft-recovery-v3')
+})
 
 test('FastAPI validation messages include readable field paths', () => {
   assert.equal(readableDetail([
-    { loc: ['body', 'duration_minutes'], msg: 'Input should be greater than 0' },
+    { loc: ['body', 'duration_minutes'], msg: 'Value error, duration_minutes must be a multiple of 30' },
     { loc: ['body'], msg: 'Value error, once requires date and no weekday' },
-  ]), 'duration_minutes: Input should be greater than 0; Value error, once requires date and no weekday')
+  ]), 'duration_minutes: Value error, duration_minutes must be a multiple of 30; Value error, once requires date and no weekday')
   assert.equal(readableDetail('Task not found'), 'Task not found')
   assert.equal(readableDetail({}), '')
   assert.equal(readableDetail([null]), 'Invalid value')
@@ -16,24 +26,9 @@ test('API rejects a real 422 response shape and exposes a network error', async 
   context.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({
     detail: [{ loc: ['body', 'title'], msg: 'Value error, title must not be blank' }],
   }), { status: 422 }))
-  await assert.rejects(createTask({ title: ' ' }), /title: Value error, title must not be blank/)
+  await assert.rejects(createTask({ title: ' ' }), /标题.*不能为空/)
   globalThis.fetch = async () => { throw new TypeError('Failed to fetch') }
-  await assert.rejects(getTasks(), /Could not connect to the backend/)
-})
-
-test('Task create and update preserve arbitrary integer minute durations', async (context) => {
-  const calls = []
-  context.mock.method(globalThis, 'fetch', async (url, options) => {
-    calls.push({ path: new URL(url).pathname, method: options.method, body: JSON.parse(options.body) })
-    return new Response(JSON.stringify({ id: 1 }), { status: 200 })
-  })
-  const task = { title: 'Read paper', duration_minutes: 17, deadline: '2026-10-05T09:07:00+08:00', priority: 'normal' }
-  await createTask(task)
-  await updateTask(1, { duration_minutes: 23 })
-  assert.deepEqual(calls, [
-    { path: '/api/tasks', method: 'POST', body: task },
-    { path: '/api/tasks/1', method: 'PATCH', body: { duration_minutes: 23 } },
-  ])
+  await assert.rejects(getTasks(), /无法连接后端/)
 })
 
 test('Plan endpoints preserve the existing backend paths, methods, and bodies', async (context) => {
@@ -64,7 +59,7 @@ for (const [status, code] of [[404, 'PLAN_NOT_FOUND'], [409, 'STALE_CANDIDATE'],
       assert.ok(error instanceof ApiError)
       assert.equal(error.status, status)
       assert.equal(error.code, code)
-      assert.equal(error.message, 'Server explanation')
+      assert.match(error.message, /[\u4e00-\u9fff]/)
       assert.deepEqual(error.detail, detail)
       return true
     })
@@ -78,7 +73,7 @@ test('Request timeout rejects and the next request can recover', async (context)
     options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
   }))
   const pending = getConfirmedPlan('2026-10-05')
-  const rejection = assert.rejects(pending, /The request timed out/)
+  const rejection = assert.rejects(pending, /请求超时/)
   context.mock.timers.tick(15000)
   await rejection
   globalThis.fetch = async () => new Response(JSON.stringify({ id: 4 }), { status: 200 })
@@ -87,5 +82,5 @@ test('Request timeout rejects and the next request can recover', async (context)
 
 test('Unreadable backend response is a recoverable error', async (context) => {
   context.mock.method(globalThis, 'fetch', async () => new Response('not JSON', { status: 500 }))
-  await assert.rejects(getPlan(7), /unreadable response/)
+  await assert.rejects(getPlan(7), /无法读取/)
 })

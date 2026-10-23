@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { ApiError, createTimeRule, parseConstraint } from '../src/api.js'
 import { parsingNotice, proposalDay, proposalToFormRule, timeRuleFormPayload } from '../src/timeRules.js'
 
-const weekly = { kind: 'protected', title: 'Lab', recurrence: 'weekly', weekday: 3, date: null, start_time: '14:07', end_time: '15:23' }
+const weekly = { kind: 'protected', title: 'Lab', recurrence: 'weekly', weekday: 3, date: null, start_time: '14:00', end_time: '16:00' }
 const once = { ...weekly, recurrence: 'once', weekday: null, date: '2026-10-09' }
 
 for (const result of [
@@ -32,7 +32,7 @@ for (const [status, code] of [[503, 'AI_NOT_CONFIGURED'], [503, 'AI_UNAVAILABLE'
   })
 }
 
-test('AI request has a 25s deadline, settles without auto retry, and supports manual retry', async (context) => {
+test('AI request has a 125s deadline, settles without auto retry, and supports manual retry', async (context) => {
   context.mock.timers.enable({ apis: ['setTimeout'] })
   let calls = 0
   let signal
@@ -42,8 +42,8 @@ test('AI request has a 25s deadline, settles without auto retry, and supports ma
     options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
   }))
   const pending = parseConstraint('Rule')
-  const rejection = assert.rejects(pending, /request timed out/)
-  context.mock.timers.tick(20000)
+  const rejection = assert.rejects(pending, /请求超时/)
+  context.mock.timers.tick(120000)
   assert.equal(signal.aborted, false)
   context.mock.timers.tick(5000)
   await rejection
@@ -55,7 +55,7 @@ test('AI request has a 25s deadline, settles without auto retry, and supports ma
 
 test('Weekly proposal maps to the existing form and Monday=1 through Sunday=7', () => {
   assert.deepEqual(proposalToFormRule({ ...weekly, active: false, id: 9 }), weekly)
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+  const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
   days.forEach((day, index) => assert.equal(proposalDay({ ...weekly, weekday: index + 1 }), day))
 })
 
@@ -66,8 +66,8 @@ test('Once proposal retains the Shanghai calendar date without timezone conversi
 
 test('Review edits are applied using the existing createTimeRule payload and endpoint', async (context) => {
   const draft = proposalToFormRule(weekly)
-  const payload = timeRuleFormPayload({ ...draft, title: 'Reviewed lab', weekday: '3', startTime: '14:11', endTime: '15:23' }, draft)
-  assert.deepEqual(payload, { ...weekly, title: 'Reviewed lab', start_time: '14:11' })
+  const payload = timeRuleFormPayload({ ...draft, title: 'Reviewed lab', weekday: '3', startTime: '14:30', endTime: '16:00' }, draft)
+  assert.deepEqual(payload, { ...weekly, title: 'Reviewed lab', start_time: '14:30' })
   let path
   context.mock.method(globalThis, 'fetch', async (url, options) => {
     path = new URL(url).pathname
@@ -89,7 +89,8 @@ test('Existing form clears hidden fields in either recurrence direction and pres
 })
 
 test('Clarification and unsupported have notices; parsed has no notice', () => {
-  assert.deepEqual(parsingNotice({ status: 'needs_clarification', message: 'Give times.' }), { heading: 'More information needed', message: 'Give times.' })
-  assert.equal(parsingNotice({ status: 'unsupported', message: 'Ignore' }).heading, 'Unsupported request')
+  assert.deepEqual(parsingNotice({ status: 'needs_clarification', message: '请补充开始时间。' }), { heading: '需要补充信息', message: '请补充开始时间。' })
+  assert.match(parsingNotice({ status: 'needs_clarification', message: 'Give times.' }).message, /开始时间.*结束时间/)
+  assert.equal(parsingNotice({ status: 'unsupported', message: 'Ignore' }).heading, '暂不支持此请求')
   assert.equal(parsingNotice({ status: 'parsed', proposal: weekly }), null)
 })
