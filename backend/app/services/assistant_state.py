@@ -270,7 +270,7 @@ def _summary(changes):
         if c['kind']=='removed':lines.append(f"- **{c['title']}**：从未来日程移除。")
         else:
             segments=c.get('after_segments') or [c['after']]
-            times='；'.join(f"{x['start_at'][5:16].replace('T',' ')}–{x['end_at'][11:16]}" for x in segments)
+            times='；'.join(f"{dt(x['start_at']):%m-%d %H:%M}–{dt(x['end_at']):%H:%M}" for x in segments)
             label=f"分成 {len(segments)} 段，" if len(segments)>1 else ''
-            lines.append(f"- **{c['title']}**：{label}{times}，DDL 为 {c['deadline'][5:16].replace('T',' ')}。")
+            lines.append(f"- **{c['title']}**：{label}{times}，截止 {dt(c['deadline']):%m-%d %H:%M}。")
     return '\n'.join(lines) or '**本轮任务资料已更新。**\n现有安排可以保留。'

@@ -7,10 +7,10 @@ export function WeeklyChart({ weekly, metric, title, unit }) {
   const bars = chartBars(weekly, metric)
   return <figure className="analytics-chart"><figcaption>{title}（{unit}）</figcaption>
     <svg viewBox="0 0 700 210" role="img" aria-labelledby={`analytics-${metric}-title`}>
-      <title id={`analytics-${metric}-title`}>{title}，按北京时间周一开始；详细数据见下方表格</title>
+      <title id={`analytics-${metric}-title`}>{`${title}，按北京时间周一开始；详细数据见下方表格`}</title>
       <line x1="32" x2="680" y1="160" y2="160" stroke="currentColor" opacity=".3" />
       {bars.map(({ row, value, x, width, height, incomplete }) => <g key={row.start_date} tabIndex="0" aria-label={`${row.start_date}周：${value === null ? '耗时未知或无反馈' : `${incomplete ? '已知至少' : ''}${value}${unit}`}${row.data_state === 'no_records' ? '，无安排或反馈记录' : ''}`}>
-        <title>{row.start_date} 周 · {value === null ? '无完整耗时数据' : `${incomplete ? '已知 ' : ''}${value} ${unit}`} · {row.feedback_count} 条有效反馈，{row.unknown_actual_count} 条耗时缺失</title>
+        <title>{`${row.start_date} 周 · ${value === null ? '无完整耗时数据' : `${incomplete ? '已知 ' : ''}${value} ${unit}`} · ${row.feedback_count} 条有效反馈，${row.unknown_actual_count} 条耗时缺失`}</title>
         {value !== null && <rect x={x} y={160 - height} width={width} height={height} rx="3" className={metric === 'completed_count' ? 'analytics-count-bar' : 'analytics-time-bar'} stroke={incomplete ? 'currentColor' : 'none'} strokeDasharray={incomplete ? '3 2' : undefined} />}
         <text x={x + width / 2} y={value === null ? 145 : Math.max(20, 151 - height)} textAnchor="middle" className="analytics-value">{value === null ? '—' : `${incomplete ? '≥' : ''}${value}`}</text>
         <text x={x + width / 2} y="185" textAnchor="middle">{row.start_date.slice(5)}</text>

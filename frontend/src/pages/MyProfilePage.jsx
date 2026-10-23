@@ -8,6 +8,7 @@ import {
 import MemoryPanel from '../components/MemoryPanel.jsx'
 import TimeRulesPage from './TimeRulesPage.jsx'
 import { goalPayload } from '../goals.js'
+import {tabKeyboard} from '../workbench.js'
 import EditRecovery, { useEditRecovery } from '../components/EditRecovery.jsx'
 
 const emptyGoal = { title: '', motivation: '', priority: 2, metric_kind: 'count', weekly_target: 1, unit_label: '次', due_date: '' }
@@ -173,12 +174,12 @@ export default function MyProfilePage({ active = true, refreshVersion = 0, auxil
   return <><section className="growth-page profile-page" aria-labelledby="profile-heading">
     {onReturnChat&&<button className="button subtle" onClick={onReturnChat}>返回相关对话</button>}
     <div className="growth-page-heading"><h2 id="profile-heading" className="visually-hidden">我的档案</h2>{onBusinessChat&&<button className="button subtle" onClick={onBusinessChat}>用 AI 整理目标或偏好</button>}</div>
-    <div className="profile-sections" role="tablist" aria-label="档案分区">{[['goals','目标'],['time','时间与课程'],['preferences','偏好'],['memories','记忆'],['data','数据管理']].map(([key,label])=><button className="button subtle" key={key} role="tab" aria-selected={section===key} onClick={()=>{setSection(key);if(key==='memories')setMemoryVisited(true)}}>{label}</button>)}</div>
-    {memoryVisited&&<div hidden={section!=='memories'} inert={section!=='memories'}><MemoryPanel workspace={recoveryWorkspace} active={primaryActive&&section==='memories'} resource={resource} onSource={onOpenConversation} onPreferences={()=>setSection('preferences')}/></div>}
+    <div className="profile-sections" role="tablist" aria-label="档案分区" onKeyDown={tabKeyboard}>{[['goals','目标'],['time','时间与课程'],['preferences','偏好'],['memories','记忆'],['data','数据管理']].map(([key,label])=><button className="button subtle" key={key} role="tab" id={"profile-tab-"+key} aria-controls={"profile-panel-"+key} tabIndex={section===key?0:-1} aria-selected={section===key} onClick={()=>{setSection(key);if(key==='memories')setMemoryVisited(true)}}>{label}</button>)}</div>
+    {memoryVisited&&<div role="tabpanel" id="profile-panel-memories" aria-labelledby="profile-tab-memories" hidden={section!=='memories'} inert={section!=='memories'}><MemoryPanel workspace={recoveryWorkspace} active={primaryActive&&section==='memories'} resource={resource} onSource={onOpenConversation} onPreferences={()=>setSection('preferences')}/></div>}
     <EditRecovery recovery={recovery} label="目标与偏好编辑"/><EditRecovery recovery={sectionRecovery} label="档案分区"/>
     {error && <p className="error-box" role="alert">{error}</p>}{notice && <p className="success-box" role="status">{notice}</p>}
 
-    <section hidden={section!=='preferences'} inert={section!=='preferences'} className="growth-section profile-wide">
+    <section role="tabpanel" id="profile-panel-preferences" aria-labelledby="profile-tab-preferences" hidden={section!=='preferences'} inert={section!=='preferences'} className="growth-section profile-wide">
       <div className="growth-section-heading"><div><h3>安排偏好</h3></div><button className="button secondary" type="button" onClick={startNewRule}>新增偏好</button></div>
       {!rules.length ? <p className="growth-empty">暂无偏好。</p> : <><div className="preference-rule-list">{rules.filter(item=>item.enabled).map(renderRule)}</div><details><summary>已停用</summary><div className="preference-rule-list">{rules.filter(item=>!item.enabled).map(renderRule)}</div></details></>}
       {showRuleEditor && <form id="preference-editor" className="growth-form preference-rule-editor" onSubmit={saveRule}>
@@ -194,7 +195,7 @@ export default function MyProfilePage({ active = true, refreshVersion = 0, auxil
       </form>}
     </section>
 
-    <section hidden={section!=='goals'} inert={section!=='goals'} className="growth-section profile-wide">
+    <section role="tabpanel" id="profile-panel-goals" aria-labelledby="profile-tab-goals" hidden={section!=='goals'} inert={section!=='goals'} className="growth-section profile-wide">
       <div className="growth-section-heading"><div><h3>长期目标</h3></div><button type="button" className="button secondary" onClick={()=>setShowGoalEditor(v=>!v)}>新增目标</button></div>
       <form hidden={!showGoalEditor} id="goal-editor" onSubmit={saveGoal} className="growth-form">
         <label>目标名称<input required maxLength="160" value={goalForm.title} onChange={(event) => setGoalForm({ ...goalForm, title: event.target.value })} placeholder="例如：每周阅读三篇论文" /></label>
@@ -217,8 +218,8 @@ export default function MyProfilePage({ active = true, refreshVersion = 0, auxil
       })}</div>}
     </details>
 
-    <details hidden={section!=='time'} inert={section!=='time'} className="growth-section course-settings profile-wide" onToggle={event=>{if(event.currentTarget.open)setCourseVisited(true)}}><summary><strong>课程与保护时间</strong></summary>{courseVisited&&<TimeRulesPage onDataChanged={onDataChanged} />}</details>
-    <details hidden={section!=='data'} inert={section!=='data'} className="growth-section profile-wide"><summary>历史与备份</summary>
+    <details role="tabpanel" id="profile-panel-time" aria-labelledby="profile-tab-time" hidden={section!=='time'} inert={section!=='time'} className="growth-section course-settings profile-wide" onToggle={event=>{if(event.currentTarget.open)setCourseVisited(true)}}><summary><strong>课程与保护时间</strong></summary>{courseVisited&&<TimeRulesPage onDataChanged={onDataChanged} />}</details>
+    <details role="tabpanel" id="profile-panel-data" aria-labelledby="profile-tab-data" hidden={section!=='data'} inert={section!=='data'} className="growth-section profile-wide"><summary>历史与备份</summary>
       <div className="growth-section-heading"><div><h3>档案历史与数据管理</h3></div></div>
       {!profile?.history?.length ? <p className="growth-empty">尚无资料历史版本。</p> : <details className="insight-history"><summary>查看资料修改版本（{profile.history.length}）</summary><ol className="revision-list">{[...profile.history].reverse().map((revision) => <li key={revision.version}><strong>版本 v{revision.version}</strong><time>{new Date(revision.changed_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</time><p>{revision.direction || '长期方向通过目标管理'}</p></li>)}</ol></details>}
       <div className="button-row"><button className="button secondary" disabled={busy} onClick={exportData}>下载数据备份</button><label className="button subtle file-button">从 JSON 备份恢复<input type="file" accept="application/json,.json" disabled={busy} onChange={importDataFile} /></label></div>

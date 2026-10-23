@@ -23,10 +23,10 @@ async def mock_breakdown(request, now):
                          for i, title in enumerate(("需求分析", "实现与验证"))]}
 
 
-def serve(port):
+def serve(port, now=NOW):
     database = ROOT/"scripts/.runtime"/f"demo-integration-{uuid4().hex}.db"
     database.parent.mkdir(parents=True, exist_ok=True)
-    os.environ.update(SGA_DEMO="1", SGA_DEMO_NOW=NOW, SGA_DATABASE_PATH=str(database),
+    os.environ.update(SGA_DEMO="1", SGA_DEMO_NOW=now, SGA_DATABASE_PATH=str(database),
                       SGA_BACKUP_DIR=str(database.with_suffix('')/'backups'),
                       SGA_AUTO_BACKUP="0", SGA_SKIP_IMPORT_BACKUP="1")
     for key in ("CLAUDE_API_KEY", "CLAUDE_MODEL", "OPENAI_API_KEY", "OPENAI_MODEL"):
@@ -34,6 +34,7 @@ def serve(port):
     sys.path.insert(0, str(ROOT/"backend"))
     from app.services import assistant_ai, claude_client, constraint_parser, growth_insights, plan_explanation
     claude_client.load_dotenv = lambda *a, **k: None
+    wire_request=claude_client.request_claude
 
     async def reject_live(*args, **kwargs):
         raise AssertionError("Live AI is forbidden in this isolated integration demo")
@@ -53,8 +54,10 @@ def serve(port):
     assistant_ai.workspace_message = mock_workspace
     from app.services import conversation_runs, conversation_tools
     from app.workspace_schemas import ToolPlan
+    wire_plan=conversation_tools.plan
     async def mock_tools(request):
         text=request['message']
+        if text.startswith('质量验收：'):return await wire_plan(request)
         if text=='大概一个半小时，你帮我安排一下。':
             raise claude_client.AIServiceError('AI_RESPONSE_INVALID')  # Default-first acceptance: two invalid plans.
         skill_fixture=text.startswith('技能验收：') or any(m['text'].startswith('技能验收：今晚写') for m in request.get('history',[]) if m['role']=='user')
@@ -95,6 +98,8 @@ def serve(port):
     conversation_tools.plan=mock_tools
     async def mock_review(prompt,*args,**kwargs):
         data=json.loads(prompt)
+        if data.get('message','').startswith('质量验收：'):
+            return await wire_request(prompt,*args,**kwargs)
         if 'messages' in data and 'schema' in data:
             messages=data['messages'];first=messages[0];last=messages[-1]
             return json.dumps({'themes':[{'text':'讨论资料：'+first['text'][:80],'message_ids':[first['id']]}],
@@ -102,7 +107,25 @@ def serve(port):
         if 'facts' not in data:raise AssertionError('Only explicit review synthesis is mocked')
         return json.dumps({'title':'匿名复盘记录','summary':'基于已保存的匿名事实和讨论。','conclusion':'下次继续观察。','next_steps':''},ensure_ascii=False)
     claude_client.request_claude=mock_review
-    claude_client.get_claude_config=lambda:None
+    # Only this explicit integration process has a transport that cannot reach
+    # the network. Quality cases exercise the real adapter and ToolPlan parser.
+    import httpx
+    original_client=httpx.AsyncClient
+    def mock_wire(request):
+        if request.url.host!='mock-provider.invalid':raise AssertionError('Non-Mock Provider forbidden')
+        body=json.loads(request.content);data=json.loads(body['messages'][1]['content']);text=data['message']
+        if '坏JSON' in text:raw='{bad-json'
+        elif '日期别名' in text:
+            if data.get('previous_tool_results'):
+                plan={'calls':[{'name':'review_draft','arguments':{'start_date':'2026-10-19','end_date':'2026-10-26','period':'week'}}]}
+            else:plan={'calls':[{'name':'review','arguments':{'start_date':'2026-10-19','end_date':'2026-10-26','period':'week'}}],'continue_after_read':True}
+            raw=json.dumps(plan)
+        elif '复合任务' in text:
+            raw=json.dumps({'calls':[{'name':'breakdown_draft','arguments':{'title':'匿名质量交付','text':text,'deadline':'2026-10-25T20:00:00+08:00','expected_duration_minutes':120}}]})
+        else:raw=json.dumps({'calls':[]})
+        return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':raw}}]})
+    claude_client.httpx.AsyncClient=lambda **kw:original_client(transport=httpx.MockTransport(mock_wire),**kw)
+    claude_client.get_claude_config=lambda:claude_client.ClaudeConfig('anonymous-mock-only','glm-5','https://mock-provider.invalid',api_format='openai')
     from app.services.claude_client import AIServiceError
     failed_once = set()
     async def mock_reply(request):
@@ -231,11 +254,12 @@ def main():
     mode.add_argument("--serve", action="store_true")
     mode.add_argument("--verify", action="store_true")
     parser.add_argument("--port", type=int, default=8001)
+    parser.add_argument("--now",default=NOW,help="Explicit anonymous demo clock; never affects normal startup")
     parser.add_argument("--api", default="http://127.0.0.1:8001")
     parser.add_argument("--output", type=Path, default=ROOT/"scripts/.local/integration-demo.json")
     args = parser.parse_args()
     if args.serve:
-        serve(args.port)
+        serve(args.port,args.now)
     else:
         target = urlsplit(args.api)
         if target.scheme != "http" or target.hostname not in ("127.0.0.1", "localhost", "::1") or target.username or target.password:

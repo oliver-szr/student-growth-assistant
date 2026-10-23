@@ -56,12 +56,10 @@ const CODE_MESSAGES = {
   AI_SKILLS_UNAVAILABLE: '助手技能文件读取或校验失败，已停止操作。请检查服务端技能配置；仍可使用手动功能。',
   AI_CONTEXT_TOO_LARGE: '所选资料超过安全请求上限，请缩小问题范围或到工作区核对；原消息和草案未改变。',
   AI_UNAVAILABLE: 'AI 暂时不可用，仍可手动操作。',
-  AI_RESPONSE_INVALID: 'AI 返回的内容未通过校验，请补充描述后重试或手动添加。',
+  AI_RESPONSE_INVALID: 'AI 返回的格式有误。可以重试；已有草案请先查看，不必重复生成。',
   STALE_DRAFT: '任务、目标或计划已变化，请取消旧草案并按最新资料重新生成。',
   DRAFT_VERSION_CONFLICT: '草案已被其他页面修改，请重新加载草案后继续。',
   DRAFT_NOT_READY: '草案已确认或取消，请重新加载最新状态。',
-  DRAFT_APPLIED: '草案已经确认，不能通过取消草案撤销任务。',
-  DRAFT_NOT_FOUND: '未找到任务拆解草案，请重新加载。',
   INVALID_BREAKDOWN: '请保留至少一个合法子任务，检查标题、5分钟整数倍时长和截止时间。',
   BREAKDOWN_DEADLINE_INVALID: '父子任务截止时间必须在未来，请修改草案。',
   CHILD_DEADLINE_INVALID: '子任务截止时间不能晚于父任务，请先核对子任务。',
@@ -107,11 +105,19 @@ function validationMessage(item) {
 }
 
 export function localizedError(status, detail) {
-  if (detail?.code && CODE_MESSAGES[detail.code]) return CODE_MESSAGES[detail.code]
+  const message=typeof detail==='string'?detail:detail?.message
+  // Only documented business errors may add a service explanation. Unexpected
+  // server/provider text and stack traces still use the safe local fallback.
+  const explanation=typeof message==='string'&&message.length<=500&&/[\u4e00-\u9fff]/.test(message)&&!/(Traceback|[A-Za-z]:\\|sk-[\w-]+|api[_ -]?key|Authorization|SELECT |INSERT |UPDATE |DELETE )/i.test(message)?message:''
+  if (detail?.code && CODE_MESSAGES[detail.code]) {
+    const guidance=CODE_MESSAGES[detail.code]
+    return explanation||guidance
+  }
   if (Array.isArray(detail)) return detail.map(validationMessage).join('；')
   if (detail === 'Task not found') return '未找到任务，请重新加载。'
   if (detail === 'TimeRule not found') return '未找到时间规则，请重新加载。'
   if (status >= 500) return '服务暂时不可用，请稍后重试；操作前请重新加载最新状态。'
+  if(explanation)return explanation
   if (status === 422) return '输入内容无效，请检查表单后重试。'
   return `请求未成功（${status}），请重新加载后重试。`
 }

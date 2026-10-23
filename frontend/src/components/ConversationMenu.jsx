@@ -32,6 +32,9 @@ export default function ConversationMenu({ anchor, items, last = false, onClose 
     const buttons = element.querySelectorAll('button:not(:disabled)')
     buttons[last ? buttons.length - 1 : 0]?.focus({ preventScroll: true })
   }, [anchor, last])
+  useLayoutEffect(()=>{
+    if(menu.current&&anchor.isConnected)setPosition(menuPosition(anchor.getBoundingClientRect(),menu.current.getBoundingClientRect(),{width:innerWidth,height:innerHeight}))
+  },[items,anchor])
   useEffect(() => {
     const outside = event => { if (!menu.current?.contains(event.target) && !anchor.contains(event.target)) close.current(false) }
     const escape = event => { if (event.key === 'Escape') { event.preventDefault(); close.current(true) } }

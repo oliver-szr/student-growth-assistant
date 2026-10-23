@@ -15,7 +15,7 @@ export default function ConversationManager({ workspace, onOpen, children, activ
   const renameInput = useRef(null), deleteConfirm = useRef(null), pendingFocus = useRef(null), listIdentity = useRef(null)
   const [intent,setIntent]=useState(null)
   const gate = useRef(requestGate()), lock = useRef(false), createKey = useRef(null)
-  useEffect(() => { setMenu(null) }, [search, archive, revision, active])
+  useEffect(() => { setMenu(null) }, [search, archive, active])
   useEffect(() => { if (rename) { renameInput.current?.focus(); renameInput.current?.select() } }, [rename?.id])
   useEffect(() => { if (remove) deleteConfirm.current?.focus() }, [remove?.id])
   useEffect(() => {
@@ -124,7 +124,7 @@ export default function ConversationManager({ workspace, onOpen, children, activ
     {next !== null && <button className="button subtle" disabled={loading} onClick={more}>加载更多会话</button>}
     </div>
     <button className="button subtle conversation-planning" aria-current={selected === 'planning' ? 'true' : undefined} onClick={() => open('planning')}>本周规划入口</button>
-    {currentMenu && menu && <ConversationMenu anchor={menu.anchor} last={menu.last} items={menuItems} onClose={closeMenu} />}
+    {currentMenu && menu && <ConversationMenu anchor={menu.anchor} last={menu.last} items={menuItems.map(item=>({...item,disabled:busy||loading}))} onClose={closeMenu} />}
   </div>
   return children({ sidebar, discussReview:discuss, planning: selected === 'planning', openPlanning: () => open('planning'), openConversation: open,
     chat: ready && Number.isSafeInteger(selected) ? <ConversationChat onLocate={messageId=>{setTarget(messageId);setDetailVersion(value=>value+1)}} today={today} intent={intent} active={active} onNavigate={onNavigate} key={`${workspace}:${selected}`} workspace={workspace} id={selected} target={target} revision={detailVersion} onChanged={() => setRevision(value => value + 1)} /> : selected?.startsWith?.('tool-') ? <WorkspaceChat workspace={workspace} key={selected} scope={selected.slice(5)} observe={active} onAdjustTask={onAdjustTask} onDraftConfirmed={onBusinessSaved}/> : <section className="workspace-chat conversation-start"><h2>从一件事开始</h2><p>从一个想法开始，自由交流或查看已有记录。</p><button className="button primary" disabled={busy} onClick={fresh}>开始新对话</button></section>, openBusiness: scope => open('tool-'+scope) })

@@ -7,7 +7,7 @@ import json
 import logging
 import asyncio
 import hashlib
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pydantic import ValidationError
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
@@ -32,9 +32,80 @@ RUNTIME_PROTOCOL='draft-recovery-v3'
 
 
 def call_key(call):
-    return hashlib.sha256(json.dumps([call.name,call.arguments],sort_keys=True,ensure_ascii=False).encode()).hexdigest()[:20]
+    arguments=call.arguments
+    if call.name in ('calendar','review','review_draft'):
+        try:arguments=range_arguments(call.name,arguments)
+        except (ValidationError,HTTPException):pass
+    return hashlib.sha256(json.dumps([call.name,arguments],sort_keys=True,ensure_ascii=False,default=str).encode()).hexdigest()[:20]
+
+
+def range_arguments(name, arguments):
+    """Only known date aliases; unknown fields and conflicting values still fail."""
+    values=dict(arguments)
+    pairs=(('start','start_date'),('end','end_date'))
+    for canonical,alias in pairs:
+        target,source=(alias,canonical) if name=='review_draft' else (canonical,alias)
+        if source in values:
+            if target in values and values[target]!=values[source]:
+                error('INVALID_TOOL_ARGUMENTS','日期参数相互冲突，请明确同一查询范围。',422)
+            values[target]=values.pop(source)
+    if name=='review_draft':return ReviewToolArgs.model_validate(values).model_dump(mode='json')
+    if 'period' in values:
+        if values.pop('period') not in ('day','week','month'):
+            error('INVALID_TOOL_ARGUMENTS','回顾周期无效。',422)
+    return RangeArgs.model_validate(values).model_dump(mode='json')
+
+
+def execution_receipt(results, previous):
+    """Business outcomes are server receipts, never a second model's claims.
+
+    Pure queries and free chat keep streaming. A persisted draft is not a formal
+    save, and a failed tool never grants a completed business outcome.
+    """
+    lines=[]
+    drafts=[r['draft'] for r in results if r.get('draft') and not r.get('error')]
+    before={(r['kind'],r['id']):r for r in previous}
+    labels={'planning':'日程方案','breakdown':'任务拆解','profile':'档案修改','feedback':'执行反馈','review_record':'复盘记录'}
+    for draft in drafts:
+        kind=draft['kind'];old=before.get((kind,draft['id']));status=draft['status']
+        action='已生成可编辑的' if old is None else '已更新同一份' if old['version']!=draft['version'] else '已读取当前'
+        if status=='applied':lines.append(f'当前{labels[kind]}已采用，本轮没有重复保存。');continue
+        lines.append(f'{action}{labels[kind]}。')
+        value=draft.get('content',{}).get('schedule')
+        if value:
+            old_value=(old or {}).get('content',{}).get('schedule',{})
+            if old_value:
+                changed=[label for key,label in [('title','任务名称'),('start_time','开始时间'),('day','日期'),('duration_minutes','工作时长'),('segments','分段'),('break_minutes','段间休息'),('deadline','截止时间')] if old_value.get(key)!=value.get(key)]
+                if changed:lines.append('修改了'+ '、'.join(changed)+'。')
+            lines.append(f"任务：{value['title']}；工作时长：{value['duration_minutes']}分钟。")
+            items=[item for item in draft.get('items',[]) if item['ref']==draft.get('schedule_target')]
+            from .assistant_clock import SHANGHAI
+            for item in items:
+                start=datetime.fromisoformat(item['start_at']).astimezone(SHANGHAI)
+                end=datetime.fromisoformat(item['end_at']).astimezone(SHANGHAI)
+                lines.append(f"候选安排：{start:%Y-%m-%d %H:%M} 至 {end:%Y-%m-%d %H:%M}。")
+            if not items:lines.append('当前没有找到可用安排，请核对冲突或调整时间。')
+            if value.get('deadline'):lines.append(f"截止时间：{datetime.fromisoformat(value['deadline']).astimezone(SHANGHAI):%Y-%m-%d %H:%M}。")
+        elif kind=='review_record':
+            content=draft['content']
+            last=(datetime.fromisoformat(content['end_date'])-timedelta(days=1)).date()
+            lines.append(f"{content['title']}（{content['start_date']} 至 {last}）。")
+            if content.get('summary'):lines.append(content['summary'][:600])
+        if status in ('stale','superseded','discarded'):lines.append('这份草案当前不可采用，请重新读取最新状态。')
+        elif status in ('conflict','no_plan'):lines.append('当前方案存在冲突或未找到可行安排，尚不能确认采用。')
+        lines.extend(draft.get('unresolved',[]))
+        lines.extend(draft.get('notices',[]))
+    for result in results:
+        if result.get('memory') and not result.get('error'):lines.append('已提出待审核的记忆建议，确认后才参与长期参考。')
+        if result.get('error') and not result.get('recovered_by'):
+            lines.append('本次操作未完成：'+result.get('message','工具执行失败，请核对后重试。'))
+    if not lines:return None
+    if any(r.get('fallback') for r in results):lines.append('模型处理未完成，初稿使用了已知信息与标注的默认值。')
+    if any(d['status']!='applied' for d in drafts):lines.append('尚未保存正式修改，请在右侧辅助栏审核并明确确认。')
+    elif not drafts:lines.append('本轮没有修改正式任务或日程。')
+    return '\n'.join(dict.fromkeys(lines))
 PLANNER='''工具选择协议：只返回符合schema的JSON，不输出解释。只能选择allowed_tools。
-tasks/goals/memories使用lookup_schema的id/q/offset/limit；calendar/review使用start,end（上海日期，end不含）。
+tasks/goals/memories使用lookup_schema的id/q/offset/limit；calendar/review使用start,end（上海日期，end不含）。日期工具优先按tool_schemas中的工具名查对应契约，不混用查询和草案字段。
 planning_draft使用planning_schema；breakdown_draft使用breakdown_schema；review_draft使用review_schema。
 profile_draft/feedback_draft使用operations，遵守business_operations。edit_draft只引用已协调的current_drafts及kind/id/version/content，保留用户其它编辑。
 memory_suggestion使用memory_schema。没有权限时calls为空；缺必要字段只返回questions，不执行依赖答案的动作。
@@ -47,7 +118,7 @@ async def plan(request):
     from ..schemas import GrowthGoalCreate,GrowthGoalPatch,TaskFeedbackCreate
     from .conversation_context import bounded_request
     request=bounded_request(request)
-    selection=ai_skills.select_skills(request['message'],request.get('history',[]))
+    selection=ai_skills.select_skills(request['message'],request.get('history',[]),request.get('current_drafts',[]))
     system,_=ai_skills.compose(selection,PLANNER)
     schema=ToolPlan.model_json_schema()
     if selection.allowed:schema['$defs']['ToolCall']['properties']['name']['enum']=sorted(selection.allowed)
@@ -69,6 +140,9 @@ async def plan(request):
             'set_preferences':'op, settings matching preference_patch_schema'},
         'lookup_schema':LookupArgs.model_json_schema(),'memory_schema':MemoryContent.model_json_schema(),'review_schema':ReviewToolArgs.model_json_schema(),
         'goal_schema':GrowthGoalCreate.model_json_schema(),'feedback_schema':TaskFeedbackCreate.model_json_schema()}
+    data['tool_schemas']={name:contract for name,contract in {
+        'calendar':data['range_schema'],'review':data['range_schema'],
+        'review_draft':data['review_schema']}.items() if name in selection.allowed}
     for key,tool in [('planning_schema','planning_draft'),('breakdown_schema','breakdown_draft'),('edit_schema','edit_draft'),
         ('memory_schema','memory_suggestion'),('review_schema','review_draft')]:
         if tool not in selection.allowed:data.pop(key,None)
@@ -146,11 +220,13 @@ async def execute(db,run,call,index,*,fallback=False):
             'next_offset':values.offset+values.limit if len(rows)>values.limit else None,'source':'用户已确认的长期参考',
             'links':[{'page':'profile','kind':'memory','id':r.id,'label':'查看记忆：'+r.text[:24]} for r in rows[:3]]}
     if name=='review_draft':
+        if run.payload.get('skill_diagnostics',{}).get('reason')=='draft_followup':
+            error('DRAFT_COORDINATION_REQUIRED','请按现有复盘草案的最新版本修改，或在右侧编辑；本轮不会另建复盘草案。')
         if not args:
             from .draft_defaults import review_range
             start,end,period=review_range(run.text,assistant_now())
             args={'start_date':start,'end_date':end,'period':period}
-        values=ReviewToolArgs.model_validate(args)
+        values=ReviewToolArgs.model_validate(range_arguments(name,args))
         db.rollback()
         result=await workspace_drafts.create_review_draft(db,run.session_id,ReviewDraftCreate(
             **values.model_dump(),client_request_id=key,message_id=run.payload['user_message_id']),record_message=False,deterministic=fallback)
@@ -178,7 +254,7 @@ async def execute(db,run,call,index,*,fallback=False):
             row=create_memory(db,values.model_dump(),key,sources={'conversation_id':run.session_id,'message_ids':[run.payload['user_message_id']]},suggested=True)
             return {'memory':memory_data(db,row),'summary':'仅提出记忆建议，审核确认后才参与后续参考。'}
     if name in ('calendar','review'):
-        value=RangeArgs.model_validate(args)
+        value=RangeArgs.model_validate(range_arguments(name,args))
         return calendar_events(db,value.start,value.end) if name=='calendar' else review_facts(db,value.start,value.end)
     if name=='breakdown_draft':
         from .conversation_context import context_for
@@ -204,6 +280,7 @@ async def execute(db,run,call,index,*,fallback=False):
             latest=next((r for r in references if r['kind']=='planning'),None)
             if latest:return {'draft':{'kind':'planning','id':latest['id']},'summary':'请打开最新草案使用明确确认入口；聊天不会自行保存。','status':latest['status']}
         previews=[r for r in references if r['kind']=='planning' and r.get('content',{}).get('schedule') and r['status'] not in ('applied','discarded','superseded')]
+        if len(previews)>1:error('DRAFT_COORDINATION_REQUIRED','存在多份日程初稿，请先选择并打开要修改的草案。')
         partial=any(a.get('op')=='add' and not a.get('fields',{}).get('deadline') for a in args.get('actions',[]))
         if any(a.get('op')=='add' for a in args.get('actions',[])):
             trusted,_=schedule(request,assistant_now())
@@ -267,20 +344,25 @@ async def prepare(engine,rid,token,request):
         request['current_drafts']=bounded_drafts(request['current_drafts'][-10:])
         snapshot=revision(db)
         stored=run.payload.get('tool_plan')
-    selection=ai_skills.select_skills(request['message'],request.get('history',[]))
+    selection=ai_skills.select_skills(request['message'],request.get('history',[]),request.get('current_drafts',[]))
     _,audit=ai_skills.compose(selection)
     trace.record('skills.selected',names=audit['names'],hashes=audit['hashes'],expected=selection.expected)
     logger.info('ai_skills %s',json.dumps(audit,sort_keys=True))
     if not persist(engine,rid,token,skill_diagnostics=audit):return None
+    if selection.reason=='ambiguous_draft':
+        request['execution_notice']='有多类待审核草案，请先明确要修改日程还是复盘等内容，或打开对应草案；本轮未修改草案或正式资料。'
+        return request
     batch_index=0
     results=[]
     repair_batch=None
+    argument_repaired=False
     while len(results)<4 and batch_index<5:
         with Session(engine) as db:
             run=db.get(AssistantRun,rid)
             batches=run.payload.get('tool_batches',[])
             repair_batch=run.payload.get('skill_repair_batch')
             format_repaired=run.payload.get('planner_format_repaired',False)
+            argument_repaired=run.payload.get('tool_argument_repaired',False)
         saved=batches[batch_index] if batch_index<len(batches) else stored if batch_index==0 else None
         from .conversation_context import provider_value
         request['previous_tool_results']=provider_value(results)
@@ -327,9 +409,13 @@ async def prepare(engine,rid,token,request):
             break
         batch_start=len(results)
         reserved=False
+        repeated_failure=False
         for call in selected.calls:
             identity=call_key(call)
             if call.name in ai_skills.READ_TOOLS:
+                if any(r.get('call_key')==identity and r.get('error') for r in results):
+                    trace.record('tool.failed_read_stopped',tool=call.name)
+                    repeated_failure=True;break
                 if any(r.get('call_key')==identity and not r.get('error') for r in results):
                     trace.record('tool.read_reused',tool=call.name)
                     continue
@@ -349,19 +435,34 @@ async def prepare(engine,rid,token,request):
                     result=await execute(db,run,call,index)
                     if 'draft' in result:
                         ref=result['draft'];result['draft']=workspace_drafts.envelope(db,ref['kind'],ref['id'])
+                    if call.name in ai_skills.READ_TOOLS:
+                        for earlier in results:
+                            if earlier.get('tool')==call.name and earlier.get('error')=='INVALID_TOOL_ARGUMENTS':
+                                earlier['recovered_by']='argument_repair'
                     results.append(jsonable_encoder({'tool':call.name,'call_key':identity,**result}))
                     trace.record('tool.returned',tool=call.name,index=index,draft=bool(result.get('draft')),questions=len(result.get('questions',[])))
                 except HTTPException as exc:
                     detail=exc.detail if isinstance(exc.detail,dict) else {}
-                    results.append({'tool':call.name,'error':detail.get('code','TOOL_FAILED'),'message':detail.get('message','工具未完成，正式资料未改变。')})
+                    results.append({'tool':call.name,'call_key':identity,'error':detail.get('code','TOOL_FAILED'),'message':detail.get('message','工具未完成，正式资料未改变。')})
                 except (ValidationError,ValueError,KeyError,TypeError) as exc:
                     trace.record('tool.arguments_failed',tool=call.name,error_type=type(exc).__name__,errors=trace.schema_errors(exc) if isinstance(exc,ValidationError) else [])
-                    results.append({'tool':call.name,'error':'INVALID_TOOL_ARGUMENTS','message':'信息不完整或参数无效，请补充后再试。'})
+                    results.append({'tool':call.name,'call_key':identity,'error':'INVALID_TOOL_ARGUMENTS','message':'信息不完整或参数无效，请补充后再试。',
+                        'validation_errors':trace.schema_errors(exc) if isinstance(exc,ValidationError) else []})
                 except claude_client.AIServiceError as exc:
                     results.append({'tool':call.name,'error':exc.code,'message':'草案生成未完成，请重试；未保存正式资料。'})
                 except SQLAlchemyError:
                     results.append({'tool':call.name,'error':'DRAFT_STORAGE_FAILED','message':'初稿未保存：无法完成数据库读取或持久化，不能确认冲突检查。请稍后重试。'})
             if not persist(engine,rid,token,tool_results=results):return None
+        invalid=[r for r in results[batch_start:] if r.get('error')=='INVALID_TOOL_ARGUMENTS']
+        if repeated_failure:break
+        if invalid:
+            if argument_repaired:break
+            if not persist(engine,rid,token,tool_argument_repaired=True):return None
+            request['decision_feedback']={'code':'INVALID_TOOL_ARGUMENTS',
+                'errors':[{'tool':r['tool'],'fields':r.get('validation_errors',[])} for r in invalid],
+                'instruction':'仅修复一次参数，按tool_schemas区分review查询的start/end与review_draft的start_date/end_date。不重复失败参数或已成功工具。'}
+            batch_index+=1
+            continue
         if reserved or selected.continue_after_read and len(results)==batch_start:
             trace.record('tool.read_loop_stopped',reason='reserved_budget' if reserved else 'repeated_read_batch')
             break
@@ -414,5 +515,9 @@ async def prepare(engine,rid,token,request):
         request['execution_notice']=f'这次没有生成可审核的{label}：工具选择未完成，或已达到本轮调用上限。正式资料未改变。请重试，或在对应工作区继续处理。'
     if any(r.get('error')=='DRAFT_STORAGE_FAILED' for r in results):
         request['execution_notice']='初稿未保存：数据库读取或保存失败，无法确认当前冲突。已经读取的结果仍保留；请稍后重试，未进行正式修改。'
+    receipt=execution_receipt(results,request.get('current_drafts',[]))
+    if receipt and not questions:
+        request['execution_notice']=receipt
+        trace.record('reply.execution_receipt',drafts=sum(bool(r.get('draft')) for r in results),failed_tools=sum(bool(r.get('error')) for r in results))
     request['tool_results']=provider_value(results)
     return request

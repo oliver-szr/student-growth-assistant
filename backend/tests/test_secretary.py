@@ -70,10 +70,13 @@ def test_memory_manual_versions_disable_delete_idempotence_and_no_business_write
 
 def test_memory_tool_suggestion_not_reference_until_confirm_and_source_deleted_independent(client,reply,monkeypatch):
     sid=conversation(client)
-    async def choose(request):return ToolPlan(calls=[{'name':'memory_suggestion','arguments':{'text':'交流时先给结论，再给例子','scope':'general'}}])
+    contexts=[]
+    async def choose(request):
+        contexts.append(request)
+        return ToolPlan(calls=[{'name':'memory_suggestion','arguments':{'text':'交流时先给结论，再给例子','scope':'general'}}])
     monkeypatch.setattr(conversation_tools,'plan',choose)
     result=send(client,sid,'以后交流请先给结论，再给例子','suggest')
-    row=result['content']['tools'][0]['memory'];assert row['status']=='suggested' and reply[-1]['confirmed_memories']==[]
+    row=result['content']['tools'][0]['memory'];assert row['status']=='suggested' and contexts[-1]['confirmed_memories']==[] and not reply
     confirmed=call(client,'POST',f"/api/memories/{row['id']}/actions",json={'expected_version':1,'action':'confirm'})
     assert confirmed['status']=='confirmed'
     meta=call(client,'GET',f'/api/conversations/{sid}')

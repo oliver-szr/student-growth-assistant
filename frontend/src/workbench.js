@@ -13,6 +13,18 @@ export function shiftPreviewDate(date, days, min, max) {
 }
 
 export const nearBottom = ({ scrollHeight, clientHeight, scrollTop }) => scrollHeight - clientHeight - scrollTop <= 64
+export function tabKeyboard(event){
+  const tabs=[...event.currentTarget.querySelectorAll('[role="tab"]')],index=tabs.indexOf(event.target)
+  if(index<0||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return
+  event.preventDefault()
+  const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length
+  tabs[next].focus();tabs[next].click()
+}
+export function recordedTime(known,unknown=0,count=1){
+  if(!count)return '暂无投入记录'
+  if(unknown&&known===0)return '耗时未知'
+  return `${known} 分钟${unknown?'（另有未知耗时）':''}`
+}
 export const reviewMetrics = facts => ['completed_count', 'confirmed_actual_minutes', 'planned_minutes'].map(key => Number.isFinite(facts?.[key]) ? facts[key] : null)
 export function progressPercent(actual, target) {
   return Number.isFinite(actual) && Number.isFinite(target) && target > 0 ? Math.max(0, Math.min(100, actual / target * 100)) : null
@@ -115,7 +127,7 @@ export function toolNotices(results = [], shownQuestions = []) {
   const labels={tasks:'任务',goals:'目标',preferences:'偏好',calendar:'日程',review:'回顾事实',memories:'已确认记忆'}
   const notices=[],queried=[]
   for(const result of results){
-    if(result.error){if(result.recovered_by)notices.push('模型处理未完成，已使用已知信息生成默认初稿，请审核。');else if(result.message)notices.push(result.message);continue}
+    if(result.error){if(result.recovered_by==='argument_repair')continue;else if(result.recovered_by==='trusted_defaults')notices.push('模型处理未完成，已使用已知信息生成默认初稿，请审核。');else if(result.message)notices.push(result.message);continue}
     if(result.questions?.length){notices.push(...result.questions.filter(question=>!shownQuestions.includes(question)));continue}
     if(labels[result.tool])queried.push(labels[result.tool])
   }

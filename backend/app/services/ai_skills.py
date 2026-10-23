@@ -67,16 +67,28 @@ def _operation(text):
     return None
 
 
-def select_skills(text, history=()):
+def select_skills(text, history=(), current_drafts=()):
     current = active_text(text)
     if current!=text.strip() and (not current or re.search(r'是什么意思|怎么理解|这句话|这段话',current)):
         return Selection(('chat',),'chat',frozenset(),reason='quoted_discussion')
-    negative = any(re.search(r'(不要|别|不用|不想|不需要|无需|不必|暂不|暂时不|先不|不能|禁止).*(安排|规划|拆解|创建|生成|复盘|记住|记录|修改|删除)', clause)
+    negative = any(re.search(r'(不要|别|不用|不想|不需要|无需|不必|暂不|暂时不|先不|不能|禁止).*(安排|规划|拆解|创建|生成|复盘|记住|记录|修改|更新|调整|改成|改为|删除)', clause)
         for clause in re.split(r'[，,。；;！？!?\n]',current))
     hypothetical = bool(re.search(r'^(如果|假如|假设|举例|比如)|(?:如果|假如|假设).*(会怎样|会怎么样|会如何|是否可行)|(?:解释|分析).{0,8}(这句话|这段话)', current))
     readonly = bool(re.search(r'(只|仅)(想|要|是)?(查|看|问|了解)|看看|看一下|查一下|查询|最新任务|有什么|多少|在哪|忙不忙|是什么|记得', current))
     operation = _operation(current)
-    if not negative and not hypothetical and (re.search(r'^(改成|改为|时间改成|分成|分为|截止|最晚|就用这个方案|按这个方案|就这样)',current) or re.search(r'^(今天|今晚|明天|明晚).{0,12}点前完成',current)):
+    editing=False
+    followup = bool(re.search(r'(?:把|将|这份|当前|这个).{0,12}(草案|初稿|方案).{0,16}(改为|改成|修改|调整|更新|分成|分为)|(?:请|帮我|麻烦|^)(?:继续)?(?:修改|调整|更新).{0,8}(草案|初稿|方案)',current))
+    if followup and not negative and not hypothetical:
+        # Only server-read pending resources identify the kind being edited.
+        # Model narration and the mere existence of an old draft grant no action.
+        kinds={draft.get('kind') for draft in current_drafts if draft.get('status') in ('ready','needs_input','conflict','no_plan')}
+        named='review_record' if '复盘' in current else 'planning' if re.search(r'日程|安排|时间|时长|分钟|小时|点|作业',current) else None
+        if named in kinds:kinds={named}
+        if len(kinds)>1:return Selection(('query',),'query',READ_TOOLS,reason='ambiguous_draft')
+        if len(kinds)==1:
+            operation={'planning':'schedule','breakdown':'task','review_record':'review','profile':'profile','feedback':'feedback'}.get(next(iter(kinds)),operation)
+            editing=True
+    if not negative and not hypothetical and (followup and operation is None or re.search(r'^(改成|改为|时间改成|分成|分为|截止|最晚|就用这个方案|按这个方案|就这样)',current) or re.search(r'^(今天|今晚|明天|明晚).{0,12}点前完成',current)):
         for item in list(history)[-8:][::-1]:
             if item.get('role')=='user':
                 prior=select_skills(item.get('text',''))
@@ -112,7 +124,7 @@ def select_skills(text, history=()):
     expected = RESULT_KIND.get(operation)
     allowed = READ_TOOLS | {WRITE_TOOL[expected], 'edit_draft'} if expected and expected != 'memory' else allowed
     if operation == 'manage_memory':allowed = frozenset({'memories', 'preferences'})
-    return Selection(names, operation, frozenset(allowed), expected, 'user_followup' if inherited else 'current_message')
+    return Selection(names, operation, frozenset(allowed), expected, 'user_followup' if inherited else 'draft_followup' if editing else 'current_message')
 
 
 def load_skill(name, root=None):
@@ -155,6 +167,6 @@ def fulfilled(selection, results):
 def outcome(selection, results, questions):
     if questions:return 'needs_input'
     if fulfilled(selection, results):return 'awaiting_confirmation'
-    if any(r.get('error') for r in results):return 'tool_failed'
+    if any(r.get('error') and not r.get('recovered_by') for r in results):return 'tool_failed'
     if selection.expected:return 'not_created'
     return 'queried' if results else 'chat'

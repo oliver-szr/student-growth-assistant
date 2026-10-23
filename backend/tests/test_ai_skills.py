@@ -63,6 +63,25 @@ def test_short_answer_inherits_only_unresolved_user_intent():
     assert ai_skills.select_skills('90分钟',history+[{'role':'assistant','text':'草案已生成','business_status':'awaiting_confirmation'}]).expected is None
 
 
+@pytest.mark.parametrize('text',[
+    '把当前草案改为20:00开始，持续90分钟',
+    '我今天晚上要完成操作系统作业，请更新已有草案，截止今晚22点',
+    '请修改这份草案，分成两段，每段45分钟',
+])
+def test_explicit_draft_followup_uses_actual_pending_kind(text):
+    pending=[{'kind':'planning','id':1,'version':'v1','status':'needs_input'}]
+    assert ai_skills.select_skills(text,current_drafts=pending).expected=='planning'
+    for negative in ['先不要更新当前草案','如果把当前草案改为八点会怎样','他说“更新当前草案”是什么意思']:
+        assert ai_skills.select_skills(negative,current_drafts=pending).expected is None
+    assert ai_skills.select_skills('你刚才说更新了草案，这是怎么回事',current_drafts=pending).expected is None
+
+
+def test_ambiguous_pending_drafts_need_an_explicit_kind():
+    pending=[{'kind':kind,'id':1,'version':'v1','status':'ready'} for kind in ('planning','review_record')]
+    assert ai_skills.select_skills('请修改当前草案',current_drafts=pending).reason=='ambiguous_draft'
+    assert ai_skills.select_skills('请修改当前复盘草案',current_drafts=pending).expected=='review_record'
+
+
 def test_only_selected_skill_files_load_and_failure_is_closed(tmp_path):
     selected=ai_skills.select_skills('今天有点累')
     prompt,audit=ai_skills.compose(selected)
@@ -149,7 +168,7 @@ def test_unauthorized_model_plan_cannot_execute_partial_batch(client,chat,monkey
     assert call(client,'/api/tasks')==[]
 
 
-def test_one_redecision_creates_real_draft_and_retry_does_not_duplicate(client,chat,monkeypatch,test_engine,caplog):
+def test_one_redecision_creates_real_draft_and_duplicate_send_reuses_receipt(client,chat,monkeypatch,test_engine,caplog):
     decisions=[];replies=[]
     async def choose(request):
         decisions.append(request.get('decision_feedback'))
@@ -162,16 +181,12 @@ def test_one_redecision_creates_real_draft_and_retry_does_not_duplicate(client,c
     monkeypatch.setattr(conversation_runs,'reply_events',reply)
     with caplog.at_level(logging.INFO,logger='app.services.conversation_tools'):
         result=send(client,chat,'匿名作业90分钟，今晚22点前完成，请帮我安排')
-    assert result['status']=='failed' and len(decisions)==2 and decisions[1]['code']=='MISSING_DRAFT'
+    assert result['status']=='completed' and len(decisions)==2 and decisions[1]['code']=='MISSING_DRAFT'
     draft=result['content']['tools'][0]['draft'];assert draft['status']=='ready'
     assert call(client,'/api/tasks')==[]
-    call(client,f"/api/conversations/{chat}/runs/{result['id']}/retry",{'expected_attempt':1})
-    for _ in range(100):
-        current=call(client,f"/api/conversations/{chat}/runs/{result['id']}")
-        if current['status']!='running':break
-        time.sleep(.015)
+    current=send(client,chat,'匿名作业90分钟，今晚22点前完成，请帮我安排')
     assert current['status']=='completed' and current['content']['tools'][0]['draft']['id']==draft['id']
-    assert len(decisions)==2
+    assert len(decisions)==2 and not replies
     with Session(test_engine) as db:
         diagnostic=db.get(AssistantRun,result['id']).payload['skill_diagnostics']
         assert diagnostic['repair_used'] and diagnostic['decision_count']==2

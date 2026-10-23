@@ -548,6 +548,31 @@ input:focus, select:focus, textarea:focus { border-color: #3b9b86; }
 .compact-shell.v2-shell #v2-draft-preview :is(p,h2,.helper) {margin:0}
 .compact-shell.v2-shell #v2-draft-preview .helper p+p {margin-top:6px}
 .compact-shell.v2-shell #v2-draft-preview .button-row>.primary {flex:1 1 100%;order:-1}
+/* Review drafts use the auxiliary pane as the reading surface. */
+.compact-shell.v2-shell #v2-draft-preview .review-draft.panel {border:0;border-radius:0;background:transparent;padding:4px 0 0;gap:20px}
+.compact-shell.v2-shell #v2-draft-preview .review-draft .section-heading {gap:12px;align-items:flex-start}
+.compact-shell.v2-shell #v2-draft-preview .review-draft .section-heading h2 {display:flex;align-items:center;flex-wrap:wrap;gap:8px;flex:1;line-height:1.5;font-size:18px}
+.compact-shell.v2-shell #v2-draft-preview .review-draft .section-heading>.button {flex-shrink:0;min-height:44px;padding:6px 8px}
+.review-draft-status {font-size:13px;font-weight:500;color:var(--ui-muted);padding:2px 8px;background:var(--soft,#edf4ef);border-radius:6px}
+.review-draft[data-status=applied] .review-draft-status {color:var(--ui-accent)}
+.review-draft .draft-editor-fields {display:grid;gap:20px;margin:0}
+.review-draft .draft-editor-fields label {display:grid;gap:8px;min-width:0;line-height:1.5}
+.compact-shell.v2-shell #v2-draft-preview .review-draft .draft-editor-fields textarea {min-height:128px;max-height:none;field-sizing:content;resize:vertical;padding:12px;line-height:1.75}
+.compact-shell.v2-shell #v2-draft-preview .review-draft textarea[aria-label="回顾摘要"] {min-height:168px}
+.review-draft-period {display:flex;flex-wrap:wrap;gap:4px 8px;color:var(--ui-muted);font-size:13px;font-variant-numeric:tabular-nums}
+.review-draft-reading {display:grid;gap:24px;min-width:0;overflow-wrap:anywhere}
+.review-draft-reading>header {display:grid;gap:8px}
+.compact-shell.v2-shell .review-draft-reading h3 {font-size:20px;line-height:1.5;margin:0}
+.review-draft-reading>section {display:grid;gap:8px}
+.compact-shell.v2-shell .review-draft-reading h4 {font-size:14px;line-height:1.5;color:var(--ui-muted)}
+.review-draft-reading>section p {white-space:pre-wrap;line-height:1.8}
+.review-draft-notices {border-top:1px solid var(--ui-line);padding-top:16px;font-size:13px;color:var(--ui-muted)}
+.review-draft-notices summary {cursor:pointer;margin-bottom:8px}
+.review-draft-receipt,.review-draft-unsaved {font-size:13px;color:var(--ui-muted);line-height:1.7}
+.review-draft-unsaved {color:#87591d}
+.compact-shell.v2-shell #v2-draft-preview .review-draft-actions {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:4px 0 0}
+.compact-shell.v2-shell #v2-draft-preview .review-draft-actions>.primary {grid-column:1/-1;order:0}
+.compact-shell.v2-shell #v2-draft-preview .review-draft-actions>.button {min-width:0;white-space:normal;min-height:44px}
 .draft-confirm-help {display:grid;gap:8px}
 .draft-confirm-help p {margin:0}
 .compact-shell.v2-shell .workspace-draft .breakdown-children>.item-card {border:0;border-top:1px solid #e5dcc7;border-radius:0;background:transparent;padding:20px 0;box-shadow:none}
@@ -586,11 +611,11 @@ input:focus, select:focus, textarea:focus { border-color: #3b9b86; }
 .compact-shell.v2-shell .full-calendar :is(.calendar-deadline,.calendar-goal,.calendar-candidate) .fc-event-main {color:inherit}
 .compact-shell.v2-shell .calendar-reading-note {margin:12px 0;color:var(--muted)}
 @container (max-width:480px) {
-  .full-calendar-toolbar {grid-template-columns:minmax(0,1fr) auto}
+  .compact-shell.v2-shell .full-calendar-toolbar {grid-template-columns:minmax(0,1fr) auto}
   .full-calendar-toolbar>[role=group] {grid-column:1;grid-row:1;justify-self:start}
   .full-calendar-toolbar>.button {grid-column:2;grid-row:1;justify-self:end}
   .full-calendar-toolbar .calendar-navigation {grid-column:1/-1;grid-row:2;justify-content:space-between}
-  .full-calendar-toolbar>label {grid-column:1/-1;grid-row:3;width:auto}
+  .compact-shell.v2-shell .full-calendar-toolbar>label {grid-column:1/-1;grid-row:3;width:auto}
 }
 .compact-shell.v2-shell .review-workspace {gap:20px;container-type:inline-size}
 .compact-shell.v2-shell .review-range-toolbar {display:grid;grid-template-columns:auto auto minmax(0,1fr)}
@@ -598,7 +623,7 @@ input:focus, select:focus, textarea:focus { border-color: #3b9b86; }
 .compact-shell.v2-shell .review-date-navigation .button {min-width:36px;padding:6px}
 .compact-shell.v2-shell .review-range-toolbar>.button {justify-self:end}
 @container (max-width:600px) {
-  .review-range-toolbar {grid-template-columns:minmax(0,1fr) auto}
+  .compact-shell.v2-shell .review-range-toolbar {grid-template-columns:minmax(0,1fr) auto}
   .review-range-toolbar>[role=group] {grid-column:1;grid-row:1;justify-self:start}
   .review-range-toolbar>.button {grid-column:2;grid-row:1}
   .review-range-toolbar>.review-date-navigation {grid-column:1/-1;grid-row:2}
@@ -688,3 +713,17 @@ input:focus, select:focus, textarea:focus { border-color: #3b9b86; }
   .compact-shell.v2-shell .conversation-chat .chat-scroll {gap:24px}
 }
 @media(prefers-reduced-motion:reduce) {.compact-shell.v2-shell .button {transition:none}}
+
+/* Attention reads as a task list: title, deadline/work, then an explicit preview. */
+.compact-shell.v2-shell .today-focus-item {border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:16px 0;box-shadow:none}
+.compact-shell.v2-shell .today-focus-item .attention-title {display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.attention-task-link {border:0;background:transparent;padding:4px 0;text-align:left;font:inherit;font-size:16px;font-weight:600;color:var(--ink);line-height:1.7;overflow-wrap:anywhere;cursor:pointer}
+.attention-task-link:hover {text-decoration:underline;text-underline-offset:4px}
+.compact-shell.v2-shell .today-focus-item .attention-meta {display:flex;flex-wrap:wrap;gap:4px 20px;color:var(--muted);font-size:14px;margin:4px 0 8px}
+.compact-shell.v2-shell .today-focus-item .attention-reason {color:var(--ink);line-height:1.8;margin:8px 0 12px}
+.compact-shell.v2-shell .today-focus-item .attention-options {display:flex;justify-content:flex-start;flex-wrap:wrap;gap:8px;margin:12px 0}
+.attention-options .button {white-space:normal;text-align:left;min-height:44px}
+.compact-shell.v2-shell .today-focus-item details {margin-top:12px;font-size:13px;color:var(--muted)}
+@media(pointer:coarse) {
+  .compact-shell.v2-shell .calendar-toolbar [role=group] .button,.compact-shell.v2-shell .v2-preview-date button {min-width:44px;min-height:44px}
+}

@@ -12,6 +12,11 @@ test('generic chat navigation has one header entry while genuine resource links 
 import { startConversationRun, getConversationRun, stopConversationRun, retryConversationRun } from '../src/api.js'
 import { canConfirmDraft,previewCompletionDeadline } from '../src/draftCoordination.js'
 
+test('a successfully repaired query does not falsely claim a default draft was generated',()=>{
+  assert.deepEqual(toolNotices([{tool:'review',error:'INVALID_TOOL_ARGUMENTS',message:'参数无效',recovered_by:'argument_repair'},
+    {tool:'review',start_date:'2026-10-19'}]),['已查询：回顾事实。'])
+})
+
 test('edited incomplete previews can submit for validation without enabling stale or final drafts',()=>{
   const partial={status:'needs_input',content:{schedule:{}},unresolved:['请填写截止时间']}
   assert.equal(canConfirmDraft(partial,false),false)

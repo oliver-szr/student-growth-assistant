@@ -248,7 +248,7 @@ def test_profile_feedback_tools_validate_and_write_only_after_confirm(client,mon
     else:assert call(client,'GET','/api/reviews/facts?start=2026-10-14&end=2026-10-15')['completed_count']==1
 
 
-def test_tool_failure_does_not_hide_successful_receipts_and_retry_is_safe(client,monkeypatch):
+def test_tool_failure_reports_actual_error_and_keeps_successful_query(client,monkeypatch):
     async def choose(request):return ToolPlan(calls=[{'name':'calendar','arguments':{'start':'2026-10-14','end':'2026-10-15'}},{'name':'profile_draft','arguments':{'operations':[{'op':'execute_sql'}]}}])
     monkeypatch.setattr(conversation_tools,'plan',choose)
     attempts=[]
@@ -259,12 +259,11 @@ def test_tool_failure_does_not_hide_successful_receipts_and_retry_is_safe(client
     monkeypatch.setattr(conversation_runs,'reply_events',flaky)
     sid=call(client,'POST','/api/conversations',json={'client_request_id':'failure'})['id']
     run=call(client,'POST',f'/api/conversations/{sid}/runs',json={'client_message_id':'once','text':'查询并生成目标建议'})
-    failed=wait(client,sid,run['id']);assert failed['status']=='failed'
+    failed=wait(client,sid,run['id']);assert failed['status']=='completed' and '未完成' in failed['delta']
     assert len(failed['content']['tools'])==2,failed
     assert failed['content']['tools'][1]['error']=='INVALID_DRAFT'
-    call(client,'POST',f"/api/conversations/{sid}/runs/{run['id']}/retry",json={'expected_attempt':1})
-    done=wait(client,sid,run['id']);assert done['status']=='completed'
-    assert done['content']['tools']==failed['content']['tools'] and call(client,'GET','/api/tasks')==[]
+    done=call(client,'POST',f'/api/conversations/{sid}/runs',json={'client_message_id':'once','text':'查询并生成目标建议'})
+    assert done['content']['tools']==failed['content']['tools'] and not attempts and call(client,'GET','/api/tasks')==[]
 
 
 def test_v3_restore_refuses_to_erase_stage2_tool_receipts(client,monkeypatch,mock_reply):
@@ -382,13 +381,15 @@ def test_stop_after_tool_receipt_then_retry_cannot_duplicate_draft(client,test_e
     async def choose(request):
         planner_calls.append(1)
         return ToolPlan(calls=[{'name':'profile_draft','arguments':{'operations':[{'op':'create_goal','title':'仅一份草案','metric_kind':'count','weekly_target':1}]}}])
-    async def slow(request):
-        yield {'type':'mode','value':'streaming'}
-        for _ in range(10):
-            await asyncio.sleep(.05)
-            yield {'type':'delta','text':'核对草案。'}
+    real_prepare=conversation_tools.prepare
+    prepare_count=[]
+    async def slow(*args):
+        request=await real_prepare(*args)
+        prepare_count.append(1)
+        if len(prepare_count)==1:await asyncio.sleep(.5)
+        return request
     monkeypatch.setattr(conversation_tools,'plan',choose)
-    monkeypatch.setattr(conversation_runs,'reply_events',slow)
+    monkeypatch.setattr(conversation_tools,'prepare',slow)
     sid=call(client,'POST','/api/conversations',json={'client_request_id':'stop-tools'})['id']
     run=call(client,'POST',f'/api/conversations/{sid}/runs',json={'client_message_id':'stop','text':'生成目标建议'})
     for _ in range(100):

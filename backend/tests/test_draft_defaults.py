@@ -163,15 +163,15 @@ def test_uncoordinated_or_stale_chat_edit_keeps_original(client,defaults_chat):
     assert call(client,f"/api/workspace/drafts/planning/{ref['id']}")['version']==ref['version']
 
 
-def test_failed_stream_keeps_draft_query_and_original_user_context(client,defaults_chat,monkeypatch):
+def test_business_receipt_keeps_draft_query_and_context_without_second_narration(client,defaults_chat,monkeypatch):
     async def planning(request):return ToolPlan(calls=[{'name':'tasks'},{'name':'planning_draft'}])
     async def partial(request):
-        yield {'type':'delta','text':'初稿已生成。'}
-        raise claude_client.AIServiceError('AI_RESPONSE_INVALID')
+        raise AssertionError('persisted business results must not be narrated by another model')
+        yield
     monkeypatch.setattr(conversation_tools,'plan',planning)
     monkeypatch.setattr(conversation_runs,'reply_events',partial)
     result=send(client,defaults_chat,'今晚安排操作系统作业，90分钟')
-    assert result['status']=='failed' and '初稿已生成' in result['delta']
+    assert result['status']=='completed' and '已生成' in result['delta'] and '尚未' in result['delta']
     assert result['content']['tools'][0]['tool']=='tasks'
     ref=result['content']['tools'][1]['draft']
     assert ref['id']>0 and call(client,'/api/tasks')==[]

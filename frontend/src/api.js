@@ -131,6 +131,7 @@ export const updateGoal = (id, data) => request(`/api/goals/${id}`, { method: 'P
 export const updateGrowthDirection = (direction) => request('/api/goals/direction', { method: 'PUT', body: JSON.stringify({ direction }) })
 export const getGrowthProfile = () => request('/api/growth/profile')
 export const getGrowthAttention = () => request('/api/growth/attention')
+export const createAttentionDraft = (id,data) => request(`/api/growth/tasks/${id}/schedule-draft`,{method:'POST',body:JSON.stringify(data)},65000)
 export const getGrowthInsights = () => request('/api/growth/insights')
 export const analyzeGrowthInsights = () => request('/api/growth/insights/analyze', { method: 'POST' }, 125000)
 export const editGrowthInsight = (id, time_window) => request(`/api/growth/insights/${id}`, { method: 'PATCH', body: JSON.stringify({ time_window }) })

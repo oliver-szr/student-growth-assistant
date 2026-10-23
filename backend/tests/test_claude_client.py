@@ -14,6 +14,19 @@ from app.services.claude_client import AIServiceError, ClaudeConfig, get_claude_
 CONFIG = ClaudeConfig("test-only-placeholder-secret", "configured-model", "https://gateway.example/", "2023-06-01")
 
 
+@pytest.mark.parametrize('model',['glm-5','glm-5.3-flash'])
+def test_glm_default_disables_thinking_without_expanding_paid_budget(model):
+    config=ClaudeConfig('test-only',model,'https://gateway.example',api_format='openai')
+    _,_,body=claude_client._wire('test','system',config,2000)
+    assert body['thinking']=={'type':'disabled'} and body['max_tokens']==2000
+
+
+def test_glm_explicit_thinking_keeps_a_reasoning_budget():
+    config=ClaudeConfig('test-only','glm-5.3-flash','https://gateway.example',api_format='openai',thinking_effort='high')
+    _,_,body=claude_client._wire('test','system',config,2000)
+    assert body['thinking']=={'type':'enabled'} and body['max_tokens']>=8192
+
+
 @pytest.mark.parametrize('api_format', ['anthropic','openai'])
 def test_stream_parses_only_final_text_and_requires_a_real_terminal(monkeypatch, api_format):
     real_client=httpx.AsyncClient

@@ -5,7 +5,7 @@ import re
 
 _sink = ContextVar('ai_diagnostics', default=None)
 logger = logging.getLogger(__name__)
-FIELDS = frozenset('calls arguments name questions continue_after_read actions fields title duration_minutes deadline priority profile kind id version content schedule day start_time segments break_minutes text scope start end task_id'.split())
+FIELDS = frozenset('calls arguments name questions continue_after_read actions fields title duration_minutes deadline priority profile kind id version content schedule day start_time segments break_minutes text scope start end start_date end_date period task_id'.split())
 
 
 def begin(run_id, attempt):

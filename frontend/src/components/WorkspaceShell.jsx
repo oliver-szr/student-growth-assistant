@@ -21,6 +21,9 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
   const listWidth = !home || panel === 'expanded' ? 0 : state.conversations ? 192 : 44
   const available = Math.max(680, gridWidth - 76 - listWidth - 8)
   const ratio = renderedSplitRatio(state.splitRatio, available)
+  // Flex factors below 1 can leave unallocated grid space when the other
+  // track freezes at its minimum. Scale both weights equally to consume it.
+  const primaryWeight = ratio * 100, auxiliaryWeight = (1 - ratio) * 100
   const bounds = splitBounds(available)
   const resizable = !narrow && panel === 'normal'
   const controls = 'v2-auxiliary-shared'
@@ -103,7 +106,7 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }
 
-  return <div ref={root} onFocusCapture={event => { lastFocus.current = event.target }} className="app-shell compact-shell v2-shell" data-navigation={state.navigation} data-panel={panel} data-conversations={visible.conversations ? 'open' : 'closed'} style={{ '--v2-list-width': `${listWidth}px`, '--v2-primary-fr': `${ratio}fr`, '--v2-auxiliary-fr': `${1 - ratio}fr` }}>
+  return <div ref={root} onFocusCapture={event => { lastFocus.current = event.target }} className="app-shell compact-shell v2-shell" data-navigation={state.navigation} data-panel={panel} data-conversations={visible.conversations ? 'open' : 'closed'} style={{ '--v2-list-width': `${listWidth}px`, '--v2-primary-fr': `${primaryWeight}fr`, '--v2-auxiliary-fr': `${auxiliaryWeight}fr` }}>
     <a className="v2-skip" href={home ? '#v2-chat' : '#v2-page-' + state.navigation} onClick={() => { dispatch({ type: 'mobile', value: 'primary' }); requestAnimationFrame(() => root.current?.querySelector(home ? '#v2-chat' : '#v2-page-' + state.navigation)?.focus()) }}>跳到主体内容</a>
     <div className="v2-mobile-switch" role="group" aria-label="手机工作台视图">
       {['conversations', 'primary', 'auxiliary'].map((surface, i) => <button key={surface} type="button" data-mobile={surface} aria-pressed={state.mobile === surface} onClick={() => dispatch({ type: 'mobile', value: surface })}>{['会话', home ? '聊天' : labels[state.navigation], '辅助栏'][i]}</button>)}

@@ -131,6 +131,14 @@ def _wire(text, system, config, max_tokens):
                 payload["reasoning_effort"] = config.thinking_effort or "low"
                 # DeepSeek's output budget also covers reasoning before the final JSON.
                 payload["max_tokens"] = max(max_tokens, 8192)
+        elif config.model.lower()=='glm-5' or config.model.lower().startswith(('glm-5.','glm-5-')):
+            # GLM-5 gateways otherwise spend the small answer budget on hidden
+            # reasoning and terminate with length before emitting any answer.
+            enabled=config.thinking_effort not in (None,'none')
+            payload['thinking']={'type':'enabled' if enabled else 'disabled'}
+            if enabled:
+                payload['reasoning_effort']=config.thinking_effort
+                payload['max_tokens']=max(max_tokens,8192)
         elif config.thinking_effort is not None:
             payload["reasoning_effort"] = config.thinking_effort
     else:

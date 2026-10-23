@@ -5,6 +5,19 @@ import { readFile } from 'node:fs/promises'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { transformWithEsbuild } from 'vite'
+import {recordedTime,tabKeyboard} from '../src/workbench.js'
+test('unknown-only feedback is not displayed as zero, while a known zero stays a fact',()=>{
+  assert.equal(recordedTime(0,1,1),'耗时未知')
+  assert.equal(recordedTime(0,0,1),'0 分钟')
+  assert.equal(recordedTime(0,0,0),'暂无投入记录')
+  assert.equal(recordedTime(30,1,2),'30 分钟（另有未知耗时）')
+})
+test('tab arrow keys move and activate a single tab, with Home and End support',()=>{
+  const active=[];const tabs=Array.from({length:3},(_,i)=>({focus:()=>active.push(`focus${i}`),click:()=>active.push(`select${i}`)}))
+  const event={currentTarget:{querySelectorAll:()=>tabs},target:tabs[0],key:'ArrowLeft',preventDefault:()=>{}}
+  tabKeyboard(event);assert.deepEqual(active,['focus2','select2'])
+  event.key='Home';tabKeyboard(event);assert.equal(active.at(-1),'select0')
+})
 test('new messages must not displace a reader of history',()=>{assert.equal(nearBottom({scrollHeight:1000,clientHeight:400,scrollTop:100}),false);assert.equal(nearBottom({scrollHeight:1000,clientHeight:400,scrollTop:560}),true)})
 test('missing facts stay unknown while confirmed zero remains zero',()=>{assert.deepEqual(reviewMetrics(null),[null,null,null]);assert.deepEqual(reviewMetrics({completed_count:0,confirmed_actual_minutes:90,planned_minutes:120}),[0,90,120])})
 test('progress only renders from finite facts and keeps actual numbers separate',()=>{assert.equal(progressPercent(null,3),null);assert.equal(progressPercent(1,0),null);assert.equal(progressPercent(4,3),100);assert.equal(progressPercent(1,4),25)})

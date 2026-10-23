@@ -49,3 +49,9 @@ test('unknown provider or server prose stays out of user-facing errors', () => {
   assert.doesNotMatch(error.message, /Unexpected/)
   assert.deepEqual(error.detail, detail)
 })
+test('documented business validation preserves a specific safe Chinese reason',()=>{
+  assert.match(new ApiError(409,{code:'STALE_CANDIDATE',message:'这个时间已不可用，请刷新后重新选择。'}).message,/这个时间已不可用/)
+  assert.match(new ApiError(422,'已有计时正在进行，请先结束计时。').message,/先结束计时/)
+  assert.doesNotMatch(new ApiError(500,{code:'FUTURE_CODE',message:'Traceback: 私密异常'}).message,/Traceback/)
+  assert.doesNotMatch(new ApiError(502,{code:'AI_RESPONSE_INVALID'}).message,/补充描述/)
+})

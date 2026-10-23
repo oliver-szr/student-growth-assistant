@@ -174,8 +174,8 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
     {run && <section aria-label="回复状态" className="reply-status">
       <p role="status">{run.status === 'running' ? run.phase==='querying'?'正在查询正式记录…':run.phase==='calculating'?'正在计算待审核草案…':run.delivery === 'full' ? '服务使用完整回复模式，正在等待结果…' : run.delivery === 'streaming' ? '正在接收回复…' : '正在理解并读取必要上下文…' : run.status==='failed'&&run.content?.tools?.some(result=>result.draft)?'草案已生成；文字回复未正常结束，可重试':statuses[run.status]}</p>
       {run.error_code && <p role="alert">{run.content?.tools?.some(result=>result.draft)?'已保存的初稿与查询结果仍可查看；本次AI文字回复失败，重试不会重复创建正式任务。':localizedError(503, { code: run.error_code })}</p>}
-      {run.status === 'running' && <><button className="button subtle" disabled={busy} onClick={() => action(async () => { const response = await stopConversationRun(id, run.id, run.attempt); if (alive.current) receive(response) })}>停止生成</button>
-        <button className="button subtle" onClick={() => setObserving(value => !value)}>{observing ? '停止等待' : '继续读取'}</button></>}
+      {run.status === 'running' && <><button className="button subtle" disabled={busy} onClick={() => action(async () => { const response = await stopConversationRun(id, run.id, run.attempt); if (alive.current) receive(response) })} title="请求后台停止这次回复">停止生成</button>
+        <button className="button subtle" title="只暂停界面读取，后台回复继续" onClick={() => setObserving(value => !value)}>{observing ? '停止等待' : '继续读取'}</button></>}
       {['failed', 'cancelled', 'interrupted'].includes(run.status) && <button className="button secondary" disabled={busy} onClick={() => action(async () => { await ensureConversationRuntime();const response = await retryConversationRun(id, run.id, run.attempt); if (alive.current) { receive(response); setObserving(true) } })}>重试回复</button>}
       {!observing && run.status === 'running' && <p className="helper">已停止此界面的观察，后台回复可能继续；点击继续读取恢复。</p>}
     </section>}

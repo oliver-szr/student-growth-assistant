@@ -60,10 +60,17 @@ def _active_candidate(db,s):
     return None
 
 
-def _previous_candidate(db,s):
+def _previous_candidate(db,s,locked_refs=()):
     previous=_active_candidate(db,s)
     if previous:
-        return previous.payload['items']+previous.payload.get('retained',[])
+        # A preview whose clock has reached its proposed start has not begun
+        # execution. Only formal segments can be historical or started.
+        # Keep the guarded previous snapshot (including its formal history) for
+        # confirmation checks. An explicit user lock on a candidate still holds.
+        _,formal=baseline(db,s.week_start)
+        refs={x['ref'] for x in formal};now=assistant_clock.assistant_now()
+        locked=set(locked_refs)|{t['ref'] for t in previous.payload.get('tasks',[]) if (t.get('profile') or {}).get('locked')}
+        return [x for x in previous.payload['items']+previous.payload.get('retained',[]) if x['ref'] in refs or x['ref'] in locked or dt(x['start_at'])>now]
     return None
 
 
@@ -133,7 +140,8 @@ def proposal_payload(db,s,actions,questions=None,ai_error=None,preferences=None,
         temporary_preferences=inherited.get('temporary_preferences')
         allow_replan=allow_replan or bool(preference_updates or temporary_preferences)
     scope=_scope_context(db,s) or {}
-    payload=build_proposal(db,s.week_start,actions,questions,preferences=preferences,preference_updates=preference_updates,allow_replan=allow_replan or expand_scope,temporary_preferences=temporary_preferences,previous_override=_previous_candidate(db,s),expanded=expand_scope or scope.get('mode')=='expanded',expansion_from=s.latest_proposal_id if expand_scope else scope.get('expansion_from'))
+    locked={a.get('target') for a in actions if (a.get('fields',{}).get('profile') or {}).get('locked')}
+    payload=build_proposal(db,s.week_start,actions,questions,preferences=preferences,preference_updates=preference_updates,allow_replan=allow_replan or expand_scope,temporary_preferences=temporary_preferences,previous_override=_previous_candidate(db,s,locked),expanded=expand_scope or scope.get('mode')=='expanded',expansion_from=s.latest_proposal_id if expand_scope else scope.get('expansion_from'))
     payload['ai_error']=ai_error
     return payload
 
