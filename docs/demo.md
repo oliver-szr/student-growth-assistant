@@ -22,8 +22,7 @@
 
 ## 保留的验收工具
 
-- `scripts/browser_acceptance.py`：当前手动任务、反馈、目标关联、跨周分段、刷新和窄屏浏览器流程，默认使用上述演示端口。必须指向匿名演示，运行会增加合成任务。
-- `scripts/check_ui_layout.py`：三页布局、表单展开及输入保留的浏览器检查，使用上述演示前端。
+- `scripts/workspace_browser_acceptance.cjs`：当前工作台的会话、草案确认、四个主体页面、独立辅助栏、输入恢复及窄屏浏览器检查。用 `SGA_TEST_API`、`SGA_TEST_WEB` 指向新建的空匿名 Mock 集成实例；可用 `SGA_PLAYWRIGHT_PATH` 指定已有 Playwright 包路径。运行会写入合成数据。
 - `scripts/scoped_browser_fixture.py --api <隔离API地址> --scenario single|expansion`：阶段 1 的专用场景，仅接受空匿名库，模拟时间必须为 2026-10-05 07:50 +08:00；不能对已有默认样例库运行。
 - `scripts/smoke_constraints.py --output <本地报告路径>`：显式真实 Provider 解析检查，可能产生费用；不会被 pytest 或演示启动自动调用。
 

@@ -1,28 +1,24 @@
-import { Fragment, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  getReviewFacts, getReviewContext, acceptGrowthInsight, analyzeGrowthInsights, createGrowthReview, editGrowthInsight, getDurationAdvice, getGoals, getGrowthAttention, getGrowthInsights,
-  getGrowthReviews, getTaskCategories, getTaskGrowthContext, getTasks, ignoreGrowthInsight,
+  getReviewFacts, getReviewContext, acceptGrowthInsight, analyzeGrowthInsights,
+  createGrowthReview, editGrowthInsight, ignoreGrowthInsight,
 } from '../api.js'
 import ReviewWorkspace from '../components/ReviewWorkspace.jsx'
 import GrowthAnalytics from '../components/GrowthAnalytics.jsx'
 import '../analytics.css'
 import SafeMessage from '../components/SafeMessage.jsx'
-import WorkspaceChat from '../components/WorkspaceChat.jsx'
 import { reviewRange } from '../calendar.js'
-import { minutesText } from '../analytics.js'
 
 
-export default function ReviewPage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null, onDataChanged, onBusinessChat, onReturnChat, workspace, today, onDiscuss, resource, onOpenTask, primaryActive=active }) {
-  const Content = embedded ? Fragment : WorkspaceChat
-  const [legacyMounted,setLegacyMounted]=useState(!embedded)
+export default function ReviewPage({ onAdjustTask, active = true, refreshVersion = 0, auxiliaryTarget = null, onDataChanged, onBusinessChat, onReturnChat, workspace, today, onDiscuss, resource, onOpenTask, primaryActive=active }) {
+  const [statisticsMounted,setStatisticsMounted]=useState(false)
   const [parentTasks, setParentTasks] = useState([])
   const [analyticsVersion, setAnalyticsVersion] = useState(0)
   const [overview, setOverview] = useState(null)
   const [auxFacts,setAuxFacts]=useState(null)
   const [overviewError, setOverviewError] = useState('')
   const [categories, setCategories] = useState([])
-  const [contexts, setContexts] = useState({})
   const [insufficient,setInsufficient]=useState(false)
   const [suggestions, setSuggestions] = useState([])
   const [insights, setInsights] = useState([])
@@ -44,23 +40,12 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
     const snapshot=await getReviewContext()
     setCategories(snapshot.categories);setParentTasks(snapshot.tasks.filter(task=>task.task_kind==='container'));setAnalyticsVersion(value=>value+1)
     setWeekStart(snapshot.week_start);setReview(snapshot.reviews[0]||null);setInsights(snapshot.insights)
-    setContexts(snapshot.contexts);setInsufficient(Object.values(snapshot.advice).some(item=>item.status==='insufficient_data'||item.status==='needs_task_type'))
+    setInsufficient(Object.values(snapshot.advice).some(item=>item.status==='insufficient_data'||item.status==='needs_task_type'))
     setSuggestions(snapshot.tasks.filter(task=>task.status==='todo').map(task=>({task,context:snapshot.contexts[task.id],advice:snapshot.advice[task.id]})).filter(entry=>entry.advice.status==='suggested'))
 
   }
 
-  function afterChatDraftConfirmed(draft) {
-    refresh().catch((cause) => setError(cause.message))
-    if (draft?.operations?.some((operation) => operation.op === 'record_feedback')) {
-      setNotice('执行记录已保存，正在按最新记录更新本周复盘…')
-      createGrowthReview(weekStart).then((next) => {
-        setReview(next)
-        return refresh()
-      }).then(() => setNotice('执行记录、目标进展和本周复盘已更新。')).catch((cause) => setError(cause.message))
-    }
-  }
-
-  useEffect(() => { if (active&&legacyMounted) refresh().catch((e) => setError(e.message)) }, [active, refreshVersion,legacyMounted])
+  useEffect(() => { if (active&&statisticsMounted) refresh().catch((e) => setError(e.message)) }, [active, refreshVersion,statisticsMounted])
 
   async function generateReview() {
     setOperation('review'); setBusy(true); setError(''); setNotice('')
@@ -93,13 +78,12 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
 
   return <><section className="growth-page" aria-label="回顾与成长">
     {onReturnChat&&<button className="button subtle" onClick={onReturnChat}>返回相关对话</button>}
-    {embedded&&today&&<ReviewWorkspace workspace={workspace} today={today} active={primaryActive} refreshVersion={refreshVersion} onDiscuss={onDiscuss} onSaved={onDataChanged} resource={resource} onOpenTask={onOpenTask}/>}
-    <details className="legacy-review" open={!embedded||undefined} onToggle={e=>{if(e.currentTarget.open)setLegacyMounted(true)}}><summary>旧统计与自动周说明</summary>{legacyMounted&&<>
+    {today&&<ReviewWorkspace workspace={workspace} today={today} active={primaryActive} refreshVersion={refreshVersion} onDiscuss={onDiscuss} onSaved={onDataChanged} resource={resource} onOpenTask={onOpenTask}/>}
+    <details className="review-statistics" onToggle={e=>{if(e.currentTarget.open)setStatisticsMounted(true)}}><summary>统计与习惯建议</summary>{statisticsMounted&&<>
     <div className="growth-page-heading">
       <div><h2 id="growth-heading">复盘</h2></div><span className="review-week muted">{weekStart} 周</span>
       <button className="button primary" type="button" disabled={busy} onClick={generateReview}>{operation==='review'?'生成中…':'生成复盘'}</button>{onBusinessChat&&<button className="button secondary" onClick={onBusinessChat}>用 AI 整理执行记录</button>}
     </div>
-    <Content {...(embedded ? {} : { scope: 'review', weekStart: weekStart || undefined, onAdjustTask, onDraftConfirmed: afterChatDraftConfirmed })}>
     {error && <p className="error-box" role="alert">{error}</p>}{notice && <p className="success-box" role="status">{notice}</p>}
 
     <GrowthAnalytics refreshVersion={analyticsVersion} parentTasks={parentTasks} onOverview={setOverview} onOverviewError={setOverviewError} onRefresh={()=>refresh().catch(cause=>setError(cause.message))} />
@@ -121,7 +105,7 @@ export default function ReviewPage({ onAdjustTask, embedded = false, active = tr
     </section>
 
 
-    </Content></>}
+    </>}
     </details>
   </section>
     {auxiliaryTarget && createPortal(<section className="v2-readonly-summary" aria-label="复盘辅助视图">

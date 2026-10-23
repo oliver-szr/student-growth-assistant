@@ -5,14 +5,8 @@
   --ui-space:20px; --ui-body:15px; --ui-small:13px; --ui-label:14px;
   font-size:var(--ui-body); line-height:1.65; color:var(--ui-ink);
 }
-.compact-shell .container {width:min(calc(100% - 48px),1440px);max-width:1440px}
 .compact-shell h1,.compact-shell h2,.compact-shell h3,.compact-shell h4 {letter-spacing:normal;line-height:1.35}
-.compact-shell .site-header {padding:16px 0;background:#fff}
-.compact-shell .brand-row {display:flex;align-items:center;gap:18px;flex-wrap:wrap}
-.compact-shell .brand-row h1 {font-size:20px;font-weight:700;margin:0}
-.compact-shell .brand-row span,.compact-shell .workspace-clock {font-size:13px;color:var(--ui-muted)}
-.compact-shell .navigation-row {display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--ui-line);margin-bottom:20px;flex-wrap:wrap}
-.compact-shell .tabs {border:0;margin:0;padding:12px 0}
+.compact-shell .workspace-clock {font-size:13px;color:var(--ui-muted)}
 .compact-shell .growth-page {gap:0}
 .compact-shell .growth-page-heading {display:flex;align-items:center;flex-direction:row;gap:12px;margin:0 0 20px;padding:0;min-height:44px}
 .compact-shell .growth-page-heading h2 {font-size:28px;font-weight:700;margin:0}
@@ -22,7 +16,7 @@
 .compact-shell .muted,.compact-shell .helper,.compact-shell small {color:var(--ui-muted)}
 .compact-shell small,.compact-shell .goal-metric,.compact-shell .task-context-label {font-size:13px;line-height:1.5}
 .compact-shell .badge,.compact-shell .today-urgency {font-size:12px;font-weight:500;color:#255848}
-.compact-shell .button,.compact-shell .tab,.compact-shell .manual-link {font-size:14px;font-weight:600;min-height:44px}
+.compact-shell .button,.compact-shell .manual-link {font-size:14px;font-weight:600;min-height:44px}
 .compact-shell input:not([type=checkbox]),.compact-shell select,.compact-shell textarea {font-size:15px;min-height:44px;max-width:100%;min-width:0;line-height:1.5}
 .compact-shell textarea::placeholder,.compact-shell input::placeholder {color:var(--ui-muted);opacity:1}
 .compact-shell label {font-size:14px;font-weight:500}
@@ -31,12 +25,6 @@
 .compact-shell button:disabled {cursor:default}
 [hidden] {display:none!important}
 
-/* One grid and breakpoint for all three pages. Hiding never unmounts forms or conversations. */
-.compact-shell .workbench-grid {display:grid;grid-template-columns:clamp(320px,36%,440px) minmax(0,1fr);gap:var(--ui-space);align-items:start}
-.compact-shell .workbench-chat-column,.compact-shell .workbench-result-column {min-width:0}
-.compact-shell .workbench-chat-column.can-stick {position:sticky;top:16px}
-.compact-shell .workbench-result-column,.compact-shell .result-panels {display:grid;gap:20px;align-content:start}
-.compact-shell .workbench-switch {display:none}
 .compact-shell .growth-section,.compact-shell .chat-panel,.compact-shell .schedule-panel,.compact-shell .proposal-panel,.compact-shell .workspace-chat {border:1px solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-panel);box-shadow:0 3px 12px #173a4607;margin:0;min-width:0}
 .compact-shell .growth-section,.compact-shell .proposal-panel {padding:20px}
 .compact-shell .growth-section-heading {margin:0 0 16px;align-items:center;gap:12px}
@@ -62,8 +50,6 @@
 .compact-shell .draft-change {margin:12px 0;overflow-wrap:anywhere}
 .compact-shell .draft-change>div {display:grid;gap:6px}
 .compact-shell .draft-change span {font-size:14px}
-.compact-shell .recently-saved {animation:saved-highlight 1.5s ease-out}
-@keyframes saved-highlight {from{box-shadow:0 0 0 3px #a0d9c7}to{box-shadow:none}}
 
 /* Priority cards and calendar use data hierarchy rather than small print. */
 .compact-shell .today-focus {display:block;padding:16px 20px;margin:0 0 20px;background:#f4faf7;border-left:3px solid #278571}
@@ -75,10 +61,6 @@
 .compact-shell .today-focus-item>p {font-size:13px;min-height:0;margin:8px 0}
 .compact-shell .today-focus-item details {margin-top:8px;font-size:13px}
 .compact-shell .risk-label,.compact-shell .urgency-overdue .today-urgency {color:#a43228;font-weight:600}
-.compact-shell .schedule-heading {display:grid;grid-template-columns:minmax(0,1fr) auto}
-.compact-shell .calendar-legend {font-size:12px;grid-column:1/-1;flex-wrap:wrap}
-.compact-shell .week-switch button {width:44px;height:44px;min-height:44px}
-.compact-shell .week-switch-range {font-size:13px;min-width:88px}
 .compact-shell .week-scroll {width:100%;height:auto;max-height:none;overflow:visible}
 .compact-shell .week-grid {width:100%;min-width:0;grid-template-columns:40px repeat(7,minmax(0,1fr));padding-bottom:16px}
 .compact-shell .day-heading {font-size:12px;position:static}
@@ -87,7 +69,6 @@
 .compact-shell .calendar-block {min-height:0;border:0;border-left:3px solid #438970;left:3px;right:3px;width:auto;max-width:none;padding:4px;text-align:left;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;line-height:1.35;border-radius:5px;color:#214b3e}
 .compact-shell .calendar-block.past {opacity:1;background:#f1f4f3;color:#526974}
 .compact-shell .calendar-block.course {background:#eef0fb;color:#343d68;border-left-color:#7885bc}
-.compact-shell .course-key:before {background:#7885bc}
 .compact-shell .calendar-block.changed {color:#654817;border-left-color:#bc8a2c}
 .compact-shell .calendar-block span,.compact-shell .calendar-block small {font-size:11px;margin-top:0;color:inherit}
 .compact-shell .calendar-block strong {font-size:12px;line-height:1.35;margin:2px 0;overflow-wrap:anywhere}
@@ -140,27 +121,15 @@
 .compact-shell .preference-rule-editor,.compact-shell #goal-editor {margin-top:16px;scroll-margin-top:20px}
 .compact-shell .goal-card progress {display:block;width:100%;height:8px;accent-color:#087968;margin:10px 0}
 .compact-shell .insight-card>p>strong {font-size:22px}
-.compact-shell .goal-progress {font-size:14px;margin:10px 0 0}
 .compact-shell .goal-priority {font-size:12px}
 .compact-shell .goal-metric {gap:8px}
 .compact-shell .growth-empty {font-size:14px;line-height:1.65;margin:0;padding:12px;background:#f5f8f7}
 .compact-shell .backup-list,.compact-shell .revision-list {overflow-wrap:anywhere}
 @media(max-width:1023px) {
-  .compact-shell .workbench-grid {grid-template-columns:minmax(0,1fr)}
-  .compact-shell .workbench-chat-column.can-stick {position:static}
-  .compact-shell .workbench-switch {display:flex;gap:4px;margin-bottom:16px;padding:4px;background:#eaf2ef;border:1px solid var(--ui-line);border-radius:10px}
-  .compact-shell .workbench-switch button {flex:1;min-height:44px;border:0;border-radius:7px;background:transparent;color:var(--ui-muted);font-size:14px;font-weight:600}
-  .compact-shell .workbench-switch button[aria-pressed=true] {background:#fff;color:var(--ui-accent)}
-  .compact-shell .workbench-grid[data-view=chat]>.workbench-result-column,.compact-shell .workbench-grid[data-view=result]>.workbench-chat-column {display:none}
   .compact-shell .chat-scroll {max-height:480px}
 }
 @media(max-width:600px) {
   .compact-shell {--ui-space:16px}
-  .compact-shell .container {width:calc(100% - 32px)}
-  .compact-shell .brand-row {gap:6px}
-  .compact-shell .brand-row h1 {font-size:18px}
-  .compact-shell .brand-row span {width:100%}
-  .compact-shell .navigation-row {padding-bottom:12px;margin-bottom:16px}
   .compact-shell .workspace-clock {font-size:12px}
   .compact-shell .growth-page-heading {margin-bottom:16px;flex-wrap:wrap}
   .compact-shell .growth-page-heading h2 {font-size:24px}
@@ -187,4 +156,3 @@
   .compact-shell .proposal-actions {margin:16px -16px -16px;padding:12px 16px}
   .compact-shell .proposal-actions .button.primary {flex:none}
 }
-@media(prefers-reduced-motion:reduce){.compact-shell .recently-saved{animation:none}}

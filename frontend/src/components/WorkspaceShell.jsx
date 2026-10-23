@@ -112,7 +112,7 @@ export default function WorkspaceShell({ state, dispatch, chat, children, review
       <nav className="v2-navigation" aria-label="主导航">
         <div className="v2-brand" title="个人成长助手" aria-label="个人成长助手">生长</div>
         {['home', ...workspacePages].map(page => <button key={page} type="button" aria-current={state.navigation === page ? 'page' : undefined} onClick={() => navigate(page)}><svg viewBox="0 0 24 24" aria-hidden="true">{navigationIcons[page]}</svg>{labels[page]}</button>)}
-        <div className="v2-nav-bottom"><a href="?layout=legacy" target="_blank" rel="noopener" title="在新标签页打开旧版">旧版入口</a><span className="v2-account" aria-label="账号区预留">账号预留</span></div>
+        <div className="v2-nav-bottom"><span className="v2-account" aria-label="账号区预留">账号预留</span></div>
       </nav>
       <aside id="v2-conversations" className="v2-conversations" aria-label="会话区域" hidden={narrow ? !visible.conversations : !home || panel === 'expanded'} inert={narrow ? !visible.conversations : !home || panel === 'expanded'}>
         <button id="v2-toggle-conversations" className="v2-list-toggle" type="button" aria-label={visible.conversations ? '收起会话列表' : '展开会话列表'} aria-expanded={visible.conversations} aria-controls="v2-conversation-content" onClick={() => dispatch({ type: 'conversations' })}>{visible.conversations ? '会话 ‹' : '›'}</button>

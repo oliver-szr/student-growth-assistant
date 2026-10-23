@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { STATUS_LABELS, PRIORITY_LABELS } from '../localization.js'
 import {
-  getTasksDashboard, createTask, finishWorkSession, getCurrentWorkSession, getDurationAdvice,
-  getTaskCategories, getTaskFeedback, getTaskGrowthContext, getTasks, pauseWorkSession,
+  getTasksDashboard, createTask, finishWorkSession, getTaskFeedback, pauseWorkSession,
   resumeWorkSession, saveTaskGrowthContext, startWorkSession, submitTaskFeedback,
   updateTask,
 } from '../api.js'

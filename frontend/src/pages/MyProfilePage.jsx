@@ -1,13 +1,12 @@
-import { Fragment, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  getProfileContext, createGoal, createPreferenceRule, createTaskCategory, exportGrowthData, getGoals, getGrowthProfile,
-  getLocalBackups, getPreferenceRules, getTaskCategories, getTaskGrowthContext, getTasks, importGrowthData,
+  getProfileContext, createGoal, createPreferenceRule, createTaskCategory, exportGrowthData,
+  getLocalBackups, importGrowthData,
   saveTaskGrowthContext, updateGoal, updatePreferenceRule, updateTaskCategory,
 } from '../api.js'
 import MemoryPanel from '../components/MemoryPanel.jsx'
 import TimeRulesPage from './TimeRulesPage.jsx'
-import WorkspaceChat from '../components/WorkspaceChat.jsx'
 import { goalPayload } from '../goals.js'
 import EditRecovery, { useEditRecovery } from '../components/EditRecovery.jsx'
 
@@ -27,8 +26,7 @@ function describeRule(rule) {
   return parameters.text || rule.description || '只供 AI 参考，不直接参与排程'
 }
 
-export default function MyProfilePage({ onAdjustTask, embedded = false, active = true, refreshVersion = 0, auxiliaryTarget = null, recoveryWorkspace, onDataChanged, onBusinessChat, onReturnChat, resource, onOpenConversation, primaryActive=active }) {
-  const Content = embedded ? Fragment : WorkspaceChat
+export default function MyProfilePage({ active = true, refreshVersion = 0, auxiliaryTarget = null, recoveryWorkspace, onDataChanged, onBusinessChat, onReturnChat, resource, onOpenConversation, primaryActive=active }) {
   const [section,setSection]=useState('preferences'),[memoryVisited,setMemoryVisited]=useState(false)
   const sectionRecovery=useEditRecovery({workspace:recoveryWorkspace,resource:'profile-section',base:recoveryWorkspace?'profile-sections-v1':undefined,
     value:{section},dirty:true,automatic:true,restore:value=>{if(['goals','time','preferences','memories','data'].includes(value.section)){setSection(value.section);if(value.section==='memories')setMemoryVisited(true)}}})
@@ -174,10 +172,9 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
   const weekdays = ruleForm.weekdays
   return <><section className="growth-page profile-page" aria-labelledby="profile-heading">
     {onReturnChat&&<button className="button subtle" onClick={onReturnChat}>返回相关对话</button>}
-    <div className="growth-page-heading"><h2 id="profile-heading" className={embedded?'visually-hidden':undefined}>我的档案</h2>{onBusinessChat&&<button className="button subtle" onClick={onBusinessChat}>用 AI 整理目标或偏好</button>}</div>
+    <div className="growth-page-heading"><h2 id="profile-heading" className="visually-hidden">我的档案</h2>{onBusinessChat&&<button className="button subtle" onClick={onBusinessChat}>用 AI 整理目标或偏好</button>}</div>
     <div className="profile-sections" role="tablist" aria-label="档案分区">{[['goals','目标'],['time','时间与课程'],['preferences','偏好'],['memories','记忆'],['data','数据管理']].map(([key,label])=><button className="button subtle" key={key} role="tab" aria-selected={section===key} onClick={()=>{setSection(key);if(key==='memories')setMemoryVisited(true)}}>{label}</button>)}</div>
     {memoryVisited&&<div hidden={section!=='memories'} inert={section!=='memories'}><MemoryPanel workspace={recoveryWorkspace} active={primaryActive&&section==='memories'} resource={resource} onSource={onOpenConversation} onPreferences={()=>setSection('preferences')}/></div>}
-    <Content {...(embedded ? {} : { scope: 'profile', onAdjustTask, onDraftConfirmed: load })}>
     <EditRecovery recovery={recovery} label="目标与偏好编辑"/><EditRecovery recovery={sectionRecovery} label="档案分区"/>
     {error && <p className="error-box" role="alert">{error}</p>}{notice && <p className="success-box" role="status">{notice}</p>}
 
@@ -228,7 +225,6 @@ export default function MyProfilePage({ onAdjustTask, embedded = false, active =
       <p className="helper">应用启动时每天最多自动保存一次 SQLite 安全副本，最多保留 5 份。导入前还会额外保存当前数据库。</p>
       {backups.length ? <ul className="backup-list">{backups.map((backup) => <li key={backup.name}><strong>{backup.name}</strong><span>{Math.ceil(backup.size_bytes / 1024)} KB</span></li>)}</ul> : <p className="growth-empty">尚未生成自动备份；应用下次启动时会检查并创建。</p>}
     </details>
-    </Content>
   </section>
     {auxiliaryTarget && createPortal(<section className="v2-readonly-summary" aria-label="档案辅助视图">
       {previewError && <p role="status">档案摘要暂时无法更新。</p>}

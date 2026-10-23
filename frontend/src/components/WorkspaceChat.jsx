@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { cancelAssistantRun, confirmGrowthDraft, createAssistantRun, discardGrowthDraft, getAssistantRun, getAssistantSession, getAssistantSettings, openWorkspaceSession, retryAssistantRun } from '../api.js'
 import { UI_COPY } from '../uiCopy.js'
-import WorkbenchLayout from './WorkbenchLayout.jsx'
 import ChatMessages from './ChatMessages.jsx'
 import SafeMessage from './SafeMessage.jsx'
 import EditRecovery, { useEditRecovery } from './EditRecovery.jsx'
 const labels = { profile: '档案助手', review: '复盘助手' }
 
-export default function WorkspaceChat({ scope, weekStart, onAdjustTask, onDraftConfirmed, children, renderLayout, observe = true, workspace }) {
+export default function WorkspaceChat({ scope, weekStart, onAdjustTask, onDraftConfirmed, observe = true, workspace }) {
   const [session, setSession] = useState(null)
   const [data, setData] = useState(null)
   const [text, setText] = useState('')
@@ -130,7 +129,7 @@ export default function WorkspaceChat({ scope, weekStart, onAdjustTask, onDraftC
     : '例如：报告今天完成了，实际用了90分钟；阅读因为临时开会暂缓。'
   const phaseText = run?.phase === 'understanding' ? '正在理解你的表达…' : run?.phase === 'arranging' ? '正在核对资料和生成修改草案…' : run?.phase === 'recommending' ? '正在整理回复…' : '正在处理…'
 
-  return <WorkbenchLayout renderLayout={renderLayout} chat={<section className="workspace-chat" aria-label={`${labels[scope]}聊天`}>
+  return <><section className="workspace-chat" aria-label={`${labels[scope]}聊天`}>
     <EditRecovery recovery={recovery} label="业务助手输入"/>
     {legacyInput&&<section className="recovery-note" aria-label="旧版输入对照"><p>检测到只按业务类型记录的旧版输入，请核对归属后手动带入；原缓存继续保留。</p><details><summary>查看旧版输入</summary><pre>{legacyInput}</pre></details><button className="button subtle" disabled={Boolean(text)} onClick={()=>{setText(legacyInput);setLegacyInput('')}}>带入旧版输入</button></section>}
     <div className="workspace-chat-heading"><div><h3>{labels[scope]}</h3></div></div>
@@ -142,7 +141,7 @@ export default function WorkspaceChat({ scope, weekStart, onAdjustTask, onDraftC
     {run?.status === 'failed' && <div className="workspace-run-status error" role="status"><span>处理未完成，输入仍保留。</span><button type="button" className="button subtle" onClick={retry}>重试</button></div>}
     {error && run?.status !== 'failed' && <p className="error-message" role="alert">{error}</p>}
     <form className="workspace-chat-input" onSubmit={send}><textarea value={text} onChange={(event) => { requestId.current=null; setText(event.target.value) }} rows={2} aria-label={scope==='profile'?'修改目标或偏好':'记录执行或询问进展'} placeholder={scope==='profile'?'修改目标或偏好':'记录执行或询问进展'} disabled={busy || !session} /><button className="button primary" disabled={busy || !text.trim() || !session}>发送</button></form>
-  </section>}>
+  </section>
     {data?.draft && <div className="workspace-draft"><div className="draft-heading"><strong>{scope==='profile'?'修改待保存':'记录待保存'}</strong></div>
       {(data.draft.changes || []).map((change, index) => <article className="draft-change" key={`${change.title}-${index}`}><strong>{change.title}</strong><div><span>修改前：{change.before || '无'}</span><span>修改后：{change.after || '未提供'}</span></div><small>{change.impact}</small></article>)}
       {(data.draft.questions || []).map((question, index) => <p className="draft-question" key={index}>{question}</p>)}
@@ -150,6 +149,5 @@ export default function WorkspaceChat({ scope, weekStart, onAdjustTask, onDraftC
 
     </div>}
     {confirmedDraft && <div className="workspace-confirmed"><strong>已保存</strong><button className="button secondary" onClick={() => onAdjustTask?.({ text: '根据刚确认的档案或执行记录，重新评估本周安排。' })}>{UI_COPY.adjust}</button></div>}
-    <div className={confirmedDraft ? 'result-panels recently-saved' : 'result-panels'}>{children}</div>
-  </WorkbenchLayout>
+  </>
 }

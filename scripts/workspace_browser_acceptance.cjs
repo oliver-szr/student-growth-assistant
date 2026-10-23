@@ -11,6 +11,69 @@ async function call(path, method='GET', body) {
   assert.equal(response.headers.get('x-sga-integration-mock'),'1');
   const value=await response.json();assert.ok(response.ok,JSON.stringify(value));return value;
 }
+async function verifyLegacyRemovalUI(){
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  const page=await browser.newPage({viewport:{width:1440,height:1000},locale:'zh-CN'}),errors=[],writes=[],checks=[];
+  const checked=text=>{checks.push(text);console.log('PASS '+text)};
+  page.on('pageerror',error=>errors.push(error.message));
+  page.on('request',request=>{if(!['GET','HEAD','OPTIONS'].includes(request.method()))writes.push(request.method()+' '+new URL(request.url()).pathname)});
+  try{
+    for(const search of ['', '?layout=legacy']){
+      const url=new URL(web);url.search=search;
+      await page.goto(url.href);
+      const nav=page.getByRole('navigation',{name:'主导航',exact:true});
+      await expect(nav).toBeVisible();
+      await expect(nav.getByRole('button')).toHaveText(['首页','日程','复盘','档案']);
+      await expect(page.locator('.v2-shell')).toHaveCount(1);
+      await expect(page.locator('a[href*="layout=legacy"],.app-shell:not(.v2-shell),.workbench-grid,.workbench-switch,.site-header')).toHaveCount(0);
+      checked(search?'old_layout_bookmark_loads_only_current_workspace':'root_loads_only_current_workspace');
+    }
+    const nav=page.getByRole('navigation',{name:'主导航',exact:true});
+    for(const width of [1440,1280,390]){
+      await page.setViewportSize({width,height:width===390?844:1000});
+      await page.reload();await expect(nav).toBeVisible();
+      for(const name of ['首页','日程','复盘','档案']){
+        await nav.getByRole('button',{name,exact:true}).click();
+        await expect(page.getByRole('heading',{name,exact:true}).first()).toBeVisible();
+        assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+      }
+      await expect(page.locator('.workbench-grid,.workbench-switch')).toHaveCount(0);
+      checked('old_bookmark_refresh_four_current_pages_no_overflow:'+width);
+    }
+    await page.setViewportSize({width:1440,height:1000});
+    await nav.getByRole('button',{name:'复盘',exact:true}).click();
+    await page.getByText('统计与习惯建议',{exact:true}).click();
+    await expect(page.getByRole('region',{name:'成长统计概览',exact:true})).toBeVisible();
+    await expect(page.locator('.analytics-note').first()).toBeVisible();
+    assert.deepEqual(writes,[],'Opening current pages and shared statistics must not write business data');
+    checked('shared_analytics_and_existing_notes_remain_in_current_review_without_writes');
+    await nav.getByRole('button',{name:'档案',exact:true}).click();
+    await page.getByRole('button',{name:'用 AI 整理目标或偏好',exact:true}).click();
+    await page.getByRole('textbox',{name:'修改目标或偏好',exact:true}).fill('匿名新增目标：旧版删除后的档案草案');
+    await page.locator('.workspace-chat-input').getByRole('button',{name:'发送',exact:true}).click();
+    await expect(page.locator('.workspace-draft')).toBeVisible({timeout:30000});
+    await page.locator('.workspace-draft .button.primary').click();
+    await expect(page.locator('.workspace-confirmed')).toBeVisible({timeout:30000});
+    checked('shared_profile_chat_draft_and_explicit_save');
+    await page.getByRole('button',{name:'本周规划入口',exact:true}).click();
+    await page.getByRole('button',{name:'手动添加',exact:true}).click();
+    const form=page.locator('.manual-task'),title='旧版删除后的手动规划';
+    await form.getByLabel('名称',{exact:true}).fill(title);
+    await form.getByLabel('剩余时长（分钟）',{exact:true}).fill('10');
+    await form.getByLabel('截止时间',{exact:true}).fill('2026-10-14T22:00');
+    await form.getByRole('button',{name:'生成候选',exact:true}).click();
+    const adopt=page.getByRole('button',{name:'采用方案',exact:true});
+    await expect(adopt).toBeEnabled({timeout:60000});
+    assert.ok(!(await call('/api/tasks')).some(task=>task.title===title));
+    await adopt.click();
+    await expect(page.getByRole('heading',{name:'已采用方案',exact:true})).toBeVisible({timeout:30000});
+    assert.ok((await call('/api/tasks')).some(task=>task.title===title));
+    checked('shared_planning_manual_preview_and_explicit_adoption');
+    assert.deepEqual(errors,[]);
+    console.log(JSON.stringify({checks,pageErrors:errors,provider:'Mock only',database:'new anonymous database'},null,2));
+  }catch(error){console.error((await page.locator('body').innerText()).slice(-4000));throw error}
+  finally{await browser.close()}
+}
 async function verifyIndependentScheduleUI(){
   assert.deepEqual((await call('/api/conversations?scope=all')).items,[]);
   const settings=await call('/api/assistant/settings');
@@ -493,6 +556,7 @@ async function verifyConversationUI() {
   assert.ok(['localhost','127.0.0.1','[::1]'].includes(new URL(api).hostname));
   const settings=await call('/api/assistant/settings');assert.ok(settings.demo);
   assert.deepEqual(await call('/api/tasks'),[], 'Use a fresh anonymous demo server');
+  if(process.argv.includes('--legacy-removal')) {await verifyLegacyRemovalUI();return}
   if(process.argv.includes('--ui')) {await verifyConversationUI();return}
   if(process.argv.includes('--skills')) {await verifySkillsUI();return}
   if(process.argv.includes('--schedule-independent')) {await verifyIndependentScheduleUI();return}

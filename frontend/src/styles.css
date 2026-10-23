@@ -24,7 +24,7 @@
   .conversation-chat .workspace-chat-input textarea { font-size:16px; max-height:22dvh; }
 }
 
-/* V2 shell. Specificity keeps legacy page styling separate from the new layout. */
+/* Workspace shell and shared business styles. */
 .compact-shell.v2-shell {--ink:#243e35;--muted:#586c62;--line:#dee7e1;--accent:#176e58;--soft:#edf4ef;--surface:#fff;height:100dvh;min-height:480px;display:flex;flex-direction:column;overflow:hidden;background:var(--surface);color:var(--ink)}
 .compact-shell.v2-shell .v2-grid {display:grid;grid-template-columns:76px var(--v2-list-width) minmax(360px,var(--v2-primary-fr)) 8px minmax(320px,var(--v2-auxiliary-fr));grid-template-rows:auto minmax(0,1fr);flex:1;min-height:0}
 .compact-shell.v2-shell[data-panel=collapsed] .v2-grid {grid-template-columns:76px var(--v2-list-width) minmax(0,1fr) 0 44px}
@@ -34,7 +34,6 @@
 .compact-shell.v2-shell .v2-navigation>button {display:flex;flex-direction:column;align-items:center;gap:2px;border:0;background:transparent;min-height:64px;font-size:13px;padding:6px}
 .compact-shell.v2-shell .v2-navigation>button[aria-current] {font-weight:700}
 .compact-shell.v2-shell .v2-nav-bottom {margin-top:auto;display:grid;gap:16px;text-align:center;font-size:12px}
-.compact-shell.v2-shell .v2-nav-bottom a {color:#365e55;padding:8px 0}
 .compact-shell.v2-shell .v2-account {color:#526974;border-top:1px solid #d2dfd9;padding-top:12px}
 .compact-shell.v2-shell .v2-conversations {grid-column:2;grid-row:1 / span 2;padding:12px 10px;border-right:1px solid #d9e4e7;min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
 .compact-shell.v2-shell .v2-list-toggle {border:0;background:transparent;color:#365c52;min-height:32px;width:100%;text-align:left;font-weight:600;padding:4px 6px;margin-bottom:8px;flex-shrink:0}
@@ -42,7 +41,7 @@
 .compact-shell.v2-shell[data-conversations=closed] .v2-list-toggle {text-align:center;font-size:22px}
 .compact-shell.v2-shell #v2-conversation-content {display:flex;flex:1;min-height:0;min-width:0}
 .compact-shell.v2-shell .v2-conversations h2 {font-size:12px;font-weight:500;color:#526974;margin:14px 6px 6px}
-.compact-shell.v2-shell .v2-conversations .helper,.compact-shell.v2-shell .v2-session-empty {font-size:12px;line-height:1.7;color:#526974}
+.compact-shell.v2-shell .v2-conversations .helper {font-size:12px;line-height:1.7;color:#526974}
 .compact-shell.v2-shell .v2-chat {grid-column:3;grid-row:1 / span 2;min-width:0;min-height:0;overflow:auto;padding:24px;display:flex;flex-direction:column;scrollbar-gutter:stable}
 .compact-shell.v2-shell .v2-chat-heading {display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .compact-shell.v2-shell .v2-chat-heading h1 {font-size:24px;margin:6px 0}
@@ -122,8 +121,8 @@
 .compact-shell.v2-shell .v2-resizer:hover,.compact-shell.v2-shell .v2-resizer:focus {background:#bddacb}
 .compact-shell.v2-shell .v2-workspace-heading {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;border-bottom:1px solid #d9e4e7;flex-shrink:0}
 .compact-shell.v2-shell .v2-workspace-tabs {display:flex}
-.compact-shell.v2-shell .v2-workspace-tabs button,.compact-shell.v2-shell .v2-panel-controls button,.compact-shell.v2-shell .v2-calendar-view button,.compact-shell.v2-shell .v2-mobile-switch button {min-height:44px;padding:8px 12px;border:0;border-radius:8px;background:transparent;color:#526974;font-size:14px}
-.compact-shell.v2-shell .v2-workspace-tabs [aria-selected=true],.compact-shell.v2-shell .v2-calendar-view [aria-pressed=true],.compact-shell.v2-shell .v2-mobile-switch [aria-pressed=true] {background:#e4f1eb;color:#135e4c;font-weight:650}
+.compact-shell.v2-shell .v2-workspace-tabs button,.compact-shell.v2-shell .v2-panel-controls button,.compact-shell.v2-shell .v2-mobile-switch button {min-height:44px;padding:8px 12px;border:0;border-radius:8px;background:transparent;color:#526974;font-size:14px}
+.compact-shell.v2-shell .v2-workspace-tabs [aria-selected=true],.compact-shell.v2-shell .v2-mobile-switch [aria-pressed=true] {background:#e4f1eb;color:#135e4c;font-weight:650}
 .compact-shell.v2-shell .v2-panel-controls {display:flex;margin-left:auto}
 .compact-shell.v2-shell .v2-tool-page {min-width:0;min-height:0;overflow:auto;padding:20px;overscroll-behavior:contain;scrollbar-gutter:stable;background:#fff}
 .compact-shell.v2-shell .v2-tool-page[data-placement=primary] {grid-column:3;grid-row:1 / span 2;padding:24px 32px;background:#f5f7f8}
@@ -147,11 +146,6 @@
 .compact-shell.v2-shell .v2-planning-content {display:grid;min-width:0}
 .compact-shell.v2-shell .v2-planning-content .today-focus {margin:0}
 .compact-shell.v2-shell .v2-planning-content .today-focus ol {grid-template-columns:minmax(0,1fr)}
-.compact-shell.v2-shell .v2-calendar-heading {display:flex;flex-wrap:wrap;justify-content:flex-start;padding:16px;gap:12px}
-.compact-shell.v2-shell .v2-calendar-heading h3 {margin-right:auto}
-.compact-shell.v2-shell .v2-calendar-heading label {display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px}
-.compact-shell.v2-shell .v2-calendar-heading input {width:155px}
-.compact-shell.v2-shell .v2-calendar-heading .calendar-legend {width:100%}
 .compact-shell.v2-shell .v2-calendar-note {font-size:12px;color:#526974;margin:0;padding:12px 16px;border-top:1px solid #d9e4e7}
 .compact-shell.v2-shell .week-scroll {overflow-x:auto}
 .compact-shell.v2-shell .week-grid {min-width:700px;grid-template-columns:44px repeat(7,minmax(90px,1fr))}
@@ -174,7 +168,6 @@
   .compact-shell.v2-shell .v2-navigation>button {flex:1;min-height:56px;padding:4px}
   .compact-shell.v2-shell .v2-brand,.compact-shell.v2-shell .v2-nav-bottom .v2-account {display:none}
   .compact-shell.v2-shell .v2-nav-bottom {margin:0;align-content:center;max-width:44px}
-  .compact-shell.v2-shell .v2-nav-bottom a {line-height:1.5}
   .compact-shell.v2-shell .v2-chat,.compact-shell.v2-shell .v2-conversations,.compact-shell.v2-shell .v2-tool-page[data-placement=primary] {grid-column:1;grid-row:1 / span 2;min-height:0;width:100%;border:0}
   .compact-shell.v2-shell .v2-workspace,.compact-shell.v2-shell[data-panel=collapsed] .v2-workspace {grid-column:1;grid-row:1;border:0}
   .compact-shell.v2-shell .v2-tool-page[data-placement=auxiliary] {grid-column:1;grid-row:2;border:0}
@@ -193,17 +186,9 @@ body { margin: 0; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: wait; opacity: .55; }
-.container { width: min(100% - 32px, 1400px); margin: 0 auto; }
-.site-header { background: #fff; border-bottom: 1px solid #dfe6e9; padding: 20px 0 16px; }
-.site-header h1 { margin: 6px 0; font-size: clamp(1.5rem, 3vw, 1.9rem); letter-spacing: -.03em; }
 .eyebrow { margin: 0; color: #426b79; font-size: .76rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-.subtitle, .helper { color: #526673; line-height: 1.5; }
-.subtitle { margin: 0; }
+.helper { color: #526673; line-height: 1.5; }
 .helper { margin: 4px 0 16px; }
-.tabs { display: flex; gap: 8px; padding: 22px 0 18px; border-bottom: 1px solid #dfe6e9; margin-bottom: 28px; }
-.tab { border: 1px solid transparent; border-radius: 8px; background: transparent; color: #4e626e; font-weight: 650; padding: 10px 16px; }
-.tab:hover { background: #e9eff1; }
-.tab.active { background: #e4f1ee; border-color: #b4d1c9; color: #135e4c; }
 .section-heading { display: flex; justify-content: space-between; align-items: end; margin-bottom: 20px; }
 h2 { margin: 4px 0 0; font-size: 1.7rem; }
 h3 { margin: 0 0 12px; font-size: 1.14rem; }
@@ -248,54 +233,14 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .ai-result { margin-top: 20px; }
 .ai-result .details { margin-bottom: 20px; }
 .rule-section .panel { margin-bottom: 16px; }
-.week-selector { display: flex; flex-direction: column; gap: 6px; max-width: 240px; font-weight: 650; margin-bottom: 8px; }
-.task-selection { display: grid; gap: 10px; }
-.task-option { display: flex; gap: 12px; align-items: start; padding: 12px; border: 1px solid #dfe6e9; border-radius: 6px; }
-.task-option input { width: 18px; min-height: 18px; margin-top: 2px; flex: none; accent-color: #176e58; }
-.task-option .helper { display: block; margin: 5px 0 0; font-size: .88rem; }
-.plan-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
-.confirmed-panel { border-top: 3px solid #176e58; }
-.candidate-panel { border-top: 3px solid #ac7d25; }
-.plan-state { font-weight: 650; }
-.plan-metadata { color: #526673; font-size: .88rem; margin-bottom: 20px; }
-.plan-metadata summary { cursor: pointer; }
-.plan-day { margin-top: 20px; }
-.plan-day h4 { font-size: .93rem; }
-.plan-day ol { padding: 0; margin: 10px 0 0; list-style: none; }
-.plan-item { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 12px; margin-top: 8px; border-left: 1px solid #176e58; background: #f3f8f6; overflow-wrap: anywhere; }
-.plan-item.course { border-left-color: #426b91; background: #f1f5fa; }
-.plan-time { font-size: .86rem; white-space: nowrap; }
-.plan-item strong { font-size: .92rem; }
-.plan-kind { display: block; color: #526673; font-size: .76rem; margin-top: 4px; }
 .success-box { border: 1px solid #a8d3c4; background: #e2f2ed; color: #135e4c; padding: 12px 14px; border-radius: 8px; }
-.plan-explanation { border-top: 1px solid #dfe6e9; padding-top: 18px; margin-top: 20px; }
-.plan-explanation > h4, .ai-explanation { margin-top: 20px; }
-.diff-group h5 { font-size: .9rem; margin: 16px 0 6px; }
-.diff-group ul { padding-left: 20px; margin: 6px 0; }
-.diff-group li { margin-bottom: 10px; overflow-wrap: anywhere; }
-.diff-group .helper { display: block; font-size: .85rem; margin-bottom: 0; }
-.explanation-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
-.first-plan { margin-top: 16px; }
 
 /* V2 personal growth workspace: generous hierarchy, calm ink, and restrained risk color. */
 .growth-page { display: grid; gap: 22px; padding-bottom: 54px; }
 .growth-page-heading, .growth-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
 .growth-page-heading { padding: 4px 0 3px; }
 .growth-page-heading h2 { font-size: clamp(1.8rem, 4vw, 2.35rem); }
-.growth-page-heading > div > p:last-child, .growth-section-heading p:last-child, .growth-focus > div > p:last-child { color: #5d707b; margin: 8px 0 0; line-height: 1.55; }
-.growth-focus { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(0, 2fr); gap: 28px; align-items: start; padding: 25px 28px; color: #edf8f6; background: #163b47; border-radius: 16px; box-shadow: 0 12px 30px #173c4714; }
-.growth-focus h3 { font-size: 1.42rem; margin: 6px 0; }
-.growth-focus > div > p:last-child { color: #d2e1e2; font-size: .92rem; }
-.growth-focus .eyebrow { color: #9fd2c9; }
-.growth-focus ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
-.growth-focus li { padding: 12px 14px; background: #ffffff0c; border: 1px solid #ffffff1a; border-radius: 10px; }
-.growth-focus li > div { display: flex; align-items: center; gap: 10px; }
-.growth-focus li strong { font-size: 1rem; }
-.growth-focus li p { color: #dce9e9; margin: 6px 0 4px; font-size: .9rem; line-height: 1.5; }
-.growth-focus li small { color: #b6cbcd; }
-.focus-tag { border-radius: 99px; padding: 3px 8px; font-size: .72rem; background: #ffffff20; color: #f1fbf7; }
-.focus-overdue .focus-tag, .focus-critical .focus-tag, .focus-at_risk .focus-tag { background: #713f36; }
-.growth-columns, .profile-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.growth-page-heading > div > p:last-child, .growth-section-heading p:last-child { color: #5d707b; margin: 8px 0 0; line-height: 1.55; }
 .growth-section { min-width: 0; padding: 22px 24px; background: #fff; border: 1px solid #dce5e8; border-radius: 14px; }
 .growth-section-heading { margin-bottom: 17px; }
 .growth-section-heading .eyebrow { margin-bottom: 4px; }
@@ -313,8 +258,6 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .goal-priority { color: #327266; font-weight: 750; font-size: .72rem; }
 .goal-card > p { color: #576c75; margin: 10px 0; line-height: 1.5; }
 .goal-metric { display: flex; flex-wrap: wrap; gap: 7px 15px; color: #647780; font-size: .82rem; }
-.goal-progress { border-left: 1px solid #73b9a5; margin-top: 14px !important; padding: 7px 10px; background: #eff8f4; color: #285f51 !important; }
-.goal-progress.muted { background: #f4f6f6; border-left-color: #c0cdcf; color: #68777d !important; }
 .goal-card .button-row { align-items: center; }
 .goal-card .button-row select { width: auto; min-width: 120px; }
 .task-goal-list { display: grid; }
@@ -325,11 +268,6 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .review-card h4 { margin-bottom: 9px; }
 .review-card p { margin: 7px 0; }
 .review-card details { margin-top: 12px; }
-.version-pill { flex: none; padding: 7px 11px; background: #e6f2ef; color: #216856; border-radius: 99px; font-weight: 750; font-size: .82rem; }
-.preference-edit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
-.preference-edit-grid label { grid-template-columns: 1fr 1fr; align-items: center; }
-.preference-edit-grid label input:first-of-type { grid-column: 1; }
-.preference-edit-grid label input:last-of-type { grid-column: 2; }
 .insight-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
 .insight-card { padding: 17px; border: 1px solid #d6e7e1; background: #f7fbf9; border-radius: 11px; }
 .insight-label { color: #287462; font-size: .75rem; font-weight: 800; letter-spacing: .04em; }
@@ -413,22 +351,17 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .workspace-confirmed p { margin: 6px 0 10px; color: #547269; }
 
 @media (max-width: 800px) {
-  .plan-columns { grid-template-columns: 1fr; }
   .section-heading { flex-wrap: wrap; gap: 14px; }
-  .growth-columns, .profile-columns { grid-template-columns: 1fr; }
-  .growth-focus { grid-template-columns: 1fr; gap: 18px; }
 }
 
 @media (max-width: 600px) {
-  .site-header { padding: 26px 0; }
-  .tabs { flex-wrap: wrap; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid .span-two { grid-column: span 1; }
   .panel { padding: 18px; }
   .details { gap: 12px; }
   .growth-page-heading, .growth-section-heading { align-items: start; flex-direction: column; }
-  .growth-focus, .growth-section { padding: 18px; }
-  .growth-form-row, .preference-edit-grid { grid-template-columns: 1fr; }
+  .growth-section { padding: 18px; }
+  .growth-form-row { grid-template-columns: 1fr; }
   .preference-rule-card, .category-row { align-items: stretch; flex-direction: column; }
   .preference-rule-actions, .category-row > div:last-child { align-self: flex-start; }
   .draft-change > div { grid-template-columns: 1fr; }
@@ -454,16 +387,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 }
 
 body { color: #183440; background: #f3f6f7; }
-.container { width: min(100% - 48px, 1380px); }
-.site-header { background: #fff; border-bottom-color: #dce6e8; padding: 22px 0 19px; }
-.site-header h1 { color: #143845; font-size: clamp(1.45rem, 2.4vw, 1.8rem); letter-spacing: -.04em; }
-.site-header .eyebrow { color: #147865; letter-spacing: .13em; }
-.subtitle { color: #60747c; font-size: .94rem; }
-.tabs { position: relative; gap: 6px; padding: 16px 0 13px; margin-bottom: 22px; border-bottom-color: #dce6e8; }
-.tab { position: relative; min-height: 42px; padding: 9px 15px; border-radius: 8px; color: #526a74; transition: background-color .16s ease, color .16s ease; }
-.tab:hover { background: #eaf1f1; color: #173d49; }
-.tab.active { background: #e4f2ee; border-color: #c4e0d7; color: #12624f; }
-.tab:focus-visible, .button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #198c77; outline-offset: 2px; }
+.button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #198c77; outline-offset: 2px; }
 .button { min-height: 42px; padding: 9px 15px; border-radius: 8px; transition: transform .14s ease, box-shadow .14s ease, background-color .14s ease; }
 .button:not(:disabled):hover { filter: none; transform: translateY(-1px); box-shadow: 0 4px 10px #163e4814; }
 .button.primary { background: #117661; border-color: #117661; }
@@ -474,15 +398,9 @@ input:focus, select:focus, textarea:focus { border-color: #3b9b86; }
 .growth-page { gap: 25px; }
 .growth-page-heading h2 { color: #153a46; letter-spacing: -.04em; }
 .growth-section { border-color: #dce6e8; border-radius: 13px; box-shadow: 0 5px 18px #18344008; }
-.growth-focus { border-radius: 14px; background: #173d49; box-shadow: 0 10px 26px #173d491b; }
 .workspace-details { border-color: #dce6e8; border-radius: 12px; box-shadow: 0 4px 16px #18344008; }
 
 @media (max-width: 600px) {
-  .container { width: min(100% - 28px, 1380px); }
-  .site-header { padding: 17px 0 15px; }
-  .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 12px 0 10px; margin-bottom: 17px; }
-  .tabs::-webkit-scrollbar { display: none; }
-  .tab { flex: 0 0 auto; padding-inline: 13px; }
   .growth-page { gap: 17px; }
 }
 
@@ -534,7 +452,7 @@ input:focus, select:focus, textarea:focus { border-color: #3b9b86; }
 .review-record-editor textarea, .draft-editor-fields textarea, .draft-editor-fields input { width: 100%; box-sizing: border-box; }
 .draft-editor-fields { border: 0; min-width: 0; padding: 0; }
 .workspace-draft pre { max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-.legacy-review { margin-top: 24px; }
+.review-statistics { margin-top: 24px; }
 @media (max-width: 640px) {
   .full-calendar { padding: 10px; }
   .full-calendar .fc { font-size: 11px; }
@@ -554,8 +472,7 @@ input:focus, select:focus, textarea:focus { border-color: #3b9b86; }
   .task-container, .breakdown-children .item-card { min-width: 0; overflow-wrap: anywhere; }
 }
 
-/* V2 refinement: the content surface leads; rails and previews support it.
-   Specific to the workspace so legacy layouts keep their established rules. */
+/* Workspace refinement: the content surface leads; rails and previews support it. */
 .visually-hidden {position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .compact-shell.v2-shell {--ui-ink:var(--ink);--ui-muted:var(--muted);--ui-accent:var(--accent);--ui-line:var(--line);font-size:16px;line-height:1.7}
 .compact-shell.v2-shell ::selection {background:#d5e8df;color:var(--ink)}
@@ -761,7 +678,6 @@ input:focus, select:focus, textarea:focus { border-color: #3b9b86; }
   .compact-shell.v2-shell .calendar-navigation .button {min-width:44px}
   .compact-shell.v2-shell .review-date-navigation .button,.compact-shell.v2-shell .v2-preview-date button,.compact-shell.v2-shell .v2-panel-controls button {min-width:44px;min-height:44px}
   .compact-shell.v2-shell .conversation-shortcuts .button,.compact-shell.v2-shell .conversation-summary-button,.compact-shell.v2-shell .conversation-review-action {min-height:44px}
-  .compact-shell.v2-shell .v2-nav-bottom a {display:flex;align-items:center;justify-content:center;min-height:44px}
 }
 @media(max-width:600px) {
   .compact-shell.v2-shell .review-metrics .metric-card {flex-basis:100%;display:flex;justify-content:space-between;align-items:baseline;padding:10px 0}
@@ -769,7 +685,6 @@ input:focus, select:focus, textarea:focus { border-color: #3b9b86; }
   .compact-shell.v2-shell .preference-rule-card {flex-direction:column;align-items:stretch;gap:4px;padding:16px 0}
   .compact-shell.v2-shell .preference-rule-actions {align-self:flex-end}
   .compact-shell.v2-shell .profile-sections {gap:4px 16px}
-  .compact-shell.v2-shell .v2-nav-bottom a {font-size:11px;white-space:nowrap}
   .compact-shell.v2-shell .conversation-chat .chat-scroll {gap:24px}
 }
 @media(prefers-reduced-motion:reduce) {.compact-shell.v2-shell .button {transition:none}}
