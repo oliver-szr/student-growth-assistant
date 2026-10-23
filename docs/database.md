@@ -16,7 +16,9 @@ $env:SGA_DATABASE_PATH = '你的数据库完整路径'
 conda run -n app_env python scripts/migrate.py
 ```
 
-启动 FastAPI 也调用同一升级入口。空库依次执行 `0001_baseline` 与 `0002_task_hierarchy`；已有库先检查列、类型、主键、外键，仅接受已知旧结构，再补齐已知阶段字段和索引。成功才记录 Alembic 版本。重复执行不会重复导入任务或清空数据。达到 head 后仍检查模型字段与类型，不能靠一个版本号掩盖不匹配结构。
+启动 FastAPI 也调用同一升级入口。空库依次执行 `0001_baseline`、`0002_task_hierarchy`、`0003_conversations`、`0004_review_records`、`0005_secretary_memory`，当前 head 为 `0005_secretary_memory`。已有库先检查列、类型、主键、外键，仅接受已知旧结构，再补齐已知阶段字段和索引。成功才记录 Alembic 版本。重复执行不会重复导入任务或清空数据。达到 head 后仍检查模型字段与类型，不能靠一个版本号掩盖不匹配结构。
+
+V2 当前 JSON 导出为 **format_version=5**，包含会话、复盘记录和记忆。v1–v4 经严格验证后逐级转换；旧格式缺少当前数据时会拒绝可能丢失新版记录的恢复。相关规则与验收记录见 [V2 架构说明](v2/v2-architecture-proposal.md)。下文阶段 2 的 v1/v2 说明保留为该阶段的迁移背景。
 
 ## 备份和失败处理
 
@@ -52,7 +54,7 @@ conda run -n app_env python scripts/migrate.py
 
 不修改冻结 `0001_baseline`、baseline_models 或 env。业务服务另行保证父容器存在、仅两级、最多20个子任务及父子 DDL 一致性。实际迁移前仍创建 SQLite 在线备份；降级继续拒绝破坏性删除，需使用升级前备份恢复旧版本。
 
-JSON 导出现在为 **format_version=2**，仍含全部26张业务表（不含 alembic_version），包含任务层级与已有草案 JSON。
+阶段 2 当时的 JSON 导出为 **format_version=2**，含当时全部26张业务表（不含 alembic_version），包含任务层级与已有草案 JSON；当前版本以本文开头的 V2 说明为准。
 
 - v2：严格校验当前表集合、全部列、类型、主键和引用，额外验证任务树、时长、分段资料以及父容器不得含执行/日程事实。
 - v1：先使用冻结 baseline_models 严格校验原表集合与原字段；通过后仅给 tasks 补 `parent_task_id=null, task_kind=executable, sort_order=0`，再执行完整 v2 校验与恢复。不能把新版 JSON 改个版本号冒充 v1。

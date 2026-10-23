@@ -33,6 +33,12 @@ codex/_pytesttmp/
 scripts/.local/
 scripts/.runtime/
 
+# Local coding-assistant tools; product skills in backend/app/skills stay tracked.
+.agents/
+.codex/
+.impeccable/
+skills-lock.json
+
 # Private preview maintenance and personal-course demonstration assets
 codex/任务冲突演示/
 codex/build_conflict_demo_images.py
