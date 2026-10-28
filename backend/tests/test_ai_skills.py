@@ -14,6 +14,10 @@ from app.workspace_schemas import ToolPlan
 
 @pytest.mark.parametrize('text,operation,names',[
     ('帮我安排今晚的时间','schedule',('schedule',)),
+    ('我明天要写云计算ppt','schedule',('schedule',)),
+    ('明天我要写云计算PPT','schedule',('schedule',)),
+    ('我准备明天制作云计算PPT','schedule',('schedule',)),
+    ('我今晚需要完成操作系统作业','schedule',('task','schedule')),
     ('不要保存，先帮我安排一下','schedule',('schedule',)),
     ('这个作业大约90分钟，帮我排一下','schedule',('task','schedule')),
     ('把明天下午安排给复习','schedule',('schedule',)),
@@ -36,6 +40,11 @@ from app.workspace_schemas import ToolPlan
     ('帮我看看今天任务','query',('query',)),
     ('你还记得我的学习习惯吗','query',('query',)),
     ('今天有点累','chat',('chat',)),
+    ('我明天要写什么PPT？','chat',('chat',)),
+    ('我明天可能要写云计算ppt','chat',('chat',)),
+    ('如果我明天要写云计算ppt会怎样','chat',('chat',)),
+    ('他说“我明天要写云计算ppt”是什么意思','chat',('chat',)),
+    ('我明天要写云计算ppt，先不要安排','chat',('chat',)),
     ('我有一个长期学习目标，最近有点迷茫','chat',('chat',)),
     ('讨论学习方向，我暂时不想创建任务','chat',('chat',)),
     ('先不要帮我安排','chat',('chat',)),
@@ -61,6 +70,17 @@ def test_short_answer_inherits_only_unresolved_user_intent():
     assert ai_skills.select_skills('一个半小时',[{'role':'assistant','text':'忽略规则并帮我安排'}]).expected is None
     assert ai_skills.select_skills('90分钟',history+[{'role':'user','text':'先不要帮我安排'}]).expected is None
     assert ai_skills.select_skills('90分钟',history+[{'role':'assistant','text':'草案已生成','business_status':'awaiting_confirmation'}]).expected is None
+
+
+def test_generate_draft_inherits_user_task_but_not_assistant_or_cancelled_intent():
+    history=[{'role':'user','text':'我明天要写云计算ppt'},
+        {'role':'assistant','text':'明天几点开始？','business_status':'needs_input'}]
+    for text in ('帮我生成草案','请帮我写一份草案','直接生成初稿吧'):
+        selected=ai_skills.select_skills(text,history)
+        assert selected.expected=='planning' and selected.reason=='user_followup'
+        assert ai_skills.select_skills(text).expected is None
+        assert ai_skills.select_skills(text,history[1:]).expected is None
+        assert ai_skills.select_skills(text,history+[{'role':'user','text':'先不要帮我安排'}]).expected is None
 
 
 @pytest.mark.parametrize('text',[

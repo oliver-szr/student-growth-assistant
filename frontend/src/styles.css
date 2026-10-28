@@ -536,6 +536,16 @@ input:focus, select:focus, textarea:focus { border-color: #3b9b86; }
 .compact-shell.v2-shell .conversation-chat .workspace-chat-input {padding:12px 0 0;border:0;gap:8px}
 .compact-shell.v2-shell .conversation-chat .workspace-chat-input label {gap:6px;font-size:13px}
 .compact-shell.v2-shell .conversation-chat .workspace-chat-input textarea {min-height:80px;max-height:180px;resize:vertical}
+.compact-shell.v2-shell .conversation-action-options {grid-column:1 / -1;display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;min-width:0}
+.compact-shell.v2-shell .conversation-action-tags {display:flex;flex-wrap:wrap;gap:6px}
+.compact-shell.v2-shell .conversation-chat .conversation-action-tag {min-height:36px;padding:6px 12px;border:1px solid var(--line);border-radius:18px;background:var(--surface);color:var(--muted);font-size:13px;line-height:1.4}
+.compact-shell.v2-shell .conversation-chat .conversation-action-tag:hover:not(:disabled),.compact-shell.v2-shell .conversation-chat .conversation-action-tag[aria-pressed=true] {background:var(--soft);border-color:var(--accent);color:var(--accent)}
+.compact-shell.v2-shell .conversation-action-tag:focus-visible {outline:2px solid var(--accent);outline-offset:2px}
+.compact-shell.v2-shell .conversation-action-tag:disabled {opacity:.5;cursor:not-allowed}
+.compact-shell.v2-shell .conversation-action-hint {color:var(--muted);font-size:12px;line-height:1.5}
+@media (max-width:1023px) {
+  .compact-shell.v2-shell .conversation-chat .conversation-action-tag {min-height:44px}
+}
 .compact-shell.v2-shell .workspace-message .workspace-draft,.compact-shell.v2-shell .workspace-message .memory-card {margin-top:16px;padding:16px;border:1px solid #d7c9a7;background:#fdfaf2;border-radius:12px;box-shadow:none}
 .compact-shell.v2-shell .workspace-message .workspace-draft>strong {font-size:14px;font-weight:600;color:#69552d}
 .compact-shell.v2-shell .workspace-message .workspace-draft .button {width:auto;margin-top:12px}

@@ -85,8 +85,8 @@ def context_for(db,run):
 
 
 async def reply_events(request):
-    from .ai_skills import select_skills,compose
-    system,_=compose(select_skills(request['message'],request.get('history',[]),request.get('current_drafts',[])),SYSTEM)
+    from .ai_skills import request_selection,compose
+    system,_=compose(request_selection(request),SYSTEM)
     async for event in claude_client.stream_claude(json.dumps(request, ensure_ascii=False), system, claude_client.get_claude_config()):
         yield event
 

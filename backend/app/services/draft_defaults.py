@@ -86,7 +86,7 @@ def user_values(text, now):
     # A colon after the task name introduces details, not a replacement name.
     title_text = re.sub(r'^(?:任务名称|任务|名称|标题)[：:]\s*','',title_text)
     title_text = re.sub(r'^(?:我|请|你|帮我|今天|今晚|明天|明晚|晚上|上午|下午|要|有个|有一个|需要|完成|写|安排一下|安排|排一下|排|创建|新建|把|将|给我|做|一下|\s|：|:)+', '',title_text)
-    match = re.search(r'([\u4e00-\u9fffA-Za-z0-9 ]{1,60}?(?:作业|报告|实验|论文|考试|复习|项目|阅读))',title_text)
+    match = re.search(r'([\u4e00-\u9fffA-Za-z0-9 ]{1,60}?(?:作业|报告|实验|论文|考试|复习|项目|阅读|PPT|演示文稿|幻灯片))',title_text,re.I)
     if match:values['title'] = match[1].strip(' “”“')
     segment = re.search(r'(?:分成|分为)('+NUMBER+r')段',text)
     if segment and number(segment[1]) is not None:values['segments'] = int(number(segment[1]))
@@ -132,3 +132,11 @@ def review_range(text, now):
         return start,end,'month'
     start=day-timedelta(days=day.weekday())
     return start,start+timedelta(days=7),'week'
+
+
+def calendar_range(text, now):
+    if any(word in text for word in ('本周','这周','下周')):
+        start=now.date()-timedelta(days=now.weekday())+timedelta(days=7 if '下周' in text else 0)
+        return start,start+timedelta(days=7)
+    start=datetime.fromisoformat(user_values(text,now).get('day',now.date().isoformat())).date()
+    return start,start+timedelta(days=1)

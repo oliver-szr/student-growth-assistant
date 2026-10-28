@@ -98,6 +98,12 @@ def serve(port, now=NOW):
     conversation_tools.plan=mock_tools
     async def mock_review(prompt,*args,**kwargs):
         data=json.loads(prompt)
+        if 'allowed_operations' in data:
+            from app.services.ai_skills import select_skills
+            operation=select_skills(data['message'],data.get('history',[])).operation
+            if data['message']=='云计算ppt还没做，明天给它留个位置。':operation='schedule'
+            if operation=='create_task':operation='schedule'
+            return json.dumps({'operation':operation if operation in data['allowed_operations'] else 'chat'})
         if data.get('message','').startswith('质量验收：'):
             return await wire_request(prompt,*args,**kwargs)
         if 'messages' in data and 'schema' in data:

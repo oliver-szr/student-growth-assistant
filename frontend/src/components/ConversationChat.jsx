@@ -10,6 +10,7 @@ import { reviewRange } from '../calendar.js'
 import ConversationSummary from './ConversationSummary.jsx'
 const MemoryCard=lazy(()=>import('./MemoryPanel.jsx').then(module=>({default:module.MemoryCard})))
 import SafeMessage from './SafeMessage.jsx'
+import { actionTags, selectedActionTag, toggleActionTag } from '../actionTags.js'
 
 const statuses = { completed: '回复已完成', failed: '回复未正常结束，内容可能不完整', cancelled: '已停止生成', interrupted: '回复已中断，可重试' }
 
@@ -22,6 +23,7 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
   const [reviewOpen,setReviewOpen]=useState(false),[intentPending,setIntentPending]=useState(null)
   const [summaryTarget,setSummaryTarget]=useState(null)
   const reviewRequest=useRef(null),seenIntent=useRef(null)
+  const inputElement=useRef(null),selectedTag=selectedActionTag(input.text)
   useEffect(()=>{
     if(!intent||seenIntent.current===intent.key)return
     seenIntent.current=intent.key
@@ -141,6 +143,12 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
       onChanged()
     })
   }
+  function chooseTag(label) {
+    const text=toggleActionTag(input.text,label)
+    if(text.length>2000){setError('输入已达字数限制，请删减一些内容后再添加标签。');return}
+    setInput({text,requestId:null});setError('')
+    requestAnimationFrame(()=>{inputElement.current?.focus();inputElement.current?.setSelectionRange(text.length,text.length)})
+  }
   return <section className="workspace-chat conversation-chat" aria-label="持久会话">
     <div className="workspace-chat-heading"><h2 title={meta?.title}>{meta?.title || '读取会话'}</h2><div className="conversation-summary-trigger" ref={setSummaryTarget}/></div>
     <p className="helper conversation-intro" title="相关历史与所需资料会发送给你配置的模型服务。">{meta?.scope && meta.scope !== 'conversation' ? '历史工具会话只读；业务草案请从对应入口处理。' : '从一个想法开始，重要修改由你确认。'}</p>
@@ -187,8 +195,12 @@ export default function ConversationChat({ workspace, id, target, revision, onCh
       onNavigate?.({page:'review',kind:'review_record',id:result.id,conversationId:id})
     })}}><p className="helper">仅整理指定范围和当前讨论为可编辑草案，确认后才保存复盘，不会创建任务。</p><label>开始日期<input required type="date" value={reviewDates.start_date} onChange={e=>{reviewRequest.current=null;setReviewDates({...reviewDates,start_date:e.target.value})}}/></label><label>结束日期（不含）<input required type="date" value={reviewDates.end_date} onChange={e=>{reviewRequest.current=null;setReviewDates({...reviewDates,end_date:e.target.value})}}/></label><label>记录周期<select value={reviewDates.period} onChange={e=>{reviewRequest.current=null;setReviewDates({...reviewDates,period:e.target.value})}}><option value="day">日</option><option value="week">周</option><option value="month">月</option></select></label><button className="button secondary" disabled={busy}>生成可编辑预览</button></form>}</>}
     <form className="workspace-chat-input" onSubmit={send}>
-      <label>会话输入<textarea aria-label="会话输入" value={input.text} maxLength={2000} disabled={busy || loading || !recovery.ready || unavailable || Boolean(meta?.archived_at) || meta?.scope !== 'conversation'} onChange={event => setInput({ text: event.target.value, requestId: null })} /></label>
+      <label>会话输入<textarea ref={inputElement} aria-label="会话输入" value={input.text} maxLength={2000} disabled={busy || loading || !recovery.ready || unavailable || Boolean(meta?.archived_at) || meta?.scope !== 'conversation'} onChange={event => setInput({ text: event.target.value, requestId: null })} /></label>
       <button className="button primary" disabled={busy || loading || !recovery.ready || unavailable || Boolean(meta?.archived_at) || meta?.scope !== 'conversation' || !input.text.trim() || run?.status === 'running'}>发送</button>
+      {meta?.scope==='conversation'&&<div className="conversation-action-options"><div className="conversation-action-tags" role="group" aria-label="本次操作标签">
+        {actionTags.map(tag=><button key={tag.label} type="button" className="button subtle conversation-action-tag" aria-pressed={selectedTag===tag.label} title={tag.description}
+          disabled={busy||loading||!recovery.ready||unavailable||Boolean(meta.archived_at)||run?.status==='running'} onClick={()=>chooseTag(tag.label)}>#{tag.label}</button>)}
+      </div><small className="conversation-action-hint">{selectedTag?'按标签执行；再次点击可取消。':'不选标签，由助手判断。'}</small></div>}
     </form>
   </section>
 }

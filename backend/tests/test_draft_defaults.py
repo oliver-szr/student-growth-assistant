@@ -28,6 +28,35 @@ def ref_of(result):
     return next(r['draft'] for r in results if r.get('draft'))
 
 
+def test_first_task_statement_creates_default_draft_instead_of_repeated_questions(client,defaults_chat,monkeypatch):
+    async def questions(request):
+        return ToolPlan(questions=['明天几点开始？','需要多长时间？','任务名称用写云计算PPT吗？'])
+    monkeypatch.setattr(conversation_tools,'plan',questions)
+    result=send(client,defaults_chat,'我明天要写云计算ppt')
+    ref=ref_of(result);value=ref['content']['schedule']
+    assert value['title']=='云计算ppt' and value['day']=='2026-10-15'
+    assert value['start_time']=='09:00' and value['duration_minutes']==60
+    assert value['deadline'] is None and ref['status']=='needs_input'
+    assert ref['field_sources']['title']=='user_explicit'
+    assert all(ref['field_sources'][field]=='system_default' for field in ('start_time','duration_minutes'))
+    assert len(ref['unresolved'])==1 and ref['items']
+    assert result['content']['questions']==[] and result['content']['business_status']=='awaiting_confirmation'
+    assert call(client,'/api/tasks')==[]
+
+
+def test_generate_draft_recovers_existing_conversation_and_reuses_preview(client,defaults_chat):
+    from tests.test_workspace_stage2 import wait
+    call(client,f'/api/conversations/{defaults_chat}/messages',{'client_message_id':'previous','text':'我明天要写云计算ppt'})
+    ref=ref_of(send(client,defaults_chat,'帮我生成草案'))
+    assert ref['content']['schedule']['title']=='云计算ppt'
+    assert ref['content']['schedule']['day']=='2026-10-15'
+    assert ref['field_sources']['title']=='conversation_context'
+    run=call(client,f'/api/conversations/{defaults_chat}/runs',{'client_message_id':'again','text':'帮我生成草案',
+        'draft_versions':[{'kind':'planning','id':ref['id'],'version':ref['version']}]})
+    repeated=ref_of(wait(client,defaults_chat,run['id']))
+    assert repeated['id']==ref['id'] and call(client,'/api/tasks')==[]
+
+
 def test_os_homework_no_deadline_defaults_real_draft(client,defaults_chat):
     sid=defaults_chat
     call(client,f'/api/conversations/{sid}/messages',{'client_message_id':'first','text':'我今天晚上要完成操作系统作业。'})
@@ -227,7 +256,7 @@ def test_short_eight_oclock_edit_keeps_evening_context_and_confirm_phrase_is_rea
 def test_failed_first_reply_does_not_drop_user_homework_context(client,defaults_chat,monkeypatch):
     async def broken(request):raise claude_client.AIServiceError('AI_UNAVAILABLE');yield
     monkeypatch.setattr(conversation_runs,'reply_events',broken)
-    assert send(client,defaults_chat,'我今天晚上要完成操作系统作业。','first')['status']=='failed'
+    assert send(client,defaults_chat,'操作系统作业，今晚完成。','first')['status']=='failed'
     ref=ref_of(send(client,defaults_chat,'大概一个半小时，你帮我安排一下。','second'))
     assert ref['content']['schedule']['title']=='操作系统作业' and ref['content']['schedule']['duration_minutes']==90
 
