@@ -10,7 +10,26 @@ test('generic chat navigation has one header entry while genuine resource links 
   assert.deepEqual(toolNotices([{tool:'tasks'}]),['已查询：任务。'])
 })
 import { startConversationRun, getConversationRun, stopConversationRun, retryConversationRun } from '../src/api.js'
-import { canConfirmDraft,previewCompletionDeadline } from '../src/draftCoordination.js'
+import { canConfirmDraft,previewCompletionDeadline,editableDraft,planningActionStart,setPlanningActionStart } from '../src/draftCoordination.js'
+
+test('full planning drafts expose candidate time without making the default a fixed constraint',()=>{
+  const action={op:'add',target:'draft:report',fields:{title:'实验报告',duration_minutes:60,profile:{preferred_windows:[{start_at:'2026-10-29T19:00:00+08:00',end_at:'2026-10-29T22:00:00+08:00'}]}}}
+  const draft={kind:'planning',status:'ready',items:[{ref:'task:other',start_at:'2026-10-29T09:00:00+08:00'},{ref:action.target,start_at:'2026-10-29T19:00:00+08:00'}]}
+  assert.equal(planningActionStart(draft,action),'2026-10-29T19:00:00+08:00')
+  assert.equal(action.fields.profile.fixed_start,undefined)
+  const changed=setPlanningActionStart(action,'2026-10-29T20:30:00+08:00')
+  assert.equal(planningActionStart(draft,changed),'2026-10-29T20:30:00+08:00')
+  assert.deepEqual(changed.fields.profile.preferred_windows,action.fields.profile.preferred_windows)
+  assert.equal(changed.fields.duration_minutes,60)
+  assert.equal(action.fields.profile.fixed_start,undefined)
+  assert.equal(setPlanningActionStart(changed,null).fields.profile.fixed_start,undefined)
+  for(const status of ['conflict','no_plan']){
+    assert.equal(editableDraft({...draft,status}),true)
+    assert.equal(canConfirmDraft({...draft,status},false),false)
+    assert.equal(canConfirmDraft({...draft,status},true),true)
+  }
+  for(const status of ['applied','stale','discarded','superseded'])assert.equal(editableDraft({...draft,status}),false)
+})
 
 test('a successfully repaired query does not falsely claim a default draft was generated',()=>{
   assert.deepEqual(toolNotices([{tool:'review',error:'INVALID_TOOL_ARGUMENTS',message:'参数无效',recovered_by:'argument_repair'},

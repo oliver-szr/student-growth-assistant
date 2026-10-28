@@ -405,3 +405,50 @@ def test_stop_after_tool_receipt_then_retry_cannot_duplicate_draft(client,test_e
     assert len(planner_calls)==1
     with Session(test_engine) as db:assert len(db.scalars(select(GrowthChangeDraft).where(GrowthChangeDraft.payload['tool_key'].as_string()==f"tool:{run['id']}:0")).all())==1
     assert call(client,'GET','/api/goals')['goals']==[]
+
+
+@pytest.fixture
+def full_planning_draft(client,monkeypatch,mock_reply):
+    async def choose(request):
+        return ToolPlan(calls=[{'name':'planning_draft','arguments':{'actions':[{'op':'add','fields':{
+            'title':'操作系统实验报告','duration_minutes':60,'deadline':'2026-10-16T12:00:00+08:00',
+            'profile':{'allowed_windows':[{'start_at':'2026-10-15T08:00:00+08:00','end_at':'2026-10-15T22:00:00+08:00'}],
+                'preferred_windows':[{'start_at':'2026-10-15T19:00:00+08:00','end_at':'2026-10-15T22:00:00+08:00'}]}}}]}}])
+    monkeypatch.setattr(conversation_tools,'plan',choose)
+    sid=call(client,'POST','/api/conversations',json={'client_request_id':'editable-full-plan'})['id']
+    run=call(client,'POST',f'/api/conversations/{sid}/runs',json={'client_message_id':'plan','text':'我明天晚上打算写操作系统实验报告，截止后天中午'})
+    draft=wait(client,sid,run['id'])['content']['tools'][0]['draft']
+    assert 'actions' in draft['content'] and 'schedule' not in draft['content']
+    assert draft['items'][0]['start_at']=='2026-10-15T19:00:00+08:00'
+    return draft
+
+
+def test_full_draft_specific_start_recalculates_before_formal_confirmation(client,test_engine,full_planning_draft):
+    draft=full_planning_draft
+    content=deepcopy(draft['content'])
+    assert not content['actions'][0]['fields']['profile'].get('fixed_start')
+    content['actions'][0]['fields']['profile']['fixed_start']='2026-10-15T20:30:00+08:00'
+    updated=call(client,'PATCH',f"/api/workspace/drafts/planning/{draft['id']}",json={'expected_version':draft['version'],'content':content})
+    assert updated['status']=='ready' and updated['id']!=draft['id']
+    assert updated['items'][0]['start_at']=='2026-10-15T20:30:00+08:00'
+    assert updated['items'][0]['end_at']=='2026-10-15T21:30:00+08:00'
+    with Session(test_engine) as db:
+        assert db.scalar(select(Task)) is None and db.scalar(select(Plan)) is None
+    assert client.post(f"/api/workspace/drafts/planning/{draft['id']}/confirm",json={'expected_version':draft['version']}).status_code==409
+    saved=call(client,'POST',f"/api/workspace/drafts/planning/{updated['id']}/confirm",json={'expected_version':updated['version']})
+    assert saved['status']=='applied'
+    with Session(test_engine) as db:
+        item=db.scalar(select(PlanItem).where(PlanItem.kind=='task'))
+        assert item.start_at==datetime.fromisoformat('2026-10-15T20:30:00+08:00')
+
+
+def test_full_draft_invalid_start_can_be_repaired_without_bypassing_validation(client,full_planning_draft):
+    draft=full_planning_draft;content=deepcopy(draft['content'])
+    content['actions'][0]['fields']['profile']['fixed_start']='2026-10-15T21:30:00+08:00'
+    invalid=call(client,'PATCH',f"/api/workspace/drafts/planning/{draft['id']}",json={'expected_version':draft['version'],'content':content})
+    assert invalid['status'] in ('conflict','no_plan')
+    assert client.post(f"/api/workspace/drafts/planning/{invalid['id']}/confirm",json={'expected_version':invalid['version']}).status_code==409
+    content=deepcopy(invalid['content']);content['actions'][0]['fields']['profile']['fixed_start']='2026-10-15T20:00:00+08:00'
+    repaired=call(client,'PATCH',f"/api/workspace/drafts/planning/{invalid['id']}",json={'expected_version':invalid['version'],'content':content})
+    assert repaired['status']=='ready' and repaired['items'][0]['start_at']=='2026-10-15T20:00:00+08:00'
+    assert call(client,'GET','/api/tasks')==[]

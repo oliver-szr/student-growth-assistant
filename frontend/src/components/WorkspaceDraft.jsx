@@ -1,6 +1,6 @@
 import { useEffect,useRef,useState } from 'react'
 import { getWorkspaceDraft,editWorkspaceDraft,actWorkspaceDraft } from '../api.js'
-import { registerEditor,editableDraft,canConfirmDraft,previewCompletionDeadline } from '../draftCoordination.js'
+import { registerEditor,editableDraft,canConfirmDraft,previewCompletionDeadline,planningActionStart,setPlanningActionStart } from '../draftCoordination.js'
 import { BreakdownEditor } from './TaskBreakdown.jsx'
 import { editableContent,breakdownPayload } from '../taskHierarchy.js'
 import EditRecovery,{useEditRecovery} from './EditRecovery.jsx'
@@ -24,9 +24,16 @@ export function PreviewDetails({draft}){
 function ScheduleFields({value,onChange}){
   return <><Fields value={{title:value.title,duration_minutes:value.duration_minutes,deadline:value.deadline,priority:value.priority}} onChange={next=>onChange({...value,...next})}/><div className="form-grid"><label>希望完成日期<input type="date" value={value.day} onChange={e=>onChange({...value,day:e.target.value})}/></label><label>建议开始时间<input type="time" step="300" value={value.start_time} onChange={e=>onChange({...value,start_time:e.target.value,start_exact:true})}/></label><label>工作分段数<input type="number" min="1" max="8" value={value.segments} onChange={e=>onChange({...value,segments:Number(e.target.value)})}/></label><label>段间休息分钟<input type="number" min="0" max="120" step="5" value={value.break_minutes} onChange={e=>onChange({...value,break_minutes:Number(e.target.value)})}/></label></div></>
 }
-function Fields({value,onChange}){
+export function PlanningStartField({draft,action,onChange}){
+  if(!['add','update'].includes(action.op)||!action.fields)return null
+  const start=planningActionStart(draft,action)
+  return <div className="form-grid"><label>开始时间<input aria-label="开始时间" type="datetime-local" step="300" value={toDatetimeLocalValue(start)}
+    onChange={event=>onChange(setPlanningActionStart(action,event.target.value?toBackendDeadline(event.target.value):null))}/><small className="helper">可选择具体日期和时间，保存编辑后重新计算安排。</small></label></div>
+}
+function Fields({value,onChange,omit=[]}){
   return <div className="form-grid">{Object.entries(value).map(([key,item])=>{
-    if(['fields','parameters','settings','profile'].includes(key)&&item&&typeof item==='object')return <Fields key={key} value={item} onChange={next=>onChange({...value,[key]:next})}/>
+    if(omit.includes(key))return null
+    if(['fields','parameters','settings','profile'].includes(key)&&item&&typeof item==='object')return <Fields key={key} value={item} omit={omit} onChange={next=>onChange({...value,[key]:next})}/>
     if(['metric_kind','goal_type','status','adjustment_mode','mode','priority'].includes(key)){
       const options=key==='metric_kind'?[['time','投入时长'],['count','次数'],['deliverable','成果物']]:key==='goal_type'?[['long_term','长期'],['stage','阶段']]:key==='status'?[['active','进行中'],['paused','暂停'],['completed','已完成'],['archived','归档']]:key==='priority'?(typeof item==='number'?[[1,'最优先'],[2,'重要'],[3,'保持推进']]:[['high','高'],['normal','普通'],['low','低']]):[['balanced','兼顾'],['preference','习惯优先'],['stable','稳定优先']]
       return <label key={key}>{fieldLabels[key]||'安排取舍'}<select value={item} onChange={e=>onChange({...value,[key]:typeof item==='number'?Number(e.target.value):e.target.value})}>{options.map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label>
@@ -134,7 +141,11 @@ export default function WorkspaceDraft({workspace,kind,id,onSaved,onClose}){
       {kind==='breakdown'?<BreakdownEditor content={value} expected={value.children.reduce((sum,c)=>sum+Number(c.duration_minutes||0),0)} onChange={change}/>:
         value.schedule?<ScheduleFields value={value.schedule} onChange={schedule=>change({schedule})}/>:
         kind==='review_record'?<><ReviewPeriod value={value}/><ReviewFields value={value} onChange={change} sidebar/></>:
-        <>{(value.operations||value.actions||[]).map((op,index)=><section className="draft-operation" key={index}><h3>{op.op==='add'?'新增任务建议':kind==='planning'?'任务安排建议':op.op==='record_feedback'?'执行反馈建议':op.op==='create_goal'?'目标建议':'资料修改建议'}</h3><Fields value={op} onChange={next=>{const key=kind==='planning'?'actions':'operations';change({...value,[key]:value[key].map((old,i)=>i===index?next:old)})}}/></section>)}</>}
+        <>{(value.operations||value.actions||[]).map((op,index)=>{
+          const key=kind==='planning'?'actions':'operations'
+          const update=next=>change({...value,[key]:value[key].map((old,i)=>i===index?next:old)})
+          return <section className="draft-operation" key={index}><h3>{op.op==='add'?'新增任务建议':kind==='planning'?'任务安排建议':op.op==='record_feedback'?'执行反馈建议':op.op==='create_goal'?'目标建议':'资料修改建议'}</h3><Fields value={op} omit={kind==='planning'?['fixed_start']:[]} onChange={update}/>{kind==='planning'&&<PlanningStartField draft={draft} action={op} onChange={update}/>}</section>
+        })}</>}
       </fieldset>{kind==='planning'&&draft.items.length>0&&<details open><summary>{draft.status==='applied'?'已采用安排':'候选安排 · 尚未正式采用'}</summary>{draft.items.map((item,index)=><p key={index}>{item.title} · {toDatetimeLocalValue(item.start_at).replace('T',' ')} 至 {toDatetimeLocalValue(item.end_at).replace('T',' ')}</p>)}</details>}<div className={`button-row${review?' review-draft-actions':''}`}>{review&&confirmButton}{saveButton}{!review&&confirmButton}<button className="button subtle" disabled={busy||draft.status==='applied'} onClick={()=>act('discard')}>放弃草案</button></div>
       {draft.receipt&&<p role="status">保存结果：已正式保存。{kind==='planning'?'任务与日程已刷新。':kind==='review_record'?'可在复盘记录中查看。':'可到对应页面查看。'}</p>}<p className="helper">{draft.status==='applied'?'这份草案已经保存。如需调整，请基于最新正式记录生成新的草案。':review?'保存编辑仅暂存草案，确认后才存入复盘记录，不改变任务或日程。':'保存编辑仍是草案；只有确认后才写入正式业务。旧卡片与冲突版本无法直接执行。'}</p>
     </>:loading?<p role="status">正在读取草案…</p>:<button className="button secondary" onClick={()=>setReadRetry(v=>v+1)}>重试读取草案</button>}
