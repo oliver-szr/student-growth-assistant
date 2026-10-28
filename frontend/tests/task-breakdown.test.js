@@ -26,10 +26,20 @@ async function component(name) {
 
 const { default: TaskHierarchy } = await component('TaskHierarchy')
 const { BreakdownEditor } = await component('TaskBreakdown')
-const { PreviewDetails } = await component('WorkspaceDraft')
+const { PreviewDetails,PlanningStartField } = await component('WorkspaceDraft')
 const deadline = '2026-10-25T12:00:00Z'
 const content = { parent: { title: '课程项目', description: null, deadline }, children: [{ title: '需求分析', description: null, duration_minutes: 60, deadline, sort_order: 0 }, { title: '实现', description: null, duration_minutes: 120, deadline, sort_order: 1 }] }
 const render = (Component, props) => renderToStaticMarkup(React.createElement(Component, props))
+
+test('full planning action renders an editable five-minute datetime picker from its candidate',()=>{
+  const action={op:'add',target:'draft:report',fields:{title:'实验报告'}}
+  const html=render(PlanningStartField,{draft:{items:[{ref:action.target,start_at:'2026-10-29T11:00:00Z'}]},action,onChange:()=>{}})
+  assert.match(html,/开始时间/)
+  assert.match(html,/type="datetime-local"/)
+  assert.match(html,/step="300"/)
+  assert.match(html,/value="2026-10-29T19:00"/)
+  assert.equal(render(PlanningStartField,{draft:{items:[]},action:{op:'remove',target:'task:1'},onChange:()=>{}}),'')
+})
 
 test('schedule preview distinguishes defaults, user work time, unset deadline and real conflicts',()=>{
   const html=render(PreviewDetails,{draft:{content:{schedule:{day:'2026-10-14',start_time:'19:00',duration_minutes:90,deadline:null,segments:2,break_minutes:10}},

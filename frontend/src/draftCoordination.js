@@ -13,7 +13,7 @@ export async function coordinateDrafts(){
   return refs
 }
 
-export const editableDraft=draft=>draft?.status==='ready'||Boolean(draft?.content?.schedule)&&['needs_input','conflict','no_plan'].includes(draft?.status)
+export const editableDraft=draft=>draft?.status==='ready'||(draft?.kind==='planning'||Boolean(draft?.content?.schedule))&&['needs_input','conflict','no_plan'].includes(draft?.status)
 // Dirty edits may resolve needs_input. The server must recalculate and return
 // ready before confirmation; this only enables submitting the current editor.
 export const canConfirmDraft=(draft,dirty)=>Boolean(editableDraft(draft)&&(dirty||draft.status==='ready'&&!draft.unresolved?.length))
@@ -21,4 +21,17 @@ export function previewCompletionDeadline(draft){
   if(!draft?.schedule_target)return null
   const items=(draft.items||[]).filter(item=>item.ref===draft.schedule_target&&Number.isFinite(Date.parse(item.end_at)))
   return items.reduce((latest,item)=>!latest||Date.parse(item.end_at)>Date.parse(latest)?item.end_at:latest,null)
+}
+
+export function planningActionStart(draft,action){
+  if(action.fields?.profile?.fixed_start)return action.fields.profile.fixed_start
+  return (draft.items||[]).filter(item=>item.ref===action.target&&Number.isFinite(Date.parse(item.start_at)))
+    .sort((left,right)=>Date.parse(left.start_at)-Date.parse(right.start_at))[0]?.start_at||''
+}
+
+export function setPlanningActionStart(action,start){
+  const profile={...(action.fields?.profile||{})}
+  if(start)profile.fixed_start=start
+  else delete profile.fixed_start
+  return {...action,fields:{...action.fields,profile}}
 }
