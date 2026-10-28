@@ -7,6 +7,6 @@ def test_health(client: TestClient) -> None:
     assert response.status_code == 200
     data=response.json()
     assert data['status']=='ok'
-    assert data['runtime']['protocol']=='draft-recovery-v3'
+    assert data['runtime']['protocol']=='intent-tags-v4'
     assert data['runtime']['skills_available'] and len(data['runtime']['skill_hashes'])==7
     assert len(data['runtime']['code_hash'])==12

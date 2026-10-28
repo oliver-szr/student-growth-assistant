@@ -64,6 +64,10 @@ def no_live_ai(monkeypatch):
 
     monkeypatch.setattr(assistant_ai, "select_growth_review", select_review_facts)
     from app.services import conversation_tools
+    from app.services import ai_skills
+    async def offline_selection(request):
+        return ai_skills.select_skills(request['message'],request.get('history',[]),request.get('current_drafts',[]))
+    monkeypatch.setattr(ai_skills,'resolve_skills',offline_selection)
     from app.workspace_schemas import ToolPlan
     async def no_tools(request):return ToolPlan()
     monkeypatch.setattr(conversation_tools,'plan',no_tools)

@@ -8,8 +8,8 @@ test('old backend is detected by read-only health before an AI message can be se
   await assert.rejects(ensureConversationRuntime(),/请重启后端/)
   assert.equal(calls.length,1);assert.equal(new URL(calls[0].url).pathname,'/api/health')
   assert.equal(calls[0].options.body,undefined)
-  globalThis.fetch=async()=>new Response(JSON.stringify({status:'ok',runtime:{protocol:'draft-recovery-v3',skills_available:true}}))
-  assert.equal((await ensureConversationRuntime()).protocol,'draft-recovery-v3')
+  globalThis.fetch=async()=>new Response(JSON.stringify({status:'ok',runtime:{protocol:'intent-tags-v4',skills_available:true}}))
+  assert.equal((await ensureConversationRuntime()).protocol,'intent-tags-v4')
 })
 
 test('FastAPI validation messages include readable field paths', () => {

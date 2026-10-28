@@ -28,7 +28,7 @@ from . import ai_diagnostics as trace
 from .assistant_clock import assistant_now
 
 logger=logging.getLogger(__name__)
-RUNTIME_PROTOCOL='draft-recovery-v3'
+RUNTIME_PROTOCOL='intent-tags-v4'
 
 
 def call_key(call):
@@ -118,7 +118,7 @@ async def plan(request):
     from ..schemas import GrowthGoalCreate,GrowthGoalPatch,TaskFeedbackCreate
     from .conversation_context import bounded_request
     request=bounded_request(request)
-    selection=ai_skills.select_skills(request['message'],request.get('history',[]),request.get('current_drafts',[]))
+    selection=ai_skills.request_selection(request)
     system,_=ai_skills.compose(selection,PLANNER)
     schema=ToolPlan.model_json_schema()
     if selection.allowed:schema['$defs']['ToolCall']['properties']['name']['enum']=sorted(selection.allowed)
@@ -344,7 +344,8 @@ async def prepare(engine,rid,token,request):
         request['current_drafts']=bounded_drafts(request['current_drafts'][-10:])
         snapshot=revision(db)
         stored=run.payload.get('tool_plan')
-    selection=ai_skills.select_skills(request['message'],request.get('history',[]),request.get('current_drafts',[]))
+    selection=await ai_skills.resolve_skills(request)
+    request['skill_selection']=selection.audit()
     _,audit=ai_skills.compose(selection)
     trace.record('skills.selected',names=audit['names'],hashes=audit['hashes'],expected=selection.expected)
     logger.info('ai_skills %s',json.dumps(audit,sort_keys=True))
@@ -370,7 +371,18 @@ async def prepare(engine,rid,token,request):
             request['decision_feedback']={'code':'MISSING_DRAFT','expected_kind':selection.expected,
                 'instruction':'明确办事请求还没有对应草案。仅这一次重新决策；补缺信息就questions，不重复成功工具。'}
         try:
-            selected=ToolPlan.model_validate(saved) if saved else await plan(request)
+            if saved:
+                selected=ToolPlan.model_validate(saved)
+            elif selection.reason=='explicit_tag':
+                name=ai_skills.ACTION_TAGS[ai_skills.action_tag(request['message'])][1]
+                arguments={}
+                if name=='calendar':
+                    from .draft_defaults import calendar_range
+                    start,end=calendar_range(ai_skills.message_text(request['message']),assistant_now())
+                    arguments={'start':start.isoformat(),'end':end.isoformat()}
+                selected=ToolPlan(calls=[{'name':name,'arguments':arguments}])
+            else:
+                selected=await plan(request)
         except claude_client.AIServiceError as exc:
             if not selection.expected or exc.code in ('AI_SKILLS_UNAVAILABLE','AI_CONTEXT_TOO_LARGE'):raise
             if exc.code=='AI_RESPONSE_INVALID' and repair_batch is None:
@@ -515,6 +527,16 @@ async def prepare(engine,rid,token,request):
         request['execution_notice']=f'这次没有生成可审核的{label}：工具选择未完成，或已达到本轮调用上限。正式资料未改变。请重试，或在对应工作区继续处理。'
     if any(r.get('error')=='DRAFT_STORAGE_FAILED' for r in results):
         request['execution_notice']='初稿未保存：数据库读取或保存失败，无法确认当前冲突。已经读取的结果仍保留；请稍后重试，未进行正式修改。'
+    if selection.reason=='explicit_tag' and selection.operation=='query':
+        calendar=next((result for result in results if result['tool']=='calendar' and not result.get('error')),None)
+        if calendar:
+            lines=[f"已查询 {calendar['start']} 起的正式日程："]
+            lines.extend(f"{event['start'].replace('T',' ')[:16]} · {event['title']}" for event in calendar['events'][:10])
+            if not calendar['events']:lines.append('所选范围内没有已保存的日程事项。')
+            if len(calendar['events'])>10:lines.append('其余事项可在日程页查看。')
+            if calendar['unscheduled_tasks']:lines.append(f"另有{len(calendar['unscheduled_tasks'])}项待安排任务，可在日程页查看。")
+            lines.append('本轮没有修改任务或日程。')
+            request['execution_notice']='\n'.join(lines)
     receipt=execution_receipt(results,request.get('current_drafts',[]))
     if receipt and not questions:
         request['execution_notice']=receipt
